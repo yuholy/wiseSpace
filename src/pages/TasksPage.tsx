@@ -4,6 +4,7 @@ import {
   Badge,
   Button,
   Card,
+  Collapse,
   Descriptions,
   Empty,
   Form,
@@ -37,6 +38,22 @@ import type { AgentRunEvent, AskUserEvent, PermissionRequestEvent, TaskCenterIte
 const WAITING_STATUSES = new Set(['waiting_approval', 'waiting_input', 'interrupted']);
 const RUNNING_STATUSES = new Set(['queued', 'starting', 'running', 'cancelling']);
 const FAILED_STATUSES = new Set(['failed', 'cancelled']);
+const MAX_TIMELINE_EVENTS = 30;
+
+const EVENT_LABELS: Record<string, string> = {
+  ask_resolved: '已回复问题',
+  ask_user: '等待补充信息',
+  permission_request: '等待工具权限',
+  permission_resolved: '权限已处理',
+  run_cancel_requested: '请求取消',
+  run_failed: '运行失败',
+  run_finished: '运行完成',
+  run_resume_accepted: '恢复运行',
+  run_resume_rejected: '恢复失败',
+  tool_result: '工具完成',
+  tool_start: '工具开始',
+  tool_use: '调用工具',
+};
 
 type TaskFormValues = {
   prompt: string;
@@ -63,7 +80,7 @@ function eventField(event: AgentRunEvent, camel: keyof AgentRunEvent, snake: str
   return (event[camel] ?? raw[snake]) as string | undefined;
 }
 
-function eventPayload(event: AgentRunEvent) {
+function rawEventPayload(event: AgentRunEvent) {
   const raw = event as unknown as Record<string, unknown>;
   const payload = (event.payloadJson ?? raw.payload_json) as string | undefined;
   if (!payload) return '';
@@ -71,6 +88,61 @@ function eventPayload(event: AgentRunEvent) {
     return JSON.stringify(JSON.parse(payload), null, 2);
   } catch {
     return payload;
+  }
+}
+
+function parseEventPayload(event: AgentRunEvent): Record<string, unknown> {
+  const raw = event as unknown as Record<string, unknown>;
+  const payload = (event.payloadJson ?? raw.payload_json) as string | undefined;
+  if (!payload) return {};
+  try {
+    const parsed = JSON.parse(payload);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return { text: payload };
+  }
+}
+
+function compactText(value: unknown, max = 140) {
+  if (value === null || value === undefined) return '';
+  const text = String(value).replace(/\s+/g, ' ').trim();
+  return text.length > max ? `${text.slice(0, max)}...` : text;
+}
+
+function eventLabel(eventType: string) {
+  return EVENT_LABELS[eventType] ?? eventType;
+}
+
+function eventSummary(event: AgentRunEvent) {
+  const eventType = eventField(event, 'eventType', 'event_type') ?? '';
+  const payload = parseEventPayload(event);
+  const toolName = payload.toolName ?? payload.tool_name;
+
+  switch (eventType) {
+    case 'run_finished': {
+      const turns = payload.numTurns ? `轮次 ${payload.numTurns}` : '';
+      const cost = typeof payload.costUsd === 'number' ? `成本 $${payload.costUsd.toFixed(4)}` : '';
+      return [turns, cost].filter(Boolean).join(' · ') || '任务已完成';
+    }
+    case 'tool_use':
+      return `${toolName || '工具'}：${compactText(payload.summary ?? payload.input ?? payload.text, 180) || '准备执行'}`;
+    case 'tool_start':
+      return `${toolName || '工具'} 正在执行`;
+    case 'tool_result':
+      return `${toolName || '工具'}：${compactText(payload.summary ?? payload.output ?? payload.result, 180) || '执行完成'}`;
+    case 'permission_request':
+      return `${toolName || '工具'} 需要授权${payload.riskLevel ? ` · 风险 ${payload.riskLevel}` : ''}`;
+    case 'permission_resolved':
+      return `处理结果：${compactText(payload.value ?? payload.decision ?? '已处理')}`;
+    case 'ask_user':
+      return compactText(payload.question ?? payload.prompt ?? 'Agent 正在等待你的补充信息', 180);
+    case 'ask_resolved':
+      return `已回复：${compactText(payload.answer ?? payload.value, 180)}`;
+    case 'run_failed':
+    case 'run_resume_rejected':
+      return compactText(payload.message ?? payload.error ?? payload.reason ?? '运行遇到错误', 220);
+    default:
+      return compactText(payload.message ?? payload.summary ?? payload.text ?? rawEventPayload(event), 180);
   }
 }
 
@@ -227,6 +299,10 @@ export function TasksPage() {
 
   const detailPermissions = pendingPermissions.filter((item) => item.conversationId === detail?.item.conversationId);
   const detailAsks = pendingAskUser.filter((item) => item.conversationId === detail?.item.conversationId);
+  const timelineEvents = useMemo(() => {
+    if (!detail) return [];
+    return [...detail.events].reverse().slice(0, MAX_TIMELINE_EVENTS);
+  }, [detail]);
 
   const handleCreate = async () => {
     const values = await form.validateFields();
@@ -403,32 +479,62 @@ export function TasksPage() {
               </Card>
             )}
 
-            <Card size="small" title="事件流">
+            <Card
+              size="small"
+              title="任务时间线"
+              extra={detail.events.length > MAX_TIMELINE_EVENTS ? (
+                <Typography.Text type="secondary">
+                  显示最近 {MAX_TIMELINE_EVENTS} 条 / 共 {detail.events.length} 条
+                </Typography.Text>
+              ) : (
+                <Typography.Text type="secondary">共 {detail.events.length} 条</Typography.Text>
+              )}
+            >
               {detail.events.length === 0 ? (
                 <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无事件" />
               ) : (
                 <List
                   size="small"
-                  dataSource={[...detail.events].reverse()}
-                  renderItem={(event) => (
-                    <List.Item>
-                      <List.Item.Meta
-                        title={(
-                          <Space>
-                            <Tag>{eventField(event, 'eventType', 'event_type')}</Tag>
-                            <Typography.Text type="secondary">
-                              {eventField(event, 'createdAt', 'created_at')}
-                            </Typography.Text>
-                          </Space>
-                        )}
-                        description={(
-                          <Typography.Paragraph code style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>
-                            {eventPayload(event)}
-                          </Typography.Paragraph>
-                        )}
-                      />
-                    </List.Item>
-                  )}
+                  dataSource={timelineEvents}
+                  renderItem={(event) => {
+                    const eventType = eventField(event, 'eventType', 'event_type') ?? '';
+                    const rawPayload = rawEventPayload(event);
+                    return (
+                      <List.Item>
+                        <List.Item.Meta
+                          title={(
+                            <Space size={8} wrap>
+                              <Tag>{eventLabel(eventType)}</Tag>
+                              <Typography.Text type="secondary">
+                                {eventField(event, 'createdAt', 'created_at')}
+                              </Typography.Text>
+                              <Typography.Text type="secondary">#{event.sequenceNo}</Typography.Text>
+                            </Space>
+                          )}
+                          description={(
+                            <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                              <Typography.Text>{eventSummary(event)}</Typography.Text>
+                              {rawPayload ? (
+                                <Collapse
+                                  ghost
+                                  size="small"
+                                  items={[{
+                                    key: event.id,
+                                    label: '查看原始数据',
+                                    children: (
+                                      <Typography.Paragraph code style={{ whiteSpace: 'pre-wrap', marginBottom: 0, maxHeight: 260, overflow: 'auto' }}>
+                                        {rawPayload}
+                                      </Typography.Paragraph>
+                                    ),
+                                  }]}
+                                />
+                              ) : null}
+                            </Space>
+                          )}
+                        />
+                      </List.Item>
+                    );
+                  }}
                 />
               )}
             </Card>
