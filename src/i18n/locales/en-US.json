@@ -4,6 +4,7 @@
   },
   "nav": {
     "chat": "Chat",
+    "tasks": "Tasks",
     "knowledge": "Knowledge",
     "memory": "Memory",
     "gateway": "Gateway",

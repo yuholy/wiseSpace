@@ -158,6 +158,7 @@ export interface Conversation {
   category_id: string | null;
   parent_conversation_id: string | null;
   mode?: 'chat' | 'agent';
+  source?: 'chat' | 'task_center' | string;
   message_count: number;
   created_at: number;
   updated_at: number;
@@ -516,7 +517,7 @@ export interface RealtimeConfig {
 }
 
 // === UI State ===
-export type PageKey = 'chat' | 'drawing' | 'knowledge' | 'memory' | 'gateway' | 'files' | 'settings' | 'skills';
+export type PageKey = 'chat' | 'tasks' | 'drawing' | 'knowledge' | 'memory' | 'gateway' | 'files' | 'settings' | 'skills';
 
 // === Drawing ===
 export type DrawingModelId = 'gpt-image-2' | 'gpt-image-1.5' | 'gpt-image-1' | 'gpt-image-1-mini';

@@ -128,6 +128,14 @@ pub async fn list_runs_for_conversation(
     Ok(rows.into_iter().map(model_to_agent_run).collect())
 }
 
+pub async fn list_all_runs(db: &DatabaseConnection) -> Result<Vec<AgentRun>> {
+    let rows = agent_runs::Entity::find()
+        .order_by_desc(agent_runs::Column::StartedAt)
+        .all(db)
+        .await?;
+    Ok(rows.into_iter().map(model_to_agent_run).collect())
+}
+
 pub async fn aggregate_usage_for_conversation(
     db: &DatabaseConnection,
     conversation_id: &str,

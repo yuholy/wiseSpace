@@ -4,6 +4,7 @@
   },
   "nav": {
     "chat": "对话",
+    "tasks": "任务",
     "knowledge": "知识库",
     "memory": "记忆",
     "gateway": "网关",

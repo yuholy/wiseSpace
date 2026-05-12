@@ -830,8 +830,11 @@ export function ChatSidebar() {
       // Group conversations by category_id for ordered insertion
       const convsByCatId = new Map<string, Conversation[]>()
       const uncategorizedConvs: Conversation[] = []
+      const taskCenterConvs: Conversation[] = []
       topLevel.forEach((conv) => {
-        if (conv.category_id) {
+        if (conv.source === 'task_center') {
+          taskCenterConvs.push(conv)
+        } else if (conv.category_id) {
           const arr = convsByCatId.get(conv.category_id) ?? []
           arr.push(conv)
           convsByCatId.set(conv.category_id, arr)
@@ -952,6 +955,8 @@ export function ChatSidebar() {
         }
       })
 
+      taskCenterConvs.forEach((conv) => pushConvWithChildren(conv, 'taskCenter'))
+
       // Add uncategorized conversations (pinned + time groups)
       uncategorizedConvs.forEach((conv) => {
         const group = conv.is_pinned ? 'pinned' : getDateGroup(conv.updated_at)
@@ -967,6 +972,7 @@ export function ChatSidebar() {
     () => {
       const labels: Record<string, string> = {
         pinned: t('chat.pinned'),
+        taskCenter: '任务中心',
         today: t('chat.today'),
         yesterday: t('chat.yesterday'),
         thisWeek: t('chat.thisWeek'),

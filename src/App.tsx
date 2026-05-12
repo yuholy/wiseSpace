@@ -8,7 +8,7 @@ import { ContentArea } from '@/components/layout/ContentArea';
 import CommandPalette from '@/components/layout/CommandPalette';
 import { GlobalCopyMenu } from '@/components/layout/GlobalCopyMenu';
 import { useCommandPalette } from '@/hooks/useCommandPalette';
-import { useUIStore, useSettingsStore, useConversationStore } from '@/stores';
+import { useUIStore, useSettingsStore, useConversationStore, useTaskCenterStore } from '@/stores';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useGlobalShortcutManager } from '@/hooks/useGlobalShortcutManager';
 import { useResolvedDarkMode } from '@/hooks/useResolvedDarkMode';
@@ -79,10 +79,36 @@ function AppInner() {
   // Global stream event listeners — persist across page navigation
   const startStreamListening = useConversationStore((s) => s.startStreamListening);
   const stopStreamListening = useConversationStore((s) => s.stopStreamListening);
+  const fetchTaskCenterTasks = useTaskCenterStore((s) => s.fetchTasks);
   useEffect(() => {
     startStreamListening();
     return () => stopStreamListening();
   }, [startStreamListening, stopStreamListening]);
+
+  useEffect(() => {
+    void fetchTaskCenterTasks();
+    if (!isTauri()) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const refreshSoon = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        void fetchTaskCenterTasks();
+      }, 300);
+    };
+    const listeners = [
+      listen('agent-run-event', refreshSoon),
+      listen('agent-done', refreshSoon),
+      listen('agent-error', refreshSoon),
+      listen('agent-permission-request', refreshSoon),
+      listen('agent-ask-user', refreshSoon),
+    ];
+    return () => {
+      if (timer) clearTimeout(timer);
+      listeners.forEach((unlisten) => {
+        void unlisten.then((fn) => fn());
+      });
+    };
+  }, [fetchTaskCenterTasks]);
 
   return (
     <div className="flex flex-col h-screen" style={{ backgroundColor: token.colorBgContainer }}>

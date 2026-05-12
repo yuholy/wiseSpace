@@ -3482,6 +3482,7 @@ mod tests {
             category_id: None,
             parent_conversation_id: None,
             mode: "chat".to_string(),
+            source: "chat".to_string(),
             created_at: 0,
             updated_at: 0,
         }

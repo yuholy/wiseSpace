@@ -9,7 +9,9 @@ use std::sync::Arc;
 use tauri::{Emitter, State};
 use tokio::sync::RwLock;
 use wisespace_core::repo::{agent_profile, agent_run, agent_session, conversation, message};
-use wisespace_core::types::{AgentProfile, AgentRun, AgentRunEvent, AgentSession, MessageRole};
+use wisespace_core::types::{
+    AgentProfile, AgentRun, AgentRunEvent, AgentSession, Conversation, MessageRole,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -46,6 +48,52 @@ pub struct AgentControlRunInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TaskCenterItem {
+    pub run_id: String,
+    pub conversation_id: String,
+    pub conversation_title: String,
+    pub conversation_source: String,
+    pub status: String,
+    pub prompt_preview: String,
+    pub workspace_root: Option<String>,
+    pub provider_id: Option<String>,
+    pub model_id: Option<String>,
+    pub started_at: String,
+    pub finished_at: Option<String>,
+    pub error_summary: Option<String>,
+    pub last_event_type: Option<String>,
+    pub last_event_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskCenterDetail {
+    pub item: TaskCenterItem,
+    pub conversation: Conversation,
+    pub run: AgentRun,
+    pub events: Vec<AgentRunEvent>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateTaskFromCenterInput {
+    pub prompt: String,
+    pub provider_id: String,
+    pub model_id: String,
+    pub title: Option<String>,
+    pub workspace_root: Option<String>,
+    pub permission_mode: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateTaskFromCenterResult {
+    pub conversation: Conversation,
+    pub run: Option<AgentRun>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct AgentRunLifecyclePayload {
     conversation_id: String,
     run_id: String,
@@ -67,6 +115,46 @@ fn ensure_agent_workspace_dir(workspace_root: &str) -> Result<String, String> {
         .to_str()
         .map(|s| s.to_string())
         .ok_or_else(|| "Invalid path encoding".to_string())
+}
+
+fn task_prompt_preview(prompt: &str) -> String {
+    let value = prompt.trim();
+    if value.chars().count() > 120 {
+        format!("{}...", value.chars().take(120).collect::<String>())
+    } else {
+        value.to_string()
+    }
+}
+
+async fn build_task_center_item(
+    db: &sea_orm::DatabaseConnection,
+    run: &AgentRun,
+) -> Result<TaskCenterItem, String> {
+    let conv = conversation::get_conversation(db, &run.conversation_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let last_event = agent_run::list_run_events(db, &run.id)
+        .await
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .last();
+
+    Ok(TaskCenterItem {
+        run_id: run.id.clone(),
+        conversation_id: run.conversation_id.clone(),
+        conversation_title: conv.title,
+        conversation_source: conv.source,
+        status: run.status.clone(),
+        prompt_preview: task_prompt_preview(&run.prompt_snapshot),
+        workspace_root: run.workspace_root.clone(),
+        provider_id: run.provider_id.clone(),
+        model_id: run.model_id.clone(),
+        started_at: run.started_at.clone(),
+        finished_at: run.finished_at.clone(),
+        error_summary: run.error_summary.clone(),
+        last_event_type: last_event.as_ref().map(|event| event.event_type.clone()),
+        last_event_at: last_event.map(|event| event.created_at),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -159,6 +247,103 @@ pub async fn agent_list_run_events(
     agent_run::list_run_events(&state.sea_db, &run_id)
         .await
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_agent_runs_global(
+    state: State<'_, AppState>,
+) -> Result<Vec<TaskCenterItem>, String> {
+    let runs = agent_run::list_all_runs(&state.sea_db)
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut items = Vec::with_capacity(runs.len());
+    for run in runs {
+        match build_task_center_item(&state.sea_db, &run).await {
+            Ok(item) => items.push(item),
+            Err(err) => tracing::warn!("[agent] Failed to build task center item: {}", err),
+        }
+    }
+    Ok(items)
+}
+
+#[tauri::command]
+pub async fn get_agent_run_detail(
+    state: State<'_, AppState>,
+    run_id: String,
+) -> Result<TaskCenterDetail, String> {
+    let run = agent_run::get_run(&state.sea_db, &run_id)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("Agent run not found".to_string())?;
+    let conversation = conversation::get_conversation(&state.sea_db, &run.conversation_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let events = agent_run::list_run_events(&state.sea_db, &run_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let item = build_task_center_item(&state.sea_db, &run).await?;
+
+    Ok(TaskCenterDetail {
+        item,
+        conversation,
+        run,
+        events,
+    })
+}
+
+#[tauri::command]
+pub async fn create_agent_task_from_center(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    input: CreateTaskFromCenterInput,
+) -> Result<CreateTaskFromCenterResult, String> {
+    let prompt = input.prompt.trim().to_string();
+    if prompt.is_empty() {
+        return Err("Task prompt is required".to_string());
+    }
+
+    let title = input
+        .title
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .unwrap_or_else(|| task_prompt_preview(&prompt));
+    let real_provider_id =
+        crate::agent_runtime::compat::resolve_agent_provider_id(&state.sea_db, &input.provider_id)
+            .await?;
+
+    let conversation = conversation::create_conversation_with_source_and_mode(
+        &state.sea_db,
+        &title,
+        &input.model_id,
+        &real_provider_id,
+        None,
+        "task_center",
+        "agent",
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    crate::agent_runtime::sdk_runner::start_sdk_run(
+        app,
+        &state,
+        crate::agent_runtime::sdk_runner::StartSdkRunInput {
+            conversation_id: conversation.id.clone(),
+            prompt,
+            provider_id: real_provider_id,
+            model_id: input.model_id,
+            cwd: input.workspace_root,
+            permission_mode: input.permission_mode,
+        },
+    )
+    .await?;
+
+    let run = agent_run::get_latest_run_for_conversation(&state.sea_db, &conversation.id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(CreateTaskFromCenterResult { conversation, run })
 }
 
 #[tauri::command]

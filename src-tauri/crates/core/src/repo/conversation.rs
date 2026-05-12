@@ -33,6 +33,7 @@ fn conversation_from_entity(m: conversations::Model) -> Conversation {
         category_id: m.category_id,
         parent_conversation_id: m.parent_conversation_id,
         mode: m.mode,
+        source: m.source,
         created_at: m.created_at,
         updated_at: m.updated_at,
     }
@@ -84,6 +85,47 @@ pub async fn create_conversation(
     provider_id: &str,
     system_prompt: Option<&str>,
 ) -> Result<Conversation> {
+    create_conversation_with_source_and_mode(
+        db,
+        title,
+        model_id,
+        provider_id,
+        system_prompt,
+        "chat",
+        "chat",
+    )
+    .await
+}
+
+pub async fn create_conversation_with_source(
+    db: &DatabaseConnection,
+    title: &str,
+    model_id: &str,
+    provider_id: &str,
+    system_prompt: Option<&str>,
+    source: &str,
+) -> Result<Conversation> {
+    create_conversation_with_source_and_mode(
+        db,
+        title,
+        model_id,
+        provider_id,
+        system_prompt,
+        source,
+        "chat",
+    )
+    .await
+}
+
+pub async fn create_conversation_with_source_and_mode(
+    db: &DatabaseConnection,
+    title: &str,
+    model_id: &str,
+    provider_id: &str,
+    system_prompt: Option<&str>,
+    source: &str,
+    mode: &str,
+) -> Result<Conversation> {
     let id = gen_id();
     let now = now_ts();
 
@@ -97,6 +139,8 @@ pub async fn create_conversation(
         is_pinned: Set(0),
         created_at: Set(now),
         updated_at: Set(now),
+        source: Set(source.to_string()),
+        mode: Set(mode.to_string()),
         ..Default::default()
     }
     .insert(db)
@@ -181,6 +225,9 @@ pub async fn update_conversation(
     }
     if let Some(mode) = input.mode {
         am.mode = Set(mode);
+    }
+    if let Some(source) = input.source {
+        am.source = Set(source);
     }
     am.updated_at = Set(now);
     am.update(db).await?;
@@ -337,6 +384,8 @@ pub async fn branch_conversation(
         category_id: Set(source.category_id.clone()),
         parent_conversation_id: Set(parent_id),
         research_mode: Set(source.research_mode),
+        source: Set(source.source.clone()),
+        mode: Set(source.mode.clone()),
         created_at: Set(now),
         updated_at: Set(now),
         ..Default::default()

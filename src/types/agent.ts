@@ -57,6 +57,44 @@ export interface AgentRunEvent {
   createdAt: string;
 }
 
+export interface TaskCenterItem {
+  runId: string;
+  conversationId: string;
+  conversationTitle: string;
+  conversationSource: string;
+  status: AgentRunStatus | string;
+  promptPreview: string;
+  workspaceRoot?: string | null;
+  providerId?: string | null;
+  modelId?: string | null;
+  startedAt: string;
+  finishedAt?: string | null;
+  errorSummary?: string | null;
+  lastEventType?: string | null;
+  lastEventAt?: string | null;
+}
+
+export interface TaskCenterDetail {
+  item: TaskCenterItem;
+  conversation: import('./index').Conversation;
+  run: AgentRun;
+  events: AgentRunEvent[];
+}
+
+export interface CreateTaskFromCenterInput {
+  prompt: string;
+  providerId: string;
+  modelId: string;
+  title?: string;
+  workspaceRoot?: string;
+  permissionMode?: AgentPermissionMode | string;
+}
+
+export interface CreateTaskFromCenterResult {
+  conversation: import('./index').Conversation;
+  run?: AgentRun | null;
+}
+
 export interface AgentSession {
   id: string;
   conversation_id: string;

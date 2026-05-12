@@ -12,6 +12,7 @@ export { useKnowledgeStore } from './knowledgeStore';
 export { useMemoryStore } from './memoryStore';
 export { useBackupStore } from './backupStore';
 export { useAgentStore } from './agentStore';
+export { useTaskCenterStore } from './taskCenterStore';
 export { useExternalAgentStore } from './externalAgentStore';
 export { useSkillStore } from './skillStore';
 export { useDrawingStore } from './drawingStore';
