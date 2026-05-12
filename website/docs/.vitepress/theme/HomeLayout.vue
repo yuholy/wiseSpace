@@ -2,7 +2,6 @@
 import DefaultTheme from 'vitepress/theme';
 import { useData } from 'vitepress';
 import DownloadBar from './DownloadBar.vue';
-import ImageCarousel from './ImageCarousel.vue';
 import FeaturesGrid from './FeaturesGrid.vue';
 
 const { Layout } = DefaultTheme;
@@ -14,11 +13,6 @@ const { frontmatter } = useData();
     <template #home-hero-info-after>
       <div v-if="frontmatter?.layout === 'home'" class="hero-actions-custom">
         <DownloadBar />
-      </div>
-    </template>
-    <template #home-features-before>
-      <div v-if="frontmatter?.layout === 'home'">
-        <ImageCarousel />
       </div>
     </template>
     <template #home-features-after>
