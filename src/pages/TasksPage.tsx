@@ -160,10 +160,12 @@ export function TasksPage() {
   const fetchConversations = useConversationStore((s) => s.fetchConversations);
   const setActiveConversation = useConversationStore((s) => s.setActiveConversation);
   const setActivePage = useUIStore((s) => s.setActivePage);
-  const pendingPermissions = useAgentStore((s) => Object.values(s.pendingPermissions));
-  const pendingAskUser = useAgentStore((s) => Object.values(s.pendingAskUser));
+  const pendingPermissionsById = useAgentStore((s) => s.pendingPermissions);
+  const pendingAskUserById = useAgentStore((s) => s.pendingAskUser);
   const approveToolUse = useAgentStore((s) => s.approveToolUse);
   const respondAskUser = useAgentStore((s) => s.respondAskUser);
+  const pendingPermissions = useMemo(() => Object.values(pendingPermissionsById), [pendingPermissionsById]);
+  const pendingAskUser = useMemo(() => Object.values(pendingAskUserById), [pendingAskUserById]);
 
   useEffect(() => {
     void fetchTasks();
