@@ -1,0 +1,142 @@
+{
+  "name": "markstream-vue2",
+  "type": "module",
+  "version": "0.0.41",
+  "description": "Vue 2 Markdown renderer optimized for large documents with progressive Mermaid rendering, streaming diff code blocks, and fast real-time preview. Perfect for documentation sites, AI chat interfaces, and content management systems.",
+  "author": "Simon He",
+  "license": "MIT",
+  "homepage": "https://github.com/Simon-He95/markstream-vue#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Simon-He95/markstream-vue.git",
+    "directory": "packages/markstream-vue2"
+  },
+  "bugs": {
+    "url": "https://github.com/Simon-He95/markstream-vue/issues"
+  },
+  "keywords": [
+    "vue",
+    "vue2",
+    "vue-2",
+    "markdown",
+    "markdown-to-html",
+    "markdown-renderer",
+    "vue-markdown",
+    "vue-markdown-renderer",
+    "vue-markdown-component",
+    "markdown-preview",
+    "markdown-viewer",
+    "vue-component",
+    "nuxt",
+    "nuxt2",
+    "nuxt-2",
+    "vite",
+    "webpack",
+    "sse",
+    "ai-chat",
+    "streaming-markdown",
+    "html",
+    "renderer",
+    "custom-component",
+    "mermaid",
+    "progressive-mermaid",
+    "streaming-diff",
+    "diff-codeblock",
+    "large-documents",
+    "performance",
+    "real-time-preview",
+    "markstream-vue2",
+    "markstream",
+    "documentation",
+    "docs",
+    "content-management",
+    "cms",
+    "markdown-parser",
+    "md-to-html",
+    "vue2-markdown",
+    "vue2-component"
+  ],
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./index.css": "./dist/index.css",
+    "./index.px.css": "./dist/index.px.css",
+    "./index.tailwind.css": "./dist/index.tailwind.css",
+    "./tailwind": "./dist/tailwind.ts",
+    "./workers/katexRenderer.worker": "./dist/workers/katexRenderer.worker.js",
+    "./workers/mermaidParser.worker": "./dist/workers/mermaidParser.worker.js"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "vite build -c vite.config.ts --mode npm && vite build -c vite.config.tailwind.ts --mode npm && node ./scripts/copy-tailwind-css.mjs && node ../../scripts/generate-px-css.mjs && pnpm run build:dts && pnpm run validate:dist",
+    "build:analyze": "ANALYZE=true pnpm build",
+    "build:dts": "rollup -c ./scripts/rollup.dts.config.mjs && node ./scripts/clean-dts.cjs",
+    "validate:dist": "node ./scripts/validate-dist-entries.mjs",
+    "size:check": "MAX_PACK_UNPACKED_BYTES=800000 node ../../scripts/check-package-size.mjs",
+    "release": "bumpp --commit --no-tag --no-push && pnpm publish --access public && node ../../scripts/tag-package.mjs --package-json package.json --push"
+  },
+  "peerDependencies": {
+    "@antv/infographic": "^0.2.3",
+    "@terrastruct/d2": ">=0.1.33",
+    "@vue/composition-api": ">=1.7.2",
+    "katex": ">=0.16.22",
+    "mermaid": ">=11",
+    "stream-markdown": ">=0.0.15",
+    "stream-monaco": ">=0.0.40",
+    "vue": ">=2.6.14 <3",
+    "vue-i18n": ">=9"
+  },
+  "peerDependenciesMeta": {
+    "@antv/infographic": {
+      "optional": true
+    },
+    "@terrastruct/d2": {
+      "optional": true
+    },
+    "@vue/composition-api": {
+      "optional": true
+    },
+    "katex": {
+      "optional": true
+    },
+    "mermaid": {
+      "optional": true
+    },
+    "stream-markdown": {
+      "optional": true
+    },
+    "stream-monaco": {
+      "optional": true
+    },
+    "vue-i18n": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@floating-ui/dom": "^1.7.6",
+    "stream-markdown-parser": "workspace:*",
+    "vue-demi": "^0.14.10"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue2": "^2.3.4",
+    "@vue/compiler-sfc": "2.7.16",
+    "rollup": "^3.30.0",
+    "rollup-plugin-dts": "^5.3.1",
+    "rollup-plugin-visualizer": "^6.0.11",
+    "typescript": "^5.9.3",
+    "vite": "^4.5.14",
+    "vite-plugin-dts": "^4.5.4",
+    "vue-tsc": "^2.2.12"
+  }
+}

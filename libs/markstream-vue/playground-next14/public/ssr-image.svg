@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40" viewBox="0 0 80 40" role="img" aria-labelledby="title desc">
+  <title id="title">SSR image</title>
+  <desc id="desc">Static test image for Next SSR acceptance.</desc>
+  <rect width="80" height="40" fill="#dbeafe" rx="6" />
+  <text x="40" y="25" text-anchor="middle" font-size="12" fill="#1e3a8a" font-family="system-ui, sans-serif">SSR</text>
+</svg>

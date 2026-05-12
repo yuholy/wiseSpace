@@ -1,0 +1,101 @@
+name: Test Build
+
+on:
+  push:
+    tags:
+      - 'test-v*.*.*'
+
+permissions: write-all
+
+env:
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: short
+
+concurrency:
+  group: '${{ github.workflow }}-${{ github.ref }}'
+  cancel-in-progress: true
+
+jobs:
+  test-build:
+    name: Test Build (aarch64-apple-darwin)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: 'v1'
+          key: 'macos-latest-aarch64-apple-darwin'
+          workspaces: src-tauri -> target
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Get linked dependency versions
+        id: dep-versions
+        run: |
+          SM_SHA=$(git -C libs/stream-monaco rev-parse HEAD)
+          MS_SHA=$(git -C libs/markstream-vue rev-parse HEAD)
+          echo "cache-key=${{ runner.os }}-aarch64-apple-darwin-linked-deps-${SM_SHA:0:12}-${MS_SHA:0:12}" >> $GITHUB_OUTPUT
+
+      - name: Cache linked dependencies
+        id: cache-linked-deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            libs/stream-monaco/node_modules
+            libs/stream-monaco/dist
+            libs/markstream-vue/node_modules
+            libs/markstream-vue/packages/markdown-parser/node_modules
+            libs/markstream-vue/packages/markdown-parser/dist
+            libs/markstream-vue/packages/markstream-react/node_modules
+            libs/markstream-vue/packages/markstream-react/dist
+          key: ${{ steps.dep-versions.outputs.cache-key }}
+
+      - name: Build linked dependencies
+        if: steps.cache-linked-deps.outputs.cache-hit != 'true'
+        run: |
+          pnpm --dir libs/stream-monaco install --frozen-lockfile
+          pnpm --dir libs/stream-monaco build
+
+          pnpm --dir libs/markstream-vue install --frozen-lockfile
+          pnpm --dir libs/markstream-vue run build:parser
+          pnpm --dir libs/markstream-vue/packages/markstream-react build
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build with Tauri
+        uses: tauri-apps/tauri-action@v0
+        env:
+          NODE_OPTIONS: '--max_old_space_size=4096'
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: '-'
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'wiseSpace ${{ github.ref_name }} (Test)'
+          releaseBody: 'Internal test build for scrollbar fix verification.'
+          releaseDraft: true
+          prerelease: true
+          tauriScript: pnpm tauri
+          args: --target aarch64-apple-darwin

@@ -1,0 +1,43 @@
+name: pkg.pr.new
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  publish:
+    # pkg.pr.new requires its GitHub App to be installed on the repository.
+    # Keep previews opt-in so PR CI does not fail before that external setup exists.
+    if: ${{ vars.PKG_PR_NEW_ENABLED == 'true' }}
+    name: Publish preview packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+
+      - name: Set node lts/*
+        uses: actions/setup-node@v3
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: |
+          pnpm -r --filter "./packages/**" build
+          pnpm build
+
+      - name: Publish preview packages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm dlx pkg-pr-new publish . ./packages/markdown-parser ./packages/markstream-react ./packages/markstream-vue2

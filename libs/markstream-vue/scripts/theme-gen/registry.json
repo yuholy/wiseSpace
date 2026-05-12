@@ -1,0 +1,1239 @@
+[
+  {
+    "id": "airbnb",
+    "name": "Airbnb",
+    "source": "airbnb",
+    "category": "enterprise",
+    "native": "light",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#222222",
+      "brand": "#ff385c",
+      "surface": "#f2f2f2",
+      "secondaryText": "#6a6a6a",
+      "border": "#c1c1c1",
+      "error": "#c13515",
+      "brandForeground": "#ffffff"
+    },
+    "fonts": {
+      "sans": "\"Airbnb Cereal VF\", Circular, -apple-system, system-ui, Roboto, \"Helvetica Neue\", sans-serif"
+    },
+    "radius": "1.25rem"
+  },
+  {
+    "id": "airtable",
+    "name": "Airtable",
+    "source": "airtable",
+    "category": "design",
+    "native": "light",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#181d26",
+      "brand": "#1b61c9",
+      "surface": "#f8fafc",
+      "secondaryText": "#333333",
+      "border": "#e0e2e6",
+      "brandForeground": "#fff",
+      "success": "#006400"
+    },
+    "fonts": {
+      "sans": "Haas, -apple-system, system-ui, \"Segoe UI\", Roboto, sans-serif"
+    },
+    "radius": "1rem"
+  },
+  {
+    "id": "apple",
+    "name": "Apple",
+    "source": "apple",
+    "category": "enterprise",
+    "native": "light",
+    "colors": {
+      "background": "#f5f5f7",
+      "foreground": "#1d1d1f",
+      "brand": "#0071e3",
+      "brandForeground": "#fff",
+      "info": "#0071e3"
+    },
+    "fonts": {
+      "sans": "\"SF Pro Display\", \"SF Pro Icons\", \"Helvetica Neue\", Helvetica, Arial, sans-serif"
+    },
+    "radius": "0.5rem"
+  },
+  {
+    "id": "bmw",
+    "name": "BMW",
+    "source": "bmw",
+    "category": "enterprise",
+    "native": "light",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#262626",
+      "brand": "#1c69d4",
+      "secondaryText": "#757575",
+      "brandForeground": "#ffffff",
+      "info": "#1c69d4"
+    },
+    "fonts": {
+      "sans": "\"BMWTypeNextLatin\", Helvetica, Arial, sans-serif"
+    }
+  },
+  {
+    "id": "cal",
+    "name": "Cal.com",
+    "source": "cal",
+    "category": "devtool",
+    "native": "light",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#242424",
+      "brand": "#242424",
+      "secondaryText": "#898989",
+      "brandForeground": "#ffffff"
+    },
+    "fonts": {
+      "sans": "\"Cal Sans\", system-ui, sans-serif",
+      "mono": "\"Roboto Mono\", ui-monospace, SFMono-Regular, Menlo, monospace"
+    },
+    "radius": "0.75rem"
+  },
+  {
+    "id": "claude",
+    "name": "Claude",
+    "source": "claude",
+    "category": "ai",
+    "native": "light",
+    "colors": {
+      "background": "#f5f4ed",
+      "foreground": "#141413",
+      "brand": "#c96442",
+      "brandForeground": "#faf9f5",
+      "surface": "#faf9f5",
+      "secondaryText": "#5e5d59",
+      "border": "#e8e6dc",
+      "error": "#b53333",
+      "ring": "#d1cfc5"
+    },
+    "dark": {
+      "background": "#141413",
+      "foreground": "#faf9f5",
+      "brand": "#c96442",
+      "brandForeground": "#faf9f5",
+      "surface": "#30302e",
+      "secondaryText": "#87867f",
+      "border": "#30302e",
+      "error": "#b53333",
+      "ring": "#4d4c48"
+    },
+    "radius": "0.75rem",
+    "fonts": {
+      "sans": "\"Anthropic Sans\", Arial, sans-serif",
+      "mono": "\"Anthropic Mono\", ui-monospace, SFMono-Regular, Menlo, monospace",
+      "serif": "\"Anthropic Serif\", Georgia, \"Noto Serif\", serif"
+    }
+  },
+  {
+    "id": "clay",
+    "name": "Clay",
+    "source": "clay",
+    "category": "design",
+    "native": "light",
+    "colors": {
+      "background": "#faf9f7",
+      "foreground": "#000000",
+      "brand": "#078a52",
+      "secondaryText": "#9f9b93",
+      "border": "#dad4c8",
+      "brandForeground": "#ffffff",
+      "success": "#078a52",
+      "warning": "#fbbd41",
+      "info": "#3bd3fd"
+    },
+    "fonts": {
+      "sans": "Roobert, Arial, sans-serif",
+      "mono": "\"Space Mono\", ui-monospace, monospace"
+    }
+  },
+  {
+    "id": "clickhouse",
+    "name": "ClickHouse",
+    "source": "clickhouse",
+    "category": "infra",
+    "native": "dark",
+    "colors": {
+      "background": "#000000",
+      "foreground": "#ffffff",
+      "brand": "#faff69",
+      "secondaryText": "#a0a0a0",
+      "success": "#27a644"
+    },
+    "fonts": {
+      "sans": "Inter, Arial, Helvetica, sans-serif",
+      "mono": "Inconsolata, ui-monospace, monospace"
+    },
+    "dark": {
+      "background": "#000000",
+      "foreground": "#ffffff",
+      "secondaryText": "#a0a0a0"
+    },
+    "radius": "0.5rem"
+  },
+  {
+    "id": "cohere",
+    "name": "Cohere",
+    "source": "cohere",
+    "category": "ai",
+    "native": "light",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#000000",
+      "brand": "#1863dc",
+      "surface": "#fafafa",
+      "secondaryText": "#93939f",
+      "border": "#d9d9dd",
+      "brandForeground": "#ffffff",
+      "info": "#1863dc"
+    },
+    "fonts": {
+      "sans": "\"Unica77 Cohere Web\", Inter, Arial, system-ui, sans-serif",
+      "mono": "CohereMono, ui-monospace, SFMono-Regular, monospace",
+      "serif": "CohereText, \"Space Grotesk\", Inter, sans-serif"
+    },
+    "dark": {
+      "background": "#17171c",
+      "foreground": "#fafafa",
+      "surface": "#212121",
+      "secondaryText": "#d9d9dd",
+      "border": "#333333"
+    }
+  },
+  {
+    "id": "coinbase",
+    "name": "Coinbase",
+    "source": "coinbase",
+    "category": "fintech",
+    "native": "light",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#0a0b0d",
+      "brand": "#0052ff",
+      "surface": "#eef0f3",
+      "brandForeground": "#fff",
+      "info": "#0052ff"
+    },
+    "fonts": {
+      "sans": "CoinbaseSans, -apple-system, system-ui, sans-serif"
+    },
+    "radius": "1rem"
+  },
+  {
+    "id": "composio",
+    "name": "Composio",
+    "source": "composio",
+    "category": "devtool",
+    "native": "dark",
+    "colors": {
+      "background": "#0f0f0f",
+      "foreground": "#ffffff",
+      "brand": "#0007cd",
+      "info": "#0089ff"
+    },
+    "fonts": {
+      "sans": "abcDiatype, system-ui, sans-serif",
+      "mono": "\"JetBrains Mono\", ui-monospace, SFMono-Regular, Menlo, monospace"
+    },
+    "radius": "0.25rem"
+  },
+  {
+    "id": "cursor",
+    "name": "Cursor",
+    "source": "cursor",
+    "category": "devtool",
+    "native": "light",
+    "colors": {
+      "background": "#f2f1ed",
+      "foreground": "#26251e",
+      "brand": "#f54e00",
+      "surface": "#e6e5e0",
+      "error": "#cf2d56",
+      "brandForeground": "#26251e",
+      "success": "#1f8a65"
+    },
+    "fonts": {
+      "sans": "CursorGothic, system-ui, \"Helvetica Neue\", Helvetica, Arial, sans-serif",
+      "mono": "berkeleyMono, ui-monospace, SFMono-Regular, Menlo, monospace",
+      "serif": "jjannon, \"Iowan Old Style\", \"Palatino Linotype\", Georgia, serif"
+    },
+    "radius": "0.5rem"
+  },
+  {
+    "id": "elevenlabs",
+    "name": "ElevenLabs",
+    "source": "elevenlabs",
+    "category": "ai",
+    "native": "light",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#000000",
+      "brand": "#000000",
+      "surface": "#f5f5f5",
+      "secondaryText": "#4e4e4e",
+      "border": "#e5e5e5",
+      "brandForeground": "#ffffff"
+    },
+    "fonts": {
+      "sans": "Waldenburg, system-ui, sans-serif",
+      "mono": "\"Geist Mono\", ui-monospace, SFMono-Regular, monospace"
+    },
+    "radius": "1.25rem"
+  },
+  {
+    "id": "expo",
+    "name": "Expo",
+    "source": "expo",
+    "category": "devtool",
+    "native": "light",
+    "colors": {
+      "background": "#f0f0f3",
+      "foreground": "#1c2024",
+      "brand": "#000000",
+      "surface": "#ffffff",
+      "secondaryText": "#60646c",
+      "border": "#e0e1e6",
+      "error": "#eb8e90",
+      "brandForeground": "#ffffff",
+      "warning": "#ab6400"
+    },
+    "fonts": {
+      "sans": "Inter, system-ui, -apple-system, sans-serif",
+      "mono": "\"JetBrains Mono\", ui-monospace, SFMono-Regular, Menlo, monospace"
+    },
+    "radius": "0.5rem"
+  },
+  {
+    "id": "figma",
+    "name": "Figma",
+    "source": "figma",
+    "category": "design",
+    "native": "light",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#000000",
+      "brand": "#000000",
+      "brandForeground": "#ffffff"
+    },
+    "fonts": {
+      "sans": "figmaSans, system-ui, sans-serif",
+      "mono": "figmaMono, ui-monospace, monospace"
+    },
+    "dark": {
+      "background": "#000000",
+      "foreground": "#ffffff",
+      "surface": "#000000",
+      "secondaryText": "#ffffff"
+    },
+    "radius": "0.5rem"
+  },
+  {
+    "id": "framer",
+    "name": "Framer",
+    "source": "framer",
+    "category": "design",
+    "native": "dark",
+    "colors": {
+      "background": "#000000",
+      "foreground": "#ffffff",
+      "brand": "#0099ff",
+      "secondaryText": "#a6a6a6",
+      "brandForeground": "#000000",
+      "info": "#0099ff"
+    },
+    "fonts": {
+      "sans": "\"GT Walsheim Framer Medium\", system-ui, sans-serif",
+      "mono": "\"Azeret Mono\", ui-monospace, monospace"
+    }
+  },
+  {
+    "id": "hashicorp",
+    "name": "HashiCorp",
+    "source": "hashicorp",
+    "category": "infra",
+    "native": "light",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#000000",
+      "brand": "#000000",
+      "surface": "#f1f2f3",
+      "secondaryText": "#656a76",
+      "border": "#d5d7db",
+      "error": "#731e25",
+      "brandForeground": "#d5d7db",
+      "info": "#1060ff",
+      "warning": "#bb5a00"
+    },
+    "fonts": {
+      "sans": "\"HashiCorp Sans\", system-ui, sans-serif"
+    },
+    "dark": {
+      "background": "#0d0e12",
+      "foreground": "#efeff1",
+      "surface": "#15181e",
+      "secondaryText": "#d5d7db"
+    },
+    "radius": "0.5rem"
+  },
+  {
+    "id": "ibm",
+    "name": "IBM",
+    "source": "ibm",
+    "category": "enterprise",
+    "native": "light",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#161616",
+      "brand": "#0f62fe",
+      "surface": "#f4f4f4",
+      "secondaryText": "#525252",
+      "border": "#c6c6c6",
+      "brandForeground": "#ffffff",
+      "info": "#0f62fe",
+      "success": "#24a148",
+      "warning": "#f1c21b"
+    },
+    "fonts": {
+      "sans": "\"IBM Plex Sans\", system-ui, sans-serif",
+      "mono": "\"IBM Plex Mono\", ui-monospace, SFMono-Regular, monospace",
+      "serif": "\"IBM Plex Serif\", Georgia, serif"
+    }
+  },
+  {
+    "id": "intercom",
+    "name": "Intercom",
+    "source": "intercom",
+    "category": "enterprise",
+    "native": "light",
+    "colors": {
+      "background": "#faf9f6",
+      "foreground": "#111111",
+      "brand": "#ff5600",
+      "surface": "#ffffff",
+      "secondaryText": "#7b7b78",
+      "border": "#dedbd6",
+      "brandForeground": "#ffffff"
+    },
+    "fonts": {
+      "sans": "Saans, system-ui, sans-serif",
+      "mono": "SaansMono, ui-monospace, monospace",
+      "serif": "Serrif, Georgia, serif"
+    },
+    "radius": "0.5rem"
+  },
+  {
+    "id": "kraken",
+    "name": "Kraken",
+    "source": "kraken",
+    "category": "fintech",
+    "native": "light",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#101114",
+      "brand": "#7132f5",
+      "secondaryText": "#9497a9",
+      "border": "#dedee5",
+      "brandForeground": "#fff",
+      "success": "#149e61"
+    },
+    "fonts": {
+      "sans": "\"Kraken-Product\", system-ui, sans-serif"
+    },
+    "radius": "0.75rem"
+  },
+  {
+    "id": "linear",
+    "name": "Linear",
+    "source": "linear.app",
+    "category": "devtool",
+    "native": "dark",
+    "colors": {
+      "background": "#08090a",
+      "foreground": "#f7f8f8",
+      "brand": "#5e6ad2",
+      "surface": "#191a1b",
+      "secondaryText": "#8a8f98",
+      "border": "#23252a",
+      "brandForeground": "#ffffff",
+      "success": "#27a644"
+    },
+    "fonts": {
+      "sans": "\"Inter Variable\", Inter, \"SF Pro Display\", system-ui, sans-serif",
+      "mono": "\"Berkeley Mono\", ui-monospace, SFMono-Regular, Menlo, monospace"
+    },
+    "dark": {
+      "background": "#08090a",
+      "foreground": "#f7f8f8",
+      "surface": "#0f1011",
+      "secondaryText": "#d0d6e0"
+    },
+    "radius": "0.5rem"
+  },
+  {
+    "id": "lovable",
+    "name": "Lovable",
+    "source": "lovable",
+    "category": "devtool",
+    "native": "light",
+    "colors": {
+      "background": "#f7f4ed",
+      "foreground": "#1c1c1c",
+      "brand": "#1c1c1c",
+      "secondaryText": "#5f5f5d",
+      "border": "#eceae4",
+      "brandForeground": "#fcfbf8"
+    },
+    "fonts": {
+      "sans": "\"Camera Plain Variable\", system-ui, sans-serif"
+    },
+    "radius": "0.75rem"
+  },
+  {
+    "id": "minimax",
+    "name": "MiniMax",
+    "source": "minimax",
+    "category": "ai",
+    "native": "light",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#222222",
+      "brand": "#1456f0",
+      "secondaryText": "#45515e",
+      "border": "#e5e7eb",
+      "brandForeground": "#fff"
+    },
+    "fonts": {
+      "sans": "\"DM Sans\", system-ui, sans-serif"
+    },
+    "dark": {
+      "background": "#181e25",
+      "foreground": "#f0f2f5",
+      "surface": "#1f2731",
+      "secondaryText": "#a0a8b4"
+    },
+    "radius": "1.25rem"
+  },
+  {
+    "id": "mintlify",
+    "name": "Mintlify",
+    "source": "mintlify",
+    "category": "devtool",
+    "native": "light",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#0d0d0d",
+      "brand": "#18e299",
+      "surface": "#fafafa",
+      "secondaryText": "#666666",
+      "border": "#e5e5e5",
+      "error": "#d45656",
+      "info": "#3772cf",
+      "warning": "#c37d0d"
+    },
+    "fonts": {
+      "sans": "Inter, system-ui, sans-serif",
+      "mono": "\"Geist Mono\", ui-monospace, SFMono-Regular, monospace"
+    },
+    "radius": "1rem"
+  },
+  {
+    "id": "miro",
+    "name": "Miro",
+    "source": "miro",
+    "category": "design",
+    "native": "light",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#1c1c1e",
+      "brand": "#5b76fe",
+      "secondaryText": "#555a6a",
+      "border": "#c7cad5",
+      "brandForeground": "#fff",
+      "ring": "rgb(224,226,232)",
+      "success": "#00b473"
+    },
+    "fonts": {
+      "sans": "\"Roobert PRO Medium\", system-ui, sans-serif"
+    },
+    "radius": "0.75rem"
+  },
+  {
+    "id": "mistral",
+    "name": "Mistral AI",
+    "source": "mistral.ai",
+    "category": "ai",
+    "native": "light",
+    "colors": {
+      "background": "#fffaeb",
+      "foreground": "#1f1f1f",
+      "brand": "#fa520f",
+      "surface": "#fff0c2",
+      "brandForeground": "#ffffff"
+    },
+    "fonts": {
+      "sans": "Arial, Helvetica, sans-serif"
+    },
+    "dark": {
+      "background": "#1f1f1f",
+      "foreground": "#ffffff",
+      "surface": "#2a2a2a"
+    }
+  },
+  {
+    "id": "mongodb",
+    "name": "MongoDB",
+    "source": "mongodb",
+    "category": "infra",
+    "native": "dark",
+    "colors": {
+      "background": "#001e2b",
+      "foreground": "#ffffff",
+      "brand": "#00ed64",
+      "surface": "#1c2d38",
+      "secondaryText": "#5c6c75",
+      "border": "#3d4f58",
+      "info": "#006cfa"
+    },
+    "fonts": {
+      "sans": "\"Euclid Circular A\", system-ui, sans-serif",
+      "mono": "\"Source Code Pro\", ui-monospace, SFMono-Regular, monospace",
+      "serif": "\"MongoDB Value Serif\", Georgia, serif"
+    },
+    "radius": "1rem"
+  },
+  {
+    "id": "notion",
+    "name": "Notion",
+    "source": "notion",
+    "category": "design",
+    "native": "light",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#191919",
+      "brand": "#0075de",
+      "surface": "#f6f5f4",
+      "secondaryText": "#615d59",
+      "brandForeground": "#ffffff",
+      "info": "#0075de",
+      "success": "#2a9d99",
+      "warning": "#dd5b00"
+    },
+    "fonts": {
+      "sans": "\"NotionInter\", Inter, -apple-system, system-ui, sans-serif",
+      "serif": "\"Lyon-Text\", Georgia, \"Noto Serif\", serif"
+    },
+    "radius": "0.75rem"
+  },
+  {
+    "id": "nvidia",
+    "name": "NVIDIA",
+    "source": "nvidia",
+    "category": "enterprise",
+    "native": "dark",
+    "colors": {
+      "background": "#000000",
+      "foreground": "#ffffff",
+      "brand": "#76b900",
+      "surface": "#1a1a1a",
+      "secondaryText": "#a7a7a7",
+      "border": "#5e5e5e",
+      "brandForeground": "#fff",
+      "error": "#e52020",
+      "info": "#0046a4",
+      "success": "#3f8500",
+      "warning": "#ef9100"
+    },
+    "fonts": {
+      "sans": "\"NVIDIA-EMEA\", Arial, Helvetica, sans-serif"
+    }
+  },
+  {
+    "id": "ollama",
+    "name": "Ollama",
+    "source": "ollama",
+    "category": "ai",
+    "native": "light",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#000000",
+      "brand": "#000000",
+      "surface": "#fafafa",
+      "secondaryText": "#737373",
+      "border": "#e5e5e5",
+      "brandForeground": "#ffffff"
+    },
+    "fonts": {
+      "sans": "\"SF Pro Rounded\", system-ui, -apple-system, sans-serif",
+      "mono": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+    },
+    "dark": {
+      "background": "#090909",
+      "foreground": "#ffffff",
+      "surface": "#262626",
+      "secondaryText": "#a3a3a3",
+      "border": "#525252"
+    },
+    "radius": "0.75rem"
+  },
+  {
+    "id": "opencode-ai",
+    "name": "OpenCode",
+    "source": "opencode.ai",
+    "category": "devtool",
+    "native": "dark",
+    "colors": {
+      "background": "#201d1d",
+      "foreground": "#fdfcfc",
+      "brand": "#007aff",
+      "surface": "#302c2c",
+      "secondaryText": "#9a9898",
+      "error": "#ff3b30",
+      "brandForeground": "#ffffff",
+      "info": "#007aff",
+      "success": "#30d158",
+      "warning": "#ff9f0a"
+    },
+    "fonts": {
+      "mono": "\"Berkeley Mono\", \"IBM Plex Mono\", ui-monospace, SFMono-Regular, Menlo, monospace"
+    },
+    "radius": "0.25rem"
+  },
+  {
+    "id": "pinterest",
+    "name": "Pinterest",
+    "source": "pinterest",
+    "category": "design",
+    "native": "light",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#211922",
+      "brand": "#e60023",
+      "surface": "#e5e5e0",
+      "secondaryText": "#62625b",
+      "border": "#91918c",
+      "error": "#e60023",
+      "brandForeground": "#ffffff",
+      "success": "#428619"
+    },
+    "fonts": {
+      "sans": "\"Pin Sans\", -apple-system, system-ui, \"Segoe UI\", Roboto, sans-serif"
+    },
+    "radius": "1.25rem"
+  },
+  {
+    "id": "posthog",
+    "name": "PostHog",
+    "source": "posthog",
+    "category": "devtool",
+    "native": "light",
+    "colors": {
+      "background": "#fdfdf8",
+      "foreground": "#4d4f46",
+      "brand": "#f54e00",
+      "surface": "#eeefe9",
+      "secondaryText": "#65675e",
+      "border": "#bfc1b7",
+      "brandForeground": "#ffffff"
+    },
+    "fonts": {
+      "sans": "\"IBM Plex Sans Variable\", -apple-system, system-ui, sans-serif",
+      "mono": "\"Source Code Pro\", Menlo, Consolas, Monaco, monospace"
+    },
+    "radius": "0.375rem"
+  },
+  {
+    "id": "raycast",
+    "name": "Raycast",
+    "source": "raycast",
+    "category": "devtool",
+    "native": "dark",
+    "colors": {
+      "background": "#07080a",
+      "foreground": "#f9f9f9",
+      "brand": "#ff6363",
+      "surface": "#101111",
+      "secondaryText": "#9c9c9d",
+      "border": "#252829",
+      "error": "#ff6363",
+      "brandForeground": "#18191a",
+      "ring": "rgb(27, 28, 30)",
+      "info": "#55b3ff",
+      "success": "#5fc992",
+      "warning": "#ffbc33"
+    },
+    "fonts": {
+      "sans": "Inter, system-ui, sans-serif",
+      "mono": "\"Geist Mono\", ui-monospace, SFMono-Regular, Menlo, monospace"
+    },
+    "dark": {
+      "background": "#040506",
+      "foreground": "#f4f4f6",
+      "surface": "#151617",
+      "border": "#1e1f21",
+      "ring": "rgb(22, 23, 25)"
+    },
+    "radius": "1rem"
+  },
+  {
+    "id": "replicate",
+    "name": "Replicate",
+    "source": "replicate",
+    "category": "ai",
+    "native": "light",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#202020",
+      "brand": "#ea2804",
+      "secondaryText": "#646464",
+      "brandForeground": "#fcfcfc",
+      "success": "#2b9a66"
+    },
+    "fonts": {
+      "sans": "\"basier-square\", system-ui, sans-serif",
+      "mono": "\"jetbrains-mono\", ui-monospace, SFMono-Regular, Menlo, monospace"
+    },
+    "dark": {
+      "background": "#202020",
+      "foreground": "#fcfcfc",
+      "surface": "#2a2a2a",
+      "secondaryText": "#bbbbbb",
+      "border": "#4e4e4e"
+    }
+  },
+  {
+    "id": "resend",
+    "name": "Resend",
+    "source": "resend",
+    "category": "devtool",
+    "native": "dark",
+    "colors": {
+      "background": "#000000",
+      "foreground": "#f0f0f0",
+      "brand": "#ff801f",
+      "secondaryText": "#a1a4a5",
+      "brandForeground": "#000000",
+      "info": "#0075ff",
+      "success": "#19d600",
+      "warning": "#ffc53d"
+    },
+    "fonts": {
+      "sans": "Inter, system-ui, sans-serif",
+      "mono": "\"Commit Mono\", ui-monospace, SFMono-Regular, Menlo, monospace",
+      "serif": "Domaine, Georgia, serif"
+    },
+    "radius": "1rem"
+  },
+  {
+    "id": "revolut",
+    "name": "Revolut",
+    "source": "revolut",
+    "category": "fintech",
+    "native": "light",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#191c1f",
+      "brand": "#494fdf",
+      "surface": "#f4f4f4",
+      "secondaryText": "#505a63",
+      "border": "#c9c9cd",
+      "error": "#e23b4a",
+      "brandForeground": "#ffffff",
+      "info": "#007bc2",
+      "success": "#00a87e",
+      "warning": "#ec7e00"
+    },
+    "fonts": {
+      "sans": "\"Aeonik Pro\", Inter, Arial, sans-serif"
+    },
+    "radius": "1.25rem"
+  },
+  {
+    "id": "runwayml",
+    "name": "Runway",
+    "source": "runwayml",
+    "category": "ai",
+    "native": "dark",
+    "colors": {
+      "background": "#000000",
+      "foreground": "#ffffff",
+      "brand": "#ffffff",
+      "surface": "#1a1a1a",
+      "secondaryText": "#767d88",
+      "border": "#27272a"
+    },
+    "fonts": {
+      "sans": "abcNormal, system-ui, sans-serif"
+    },
+    "dark": {
+      "background": "#000000",
+      "foreground": "#ffffff",
+      "surface": "#1a1a1a",
+      "secondaryText": "#a7a7a7",
+      "border": "#27272a"
+    },
+    "radius": "0.5rem"
+  },
+  {
+    "id": "sanity",
+    "name": "Sanity",
+    "source": "sanity",
+    "category": "devtool",
+    "native": "dark",
+    "colors": {
+      "background": "#0b0b0b",
+      "foreground": "#ffffff",
+      "brand": "#f36458",
+      "surface": "#212121",
+      "secondaryText": "#b9b9b9",
+      "border": "#353535",
+      "brandForeground": "#ffffff",
+      "info": "#0052ef",
+      "success": "#37cd84"
+    },
+    "fonts": {
+      "sans": "waldenburgNormal, system-ui, sans-serif",
+      "mono": "\"IBM Plex Mono\", ui-monospace, monospace"
+    }
+  },
+  {
+    "id": "sentry",
+    "name": "Sentry",
+    "source": "sentry",
+    "category": "devtool",
+    "native": "dark",
+    "colors": {
+      "background": "#1f1633",
+      "foreground": "#ffffff",
+      "brand": "#6a5fc1",
+      "surface": "#362d59",
+      "border": "#362d59",
+      "brandForeground": "#fff"
+    },
+    "fonts": {
+      "sans": "Rubik, -apple-system, system-ui, \"Segoe UI\", Helvetica, Arial, sans-serif",
+      "mono": "Monaco, Menlo, \"Ubuntu Mono\", monospace"
+    },
+    "radius": "0.75rem"
+  },
+  {
+    "id": "spacex",
+    "name": "SpaceX",
+    "source": "spacex",
+    "category": "enterprise",
+    "native": "dark",
+    "colors": {
+      "background": "#000000",
+      "foreground": "#f0f0fa",
+      "brand": "#f0f0fa"
+    },
+    "fonts": {
+      "sans": "\"D-DIN\", Arial, Verdana, sans-serif"
+    },
+    "radius": "0.25rem"
+  },
+  {
+    "id": "spotify",
+    "name": "Spotify",
+    "source": "spotify",
+    "category": "enterprise",
+    "native": "dark",
+    "colors": {
+      "background": "#121212",
+      "foreground": "#ffffff",
+      "brand": "#1ed760",
+      "surface": "#181818",
+      "secondaryText": "#b3b3b3",
+      "border": "#4d4d4d",
+      "error": "#f3727f",
+      "brandForeground": "#000",
+      "info": "#539df5",
+      "warning": "#ffa42b"
+    },
+    "fonts": {
+      "sans": "SpotifyMixUI, \"Circular\", \"Helvetica Neue\", helvetica, arial, sans-serif"
+    },
+    "dark": {
+      "background": "#0a0a0a",
+      "foreground": "#ffffff",
+      "surface": "#111111",
+      "border": "#4d4d4d"
+    },
+    "radius": "0.5rem"
+  },
+  {
+    "id": "stripe",
+    "name": "Stripe",
+    "source": "stripe",
+    "category": "fintech",
+    "native": "light",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#061b31",
+      "brand": "#533afd",
+      "secondaryText": "#64748d",
+      "border": "#e5edf5",
+      "brandForeground": "#ffffff",
+      "success": "#15be53",
+      "warning": "#9b6829"
+    },
+    "fonts": {
+      "sans": "\"sohne-var\", \"SF Pro Display\", system-ui, sans-serif",
+      "mono": "\"Source Code Pro\", SFMono-Regular, Menlo, monospace"
+    },
+    "radius": "0.375rem"
+  },
+  {
+    "id": "supabase",
+    "name": "Supabase",
+    "source": "supabase",
+    "category": "infra",
+    "native": "dark",
+    "colors": {
+      "background": "#171717",
+      "foreground": "#fafafa",
+      "brand": "#3ecf8e",
+      "surface": "#0f0f0f",
+      "secondaryText": "#b4b4b4",
+      "border": "#2e2e2e"
+    },
+    "fonts": {
+      "sans": "Circular, \"Helvetica Neue\", Helvetica, Arial, sans-serif",
+      "mono": "\"Source Code Pro\", \"Office Code Pro\", Menlo, monospace"
+    },
+    "dark": {
+      "background": "#0f0f0f",
+      "foreground": "#fafafa",
+      "surface": "#141414",
+      "secondaryText": "#b4b4b4",
+      "border": "#2e2e2e"
+    },
+    "radius": "1rem"
+  },
+  {
+    "id": "superhuman",
+    "name": "Superhuman",
+    "source": "superhuman",
+    "category": "design",
+    "native": "light",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#292827",
+      "brand": "#cbb7fb",
+      "surface": "#e9e5dd",
+      "border": "#dcd7d3",
+      "brandForeground": "#292827"
+    },
+    "fonts": {
+      "sans": "\"Super Sans VF\", system-ui, -apple-system, \"Segoe UI\", Roboto, sans-serif"
+    },
+    "radius": "1rem"
+  },
+  {
+    "id": "together-ai",
+    "name": "Together AI",
+    "source": "together.ai",
+    "category": "ai",
+    "native": "light",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#000000",
+      "brand": "#ef2cc1",
+      "brandForeground": "#ffffff"
+    },
+    "fonts": {
+      "sans": "\"The Future\", Arial, sans-serif",
+      "mono": "\"PP Neue Montreal Mono\", ui-monospace, monospace"
+    },
+    "dark": {
+      "background": "#010120",
+      "foreground": "#ffffff",
+      "surface": "#010120"
+    },
+    "radius": "0.5rem"
+  },
+  {
+    "id": "uber",
+    "name": "Uber",
+    "source": "uber",
+    "category": "enterprise",
+    "native": "light",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#000000",
+      "brand": "#000000",
+      "surface": "#efefef",
+      "secondaryText": "#4b4b4b",
+      "brandForeground": "#ffffff"
+    },
+    "fonts": {
+      "sans": "UberMove, UberMoveText, system-ui, \"Helvetica Neue\", Helvetica, Arial, sans-serif"
+    },
+    "dark": {
+      "background": "#000000",
+      "foreground": "#ffffff",
+      "surface": "#111111",
+      "secondaryText": "#afafaf",
+      "border": "#2a2a2a"
+    },
+    "radius": "0.75rem"
+  },
+  {
+    "id": "vercel",
+    "name": "Vercel",
+    "source": "vercel",
+    "category": "infra",
+    "native": "light",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#171717",
+      "brand": "#171717",
+      "surface": "#fafafa",
+      "secondaryText": "#4d4d4d",
+      "border": "#ebebeb",
+      "brandForeground": "#fff",
+      "ring": "rgb(235,235,235)"
+    },
+    "fonts": {
+      "sans": "Geist, Arial, sans-serif",
+      "mono": "\"Geist Mono\", ui-monospace, SFMono-Regular, \"Roboto Mono\", Menlo, monospace"
+    },
+    "radius": "0.5rem"
+  },
+  {
+    "id": "voltagent",
+    "name": "VoltAgent",
+    "source": "voltagent",
+    "category": "ai",
+    "native": "dark",
+    "colors": {
+      "background": "#050507",
+      "foreground": "#f2f2f2",
+      "brand": "#00d992",
+      "surface": "#101010",
+      "secondaryText": "#b8b3b0",
+      "border": "#3d3a39",
+      "error": "#fb565b",
+      "info": "#4cb3d4",
+      "success": "#008b00",
+      "warning": "#ffba00"
+    },
+    "fonts": {
+      "sans": "system-ui, -apple-system, \"Segoe UI\", Roboto, Inter, sans-serif",
+      "mono": "SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+    },
+    "radius": "0.5rem"
+  },
+  {
+    "id": "warp",
+    "name": "Warp",
+    "source": "warp",
+    "category": "devtool",
+    "native": "dark",
+    "colors": {
+      "background": "#353534",
+      "foreground": "#faf9f6",
+      "brand": "#faf9f6",
+      "secondaryText": "#868584",
+      "brandForeground": "#afaeac"
+    },
+    "fonts": {
+      "sans": "\"Matter Regular\", Inter, system-ui, sans-serif",
+      "mono": "\"Geist Mono\", \"Matter Mono Regular\", ui-monospace, monospace"
+    },
+    "dark": {
+      "background": "#080807",
+      "surface": "#111110"
+    },
+    "radius": "0.875rem"
+  },
+  {
+    "id": "webflow",
+    "name": "Webflow",
+    "source": "webflow",
+    "category": "design",
+    "native": "light",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#080808",
+      "brand": "#146ef5",
+      "secondaryText": "#5a5a5a",
+      "border": "#d8d8d8",
+      "error": "#ee1d36",
+      "brandForeground": "#fff",
+      "success": "#00d722",
+      "warning": "#ffae13"
+    },
+    "fonts": {
+      "sans": "\"WF Visual Sans Variable\", Arial, sans-serif"
+    },
+    "radius": "0.5rem"
+  },
+  {
+    "id": "wise",
+    "name": "Wise",
+    "source": "wise",
+    "category": "fintech",
+    "native": "light",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#0e0f0c",
+      "brand": "#9fe870",
+      "surface": "#e8ebe6",
+      "secondaryText": "#868685",
+      "error": "#d03238",
+      "brandForeground": "#163300",
+      "success": "#054d28",
+      "warning": "#ffd11a"
+    },
+    "fonts": {
+      "sans": "\"Wise Sans\", Inter, Helvetica, Arial, sans-serif"
+    }
+  },
+  {
+    "id": "x-ai",
+    "name": "xAI",
+    "source": "x.ai",
+    "category": "ai",
+    "native": "dark",
+    "colors": {
+      "background": "#1f2228",
+      "foreground": "#ffffff",
+      "brand": "#ffffff"
+    },
+    "fonts": {
+      "sans": "universalSans, system-ui, sans-serif",
+      "mono": "\"Geist Mono\", ui-monospace, SFMono-Regular, Menlo, monospace"
+    },
+    "dark": {
+      "background": "#1f2228",
+      "foreground": "#ffffff"
+    }
+  },
+  {
+    "id": "zapier",
+    "name": "Zapier",
+    "source": "zapier",
+    "category": "enterprise",
+    "native": "light",
+    "colors": {
+      "background": "#fffefb",
+      "foreground": "#201515",
+      "brand": "#ff4f00",
+      "surface": "#eceae3",
+      "secondaryText": "#939084",
+      "border": "#c5c0b1",
+      "brandForeground": "#fffefb"
+    },
+    "fonts": {
+      "sans": "Inter, Helvetica, Arial, sans-serif",
+      "serif": "\"GT Alpina\", Georgia, serif"
+    },
+    "radius": "0.313rem"
+  }
+]

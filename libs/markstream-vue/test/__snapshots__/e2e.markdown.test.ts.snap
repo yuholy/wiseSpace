@@ -1,0 +1,316 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`e2e markdown parsing (fixtures) > parses fixture admonition.md > admonition.md 1`] = `
+[
+  {
+    "children": [
+      "paragraph",
+    ],
+    "firstText": "This is a warning admonition with ",
+    "type": "admonition",
+  },
+]
+`;
+
+exports[`e2e markdown parsing (fixtures) > parses fixture checkbox.md > checkbox.md 1`] = `
+[
+  {
+    "firstText": undefined,
+    "items": 2,
+    "ordered": false,
+    "type": "list",
+  },
+  {
+    "children": [
+      "text",
+    ],
+    "firstText": "Regular list item",
+    "type": "paragraph",
+  },
+]
+`;
+
+exports[`e2e markdown parsing (fixtures) > parses fixture code-diff.md > code-diff.md 1`] = `
+[
+  {
+    "diff": true,
+    "firstText": undefined,
+    "language": "",
+    "preview": "@@
+ new line
+",
+    "type": "code_block",
+  },
+  {
+    "diff": false,
+    "firstText": undefined,
+    "language": "js",
+    "preview": "console.log('hello world')
+",
+    "type": "code_block",
+  },
+]
+`;
+
+exports[`e2e markdown parsing (fixtures) > parses fixture escaped-brackets.md > escaped-brackets.md 1`] = `
+[
+  {
+    "children": [
+      "text",
+    ],
+    "firstText": "A line with an escaped bracket: [not a link]",
+    "type": "paragraph",
+  },
+  {
+    "children": [
+      "text",
+    ],
+    "firstText": "And a literal backslash  and more text.",
+    "type": "paragraph",
+  },
+]
+`;
+
+exports[`e2e markdown parsing (fixtures) > parses fixture fence-with-meta.md > fence-with-meta.md 1`] = `
+[
+  {
+    "diff": true,
+    "firstText": undefined,
+    "language": "js",
+    "preview": "@@
+  new
+",
+    "type": "code_block",
+  },
+  {
+    "diff": false,
+    "firstText": undefined,
+    "language": "python",
+    "preview": "# regular code block
+print('ok')
+",
+    "type": "code_block",
+  },
+]
+`;
+
+exports[`e2e markdown parsing (fixtures) > parses fixture footnotes.md > footnotes.md 1`] = `
+[
+  {
+    "children": [
+      "text",
+      "footnote_reference",
+      "text",
+    ],
+    "firstText": "This is a sentence with a footnote",
+    "type": "paragraph",
+  },
+  {
+    "firstText": "This is the footnote text.",
+    "items": 0,
+    "type": "footnote",
+  },
+]
+`;
+
+exports[`e2e markdown parsing (fixtures) > parses fixture headings.md > headings.md 1`] = `
+[
+  {
+    "children": [
+      "text",
+    ],
+    "firstText": "Heading 1",
+    "level": 1,
+    "type": "heading",
+  },
+  {
+    "children": [
+      "text",
+    ],
+    "firstText": "A short paragraph under heading 1.",
+    "type": "paragraph",
+  },
+  {
+    "children": [
+      "text",
+    ],
+    "firstText": "Heading 2",
+    "level": 2,
+    "type": "heading",
+  },
+  {
+    "children": [
+      "text",
+      "strong",
+      "text",
+      "emphasis",
+      "text",
+    ],
+    "firstText": "Another paragraph with ",
+    "type": "paragraph",
+  },
+]
+`;
+
+exports[`e2e markdown parsing (fixtures) > parses fixture image-link.md > image-link.md 1`] = `
+[
+  {
+    "children": [
+      "text",
+      "image",
+    ],
+    "firstText": "Here is an image: ",
+    "type": "paragraph",
+  },
+  {
+    "children": [
+      "text",
+      "link",
+    ],
+    "firstText": "And a link: ",
+    "type": "paragraph",
+  },
+]
+`;
+
+exports[`e2e markdown parsing (fixtures) > parses fixture math.md > math.md 1`] = `
+[
+  {
+    "children": [
+      "text",
+    ],
+    "firstText": "Inline math (\\alpha + \\beta) and another form (x_i).",
+    "type": "paragraph",
+  },
+  {
+    "children": undefined,
+    "firstText": undefined,
+    "type": "math_block",
+  },
+  {
+    "children": [
+      "text",
+    ],
+    "firstText": "A line with parentheses that should not break: (not-math)",
+    "type": "paragraph",
+  },
+]
+`;
+
+exports[`e2e markdown parsing (fixtures) > parses fixture mermaid.md > mermaid.md 1`] = `
+[
+  {
+    "diff": false,
+    "firstText": undefined,
+    "language": "mermaid",
+    "preview": "graph TD
+  A-->B
+  B-->C
+",
+    "type": "code_block",
+  },
+]
+`;
+
+exports[`e2e markdown parsing (fixtures) > parses fixture nested-lists-edge.md > nested-lists-edge.md 1`] = `
+[
+  {
+    "firstText": undefined,
+    "items": 2,
+    "ordered": true,
+    "type": "list",
+  },
+  {
+    "firstText": undefined,
+    "items": 1,
+    "ordered": false,
+    "type": "list",
+  },
+]
+`;
+
+exports[`e2e markdown parsing (fixtures) > parses fixture table.md > table.md 1`] = `
+[
+  {
+    "firstText": undefined,
+    "rows": 2,
+    "type": "table",
+  },
+  {
+    "children": [
+      "text",
+    ],
+    "firstText": "A paragraph after the table.",
+    "type": "paragraph",
+  },
+]
+`;
+
+exports[`e2e markdown parsing (fixtures) > parses fixture trailing-backticks.md > trailing-backticks.md 1`] = `
+[
+  {
+    "diff": false,
+    "firstText": undefined,
+    "language": "js",
+    "preview": "const a = 1
+",
+    "type": "code_block",
+  },
+  {
+    "children": [
+      "text",
+    ],
+    "firstText": "\`\`",
+    "type": "paragraph",
+  },
+  {
+    "children": [
+      "text",
+    ],
+    "firstText": "Some text after an extra backtick line.",
+    "type": "paragraph",
+  },
+]
+`;
+
+exports[`e2e markdown parsing (fixtures) > parses fixture unclosed-fence.md > unclosed-fence.md 1`] = `
+[
+  {
+    "diff": false,
+    "firstText": undefined,
+    "language": "js",
+    "preview": "console.log('unclosed fence')
+
+# Following heading that might be part of the fence
+",
+    "type": "code_block",
+  },
+]
+`;
+
+exports[`e2e markdown parsing (fixtures) > parses fixture unmatched-brackets.md > unmatched-brackets.md 1`] = `
+[
+  {
+    "children": [
+      "text",
+    ],
+    "firstText": "This line has an opening bracket [ without a closing.",
+    "type": "paragraph",
+  },
+  {
+    "children": [
+      "text",
+      "link",
+    ],
+    "firstText": "Another line with a link-like ",
+    "type": "paragraph",
+  },
+  {
+    "children": [
+      "text",
+    ],
+    "firstText": "And a normal line.",
+    "type": "paragraph",
+  },
+]
+`;

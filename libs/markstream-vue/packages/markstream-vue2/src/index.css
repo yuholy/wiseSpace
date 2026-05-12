@@ -1,0 +1,46 @@
+/*
+ * Keep button defaults minimal, but don't override Tailwind utilities.
+ * Use :where() to keep specificity low so `.markstream-vue2 .<utility>` wins.
+ */
+:where(.markstream-vue2) button {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  color: inherit;
+}
+
+@tailwind components;
+@tailwind utilities;
+
+/* Theme variables for renderer colors */
+.markstream-vue2 {
+  --border: 214.3 31.8% 91.4%;
+  --background: 0 0% 100%;
+  --foreground: 222.2 84% 4.9%;
+  --secondary: 210 40% 96%;
+  --muted: 210 40% 96%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+}
+
+.dark .markstream-vue2,
+.markstream-vue2.dark {
+  --border: 217.2 32.6% 17.5%;
+  --background: 222.2 84% 4.9%;
+  --foreground: 210 40% 98%;
+  --secondary: 217.2 32.6% 17.5%;
+  --muted: 217.2 32.6% 17.5%;
+  --muted-foreground: 215 20.2% 65.1%;
+}
+
+/* Prevent mermaid temporary render containers from causing layout shift */
+body > div[id^="dmermaid-"] {
+  position: fixed;
+  top: -10000px;
+  left: 0;
+  width: 100%;
+  visibility: hidden;
+  pointer-events: none;
+}

@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "jsx": "preserve",
+    "lib": ["ESNext", "DOM"],
+    "useDefineForClassFields": true,
+    "baseUrl": ".",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "paths": {
+      "stream-monaco": ["../../src"]
+    },
+    "types": ["vite/client"],
+    "strict": true
+  },
+
+  "include": ["src/**/*", "vite.config.ts"]
+}

@@ -1,0 +1,12 @@
+dist
+dist-tw
+node_modules
+.nuxt
+.output
+.eslintcache
+.history
+.DS_Store
+.tmp
+.next
+# vite press
+cache

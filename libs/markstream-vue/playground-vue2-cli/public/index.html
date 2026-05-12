@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <link rel="icon" href="<%= BASE_URL %>favicon.svg" type="image/svg+xml" />
+    <meta
+      name="description"
+      content="markstream-vue2 Vue CLI playground for Vue 2.6 and Webpack 4 compatibility testing."
+    />
+    <title>markstream-vue2 Playground | Vue CLI 4 / Webpack 4</title>
+  </head>
+  <body>
+    <noscript>
+      <strong>This app requires JavaScript to run.</strong>
+    </noscript>
+    <div id="app"></div>
+    <!-- Load Mermaid as a global for Webpack 4 compatibility (avoid `exports`-only ESM entry). -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  </body>
+</html>

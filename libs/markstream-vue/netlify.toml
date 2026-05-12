@@ -1,0 +1,14 @@
+[build]
+# Default Netlify build: build the markdown docs
+command = "pnpm install --frozen-lockfile && pnpm run build:parser && pnpm run build && pnpm docs:build"
+publish = "docs/.vitepress/dist"
+
+[build.environment]
+NODE_VERSION = "22"
+# The VitePress base should usually be '/' for Netlify; set this if you deploy under a subpath
+VITEPRESS_BASE = "/"
+
+# Deploy the playground in preview builds (optional) so authors can preview the demo app
+[context.deploy-preview]
+command = "pnpm run play:build"
+publish = "playground/dist"

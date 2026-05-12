@@ -1,0 +1,144 @@
+{
+  "name": "markstream-react",
+  "type": "module",
+  "version": "0.0.45",
+  "description": "React Markdown renderer optimized for large documents with progressive Mermaid rendering, streaming diff code blocks, and fast real-time preview. Built on stream-markdown AST for consistent rendering across frameworks. Perfect for documentation sites, AI chat interfaces, and content management systems.",
+  "author": "Simon He",
+  "license": "MIT",
+  "homepage": "https://github.com/Simon-He95/markstream-vue#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Simon-He95/markstream-vue.git",
+    "directory": "packages/markstream-react"
+  },
+  "bugs": {
+    "url": "https://github.com/Simon-He95/markstream-vue/issues"
+  },
+  "keywords": [
+    "react",
+    "reactjs",
+    "markdown",
+    "markdown-to-html",
+    "markdown-renderer",
+    "react-markdown",
+    "react-markdown-renderer",
+    "react-markdown-component",
+    "markdown-preview",
+    "markdown-viewer",
+    "react-component",
+    "nextjs",
+    "next.js",
+    "remix",
+    "vite",
+    "webpack",
+    "sse",
+    "ai-chat",
+    "streaming-markdown",
+    "html",
+    "renderer",
+    "custom-component",
+    "mermaid",
+    "progressive-mermaid",
+    "streaming-diff",
+    "diff-codeblock",
+    "large-documents",
+    "performance",
+    "real-time-preview",
+    "markstream-react",
+    "markstream",
+    "documentation",
+    "docs",
+    "content-management",
+    "cms",
+    "markdown-parser",
+    "md-to-html",
+    "react-markdown-component"
+  ],
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./next": {
+      "types": "./dist/next.d.ts",
+      "import": "./dist/next.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./index.css": "./dist/index.css",
+    "./index.px.css": "./dist/index.px.css",
+    "./index.tailwind.css": "./dist/index.tailwind.css",
+    "./tailwind": "./dist/tailwind.ts",
+    "./workers/katexRenderer.worker": "./dist/workers/katexRenderer.worker.js",
+    "./workers/mermaidParser.worker": "./dist/workers/mermaidParser.worker.js"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build --mode npm && vite build -c vite.config.tailwind.ts --mode npm && node ./scripts/copy-tailwind-css.mjs && node ../../scripts/generate-px-css.mjs && pnpm run build:dts && node ./scripts/ensure-next-client-directive.mjs",
+    "build:analyze": "ANALYZE=true pnpm build",
+    "build:dts": "rollup -c ./scripts/rollup.dts.config.mjs && node ./scripts/clean-dts.cjs",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "size:check": "node ../../scripts/check-package-size.mjs",
+    "release": "bumpp --commit --no-tag --no-push && pnpm publish --access public && node ../../scripts/tag-package.mjs --package-json package.json --push"
+  },
+  "peerDependencies": {
+    "@antv/infographic": "^0.2.3",
+    "@terrastruct/d2": ">=0.1.33",
+    "katex": ">=0.16.22",
+    "mermaid": ">=11",
+    "react": ">=18",
+    "react-dom": ">=18",
+    "stream-markdown": ">=0.0.15",
+    "stream-monaco": ">=0.0.40"
+  },
+  "peerDependenciesMeta": {
+    "@antv/infographic": {
+      "optional": true
+    },
+    "@terrastruct/d2": {
+      "optional": true
+    },
+    "katex": {
+      "optional": true
+    },
+    "mermaid": {
+      "optional": true
+    },
+    "stream-markdown": {
+      "optional": true
+    },
+    "stream-monaco": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@floating-ui/dom": "^1.7.6",
+    "clsx": "^2.1.1",
+    "stream-markdown-parser": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.28",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react-swc": "^3.11.0",
+    "autoprefixer": "^10.4.27",
+    "rollup": "^3.30.0",
+    "rollup-plugin-dts": "^5.3.1",
+    "rollup-plugin-visualizer": "^6.0.11",
+    "tailwindcss": "^3.4.19",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vite-plugin-dts": "^4.5.4"
+  }
+}

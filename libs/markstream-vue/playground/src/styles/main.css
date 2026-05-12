@@ -1,0 +1,32 @@
+@import '../../../themes/index.css';
+
+@tailwind components;
+@tailwind utilities;
+
+
+@layer components {
+  @import 'markstream-vue/index.css';
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* Provide defaults for Tailwind gradient position variables so var() calls resolve */
+:root {
+  --tw-gradient-from-position: 0%;
+  --tw-gradient-to-position: 100%;
+}
+
+html.dark {
+  background: #121212;
+  color: #e0e0e0;
+}
+html{
+  color: #334155;
+}
+

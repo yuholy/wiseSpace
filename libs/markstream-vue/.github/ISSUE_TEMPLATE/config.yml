@@ -1,0 +1,20 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📚 Documentation
+    url: https://markstream-vue-docs.simonhe.me/guide/
+    about: Full docs, troubleshooting, and API usage.
+  - name: 🧪 Test page (shareable repro)
+    url: https://markstream-vue.simonhe.me/test
+    about: Reproduce rendering issues and generate a shareable link for your issue.
+  - name: 🕹️ Playground
+    url: https://markstream-vue.simonhe.me/
+    about: Try the renderer live with sample content.
+  - name: 📖 Support guide
+    url: https://github.com/Simon-He95/markstream-vue/blob/main/SUPPORT.md
+    about: Where to get help, ask questions, or report issues (docs, test page, discussions, discord).
+  - name: 🛡️ Security policy
+    url: https://github.com/Simon-He95/markstream-vue/blob/main/SECURITY.md
+    about: Report potential vulnerabilities privately via email.
+  - name: 💬 Discussions
+    url: https://github.com/Simon-He95/markstream-vue/discussions
+    about: Ask questions, share ideas, or discuss integrations.

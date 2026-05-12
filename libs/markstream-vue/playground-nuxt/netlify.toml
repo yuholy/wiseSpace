@@ -1,0 +1,7 @@
+[build]
+publish = ".output/public"
+command = "cd .. && npx pnpm i && pnpm --filter stream-markdown-parser build && pnpm run build && cd playground-nuxt && npm run build"
+
+[build.environment]
+NPM_FLAGS = "--version"
+NODE_VERSION = "22"

@@ -1,0 +1,91 @@
+@import 'katex/dist/katex.min.css';
+@import 'markstream-react/index.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  background: #f4f1e8;
+  color: #201a17;
+}
+
+body {
+  margin: 0;
+  font-family: Georgia, 'Times New Roman', serif;
+}
+
+a {
+  color: inherit;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.home-shell,
+.ssr-lab-shell {
+  width: min(1200px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 32px 0 64px;
+}
+
+.ssr-hero {
+  margin-bottom: 24px;
+}
+
+.ssr-eyebrow {
+  margin: 0 0 8px;
+  font: 600 12px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.ssr-grid {
+  display: grid;
+  gap: 20px;
+}
+
+[data-ssr-case] {
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(32, 26, 23, 0.14);
+  border-radius: 18px;
+  padding: 18px;
+  overflow: hidden;
+}
+
+.ssr-card {
+  border: 1px solid rgba(32, 26, 23, 0.12);
+  border-radius: 14px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.72);
+  overflow: hidden;
+}
+
+.ssr-card + .ssr-card {
+  margin-top: 14px;
+}
+
+.ssr-matrix {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.ssr-matrix-renderer {
+  position: relative;
+}
+
+.ssr-divider {
+  height: 1px;
+  margin: 16px 0;
+  background: rgba(32, 26, 23, 0.12);
+}
+
+@media (max-width: 720px) {
+  .home-shell,
+  .ssr-lab-shell {
+    width: min(100vw - 20px, 1200px);
+    padding-top: 20px;
+  }
+}

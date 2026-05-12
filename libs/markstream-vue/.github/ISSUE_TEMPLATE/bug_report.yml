@@ -1,0 +1,76 @@
+name: 🐞 Bug report
+description: Report an issue with markstream-vue (renderer or parser)
+labels: [pending triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+        - Please attach a shareable repro link from the test page when possible: https://markstream-vue.simonhe.me/test
+        - Or provide a minimal StackBlitz/GitHub repo with the failing case.
+        - Raw Markdown samples help us reproduce quickly.
+  - type: textarea
+    id: bug-description
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what the bug is. If you intend to submit a PR for this issue, tell us in the description. Thanks!
+      placeholder: I am doing ... What I expect is ... What actually happening is ...
+    validations:
+      required: true
+  - type: input
+    id: reproduction
+    attributes:
+      label: Reproduction link
+      description: Shareable link from the test page (preferred) or a minimal StackBlitz/repo. Reports without a repro may be closed after 3 days.
+      placeholder: https://markstream-vue.simonhe.me/test#...
+    validations:
+      required: true
+  - type: textarea
+    id: markdown
+    attributes:
+      label: Markdown / content sample
+      description: Provide the exact Markdown (or nodes JSON) that triggers the issue.
+      placeholder: |
+        ## Example
+        - [ ] task
+        ```js
+        console.log('hello')
+        ```
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: dropdown
+    id: package-manager
+    attributes:
+      label: Used Package Manager
+      description: Select the used package manager
+      options:
+        - npm
+        - yarn
+        - pnpm
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: markstream-vue version, Vue version, and browser/runtime (if applicable).
+      placeholder: markstream-vue 0.0.x, Vue 3.x, Chrome 131 / SSR
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Optional if provided reproduction. Please avoid screenshots; copy/paste text instead.
+
+        - If using the playground/nuxt playground, run with `pnpm dev` / `pnpm play:nuxt` and capture console output.
+        - For build issues, run `pnpm build` with `DEBUG=*` and include the stack trace.

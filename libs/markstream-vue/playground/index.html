@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>markstream-vue Playground | Streaming Markdown, Mermaid, and large-document demos</title>
+    <meta name="description" content="Explore markstream-vue with live playground demos for streaming Markdown, Mermaid, KaTeX, CDN peers, and large-document rendering." />
+    <meta name="keywords" content="markstream-vue,vue markdown,streaming markdown,mermaid,markdown playground,ai chat ui,large documents" />
+    <meta name="robots" content="index,follow" />
+    <meta name="theme-color" content="#111827" />
+    <link rel="canonical" href="https://markstream-vue.simonhe.me/" />
+    <meta property="og:site_name" content="markstream-vue Playground" />
+    <meta property="og:title" content="markstream-vue Playground | Streaming Markdown, Mermaid, and large-document demos" />
+    <meta property="og:description" content="Explore markstream-vue with live playground demos for streaming Markdown, Mermaid, KaTeX, CDN peers, and large-document rendering." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://markstream-vue.simonhe.me/" />
+    <meta property="og:image" content="https://markstream-vue.simonhe.me/og-image.svg" />
+    <meta property="og:image:alt" content="markstream-vue playground with streaming markdown and diagram demos" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="markstream-vue Playground | Streaming Markdown, Mermaid, and large-document demos" />
+    <meta name="twitter:description" content="Explore markstream-vue with live playground demos for streaming Markdown, Mermaid, KaTeX, CDN peers, and large-document rendering." />
+    <meta name="twitter:image" content="https://markstream-vue.simonhe.me/og-image.svg" />
+  </head>
+  <body class="font-sans">
+    <div id="app"></div>
+    <script>
+      ;(function () {
+        const prefersDark =
+          window.matchMedia &&
+          window.matchMedia('(prefers-color-scheme: dark)').matches
+        const setting = localStorage.getItem('color-schema') || 'auto'
+        if (setting === 'dark' || (prefersDark && setting !== 'light'))
+          document.documentElement.classList.toggle('dark', true)
+      })()
+    </script>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

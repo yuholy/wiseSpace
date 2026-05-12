@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://markstream-vue-docs.simonhe.me/sitemap.xml

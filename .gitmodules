@@ -1,0 +1,8 @@
+[submodule "libs/markstream-vue"]
+	path = libs/markstream-vue
+	url = git@github.com:wiseSpace-Desktop/markstream-vue.git
+	branch = main
+[submodule "libs/stream-monaco"]
+	path = libs/stream-monaco
+	url = git@github.com:wiseSpace-Desktop/stream-monaco.git
+	branch = main

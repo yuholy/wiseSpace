@@ -1,0 +1,30 @@
+{
+  "name": "playground-angular",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite dev --host 127.0.0.1 --port 4175",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4175"
+  },
+  "dependencies": {
+    "@angular/common": "^20.3.18",
+    "@angular/compiler": "^20.3.18",
+    "@angular/core": "^20.3.18",
+    "@angular/platform-browser": "^20.3.18",
+    "@antv/infographic": "^0.2.16",
+    "@terrastruct/d2": "^0.1.33",
+    "katex": "^0.16.44",
+    "markstream-angular": "workspace:*",
+    "mermaid": "^11.13.0",
+    "monaco-editor": "^0.52.2",
+    "rxjs": "^7.8.2",
+    "stream-monaco": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.130",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vite-plugin-monaco-editor-esm": "^2.0.2"
+  }
+}
