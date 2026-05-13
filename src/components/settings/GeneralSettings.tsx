@@ -11,6 +11,7 @@ export function GeneralSettings() {
   const inTauri = isTauri();
   const settings = useSettingsStore((s) => s.settings);
   const saveSettings = useSettingsStore((s) => s.saveSettings);
+  const currentLanguage = LANG_OPTIONS.some((opt) => opt.key === i18n.language) ? i18n.language : 'zh-CN';
 
   const handleLanguageChange = (language: string) => {
     i18n.changeLanguage(language);
@@ -26,7 +27,7 @@ export function GeneralSettings() {
         <div style={rowStyle} className="flex items-center justify-between">
           <span>{t('settings.language')}</span>
           <SettingsSelect
-            value={i18n.language}
+            value={currentLanguage}
             onChange={handleLanguageChange}
             options={LANG_OPTIONS.map((opt) => ({
               label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>{opt.icon} {opt.label}</span>,

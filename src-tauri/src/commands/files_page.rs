@@ -317,7 +317,16 @@ pub async fn list_files_page_entries(
             }
         }
         "backups" => {
-            let manifests = wisespace_core::repo::backup::list_backups(&state.sea_db)
+            let settings = wisespace_core::repo::settings::get_settings(&state.sea_db)
+                .await
+                .map_err(|e| e.to_string())?;
+            let decoded_backup_dir = wisespace_core::path_vars::decode_path_opt(&settings.backup_dir);
+            let backup_dir =
+                wisespace_core::repo::backup::resolve_backup_dir(decoded_backup_dir.as_deref(), &state.app_data_dir);
+            let manifests = wisespace_core::repo::backup::list_backups_with_disk_sync(
+                &state.sea_db,
+                &backup_dir,
+            )
                 .await
                 .map_err(|e| e.to_string())?;
             build_backup_entries(&manifests)

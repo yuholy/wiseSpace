@@ -11,6 +11,7 @@ import {
   Input,
   List,
   Modal,
+  Popconfirm,
   Select,
   Space,
   Spin,
@@ -27,6 +28,7 @@ import {
   RefreshCcw,
   RotateCcw,
   Square,
+  Trash2,
   X,
 } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -151,18 +153,25 @@ function TaskListSection({
   items,
   selectedRunId,
   onSelect,
+  token,
 }: {
   title: string;
   items: TaskCenterItem[];
   selectedRunId: string | null;
   onSelect: (runId: string) => void;
+  token: ReturnType<typeof theme.useToken>['token'];
 }) {
   if (items.length === 0) return null;
   return (
-    <div style={{ marginBottom: 12 }}>
-      <Typography.Text type="secondary" style={{ fontSize: 12, padding: '0 4px' }}>
-        {title}
-      </Typography.Text>
+    <div style={{ marginBottom: 18 }}>
+      <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 8, padding: '0 2px' }}>
+        <Typography.Text type="secondary" style={{ fontSize: 12, fontWeight: 600 }}>
+          {title}
+        </Typography.Text>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {items.length}
+        </Typography.Text>
+      </Space>
       <List
         size="small"
         dataSource={items}
@@ -173,19 +182,24 @@ function TaskListSection({
               onClick={() => onSelect(item.runId)}
               style={{
                 cursor: 'pointer',
-                borderRadius: 8,
-                padding: '8px 10px',
-                background: active ? 'var(--color-fill-alter)' : 'transparent',
+                borderRadius: 10,
+                padding: '11px 12px',
+                marginBottom: 6,
+                background: active ? token.colorFillSecondary : 'transparent',
+                border: `1px solid ${active ? token.colorPrimaryBorder : 'transparent'}`,
+                borderLeft: `3px solid ${active ? token.colorPrimary : 'transparent'}`,
                 borderBlockEnd: 0,
+                boxShadow: 'none',
+                transition: 'all 0.18s ease',
               }}
             >
               <List.Item.Meta
                 title={(
                   <Space size={6} style={{ width: '100%', justifyContent: 'space-between' }}>
-                    <Typography.Text ellipsis style={{ maxWidth: 190 }}>
+                    <Typography.Text ellipsis style={{ maxWidth: 164, fontWeight: 600 }}>
                       {item.conversationTitle || item.promptPreview}
                     </Typography.Text>
-                    <Tag color={statusColor(item.status)} style={{ marginInlineEnd: 0 }}>
+                    <Tag color={statusColor(item.status)} style={{ marginInlineEnd: 0, flexShrink: 0 }}>
                       {item.status}
                     </Tag>
                   </Space>
@@ -222,6 +236,7 @@ export function TasksPage() {
     selectRun,
     createTask,
     cancelTask,
+    deleteTask,
     resumeTask,
     rerunTask,
   } = useTaskCenterStore();
@@ -305,21 +320,28 @@ export function TasksPage() {
   }, [detail]);
 
   const handleCreate = async () => {
-    const values = await form.validateFields();
-    const { providerId, modelId } = parseProviderModel(values.providerModel);
-    const result = await createTask({
-      prompt: values.prompt,
-      providerId,
-      modelId,
-      workspaceRoot: values.workspaceRoot || undefined,
-      permissionMode: values.permissionMode || 'default',
-    });
-    await fetchConversations();
-    setCreateOpen(false);
-    form.resetFields();
-    message.success('任务已创建');
-    if (result.run) {
-      void selectRun(result.run.id);
+    try {
+      const values = await form.validateFields();
+      const { providerId, modelId } = parseProviderModel(values.providerModel);
+      const result = await createTask({
+        prompt: values.prompt,
+        providerId,
+        modelId,
+        workspaceRoot: values.workspaceRoot || undefined,
+        permissionMode: values.permissionMode || 'default',
+      });
+      await fetchConversations();
+      setCreateOpen(false);
+      form.resetFields();
+      message.success('任务已创建');
+      if (result.run) {
+        void selectRun(result.run.id);
+      }
+    } catch (error) {
+      const text = error instanceof Error ? error.message : String(error);
+      if (text && text !== 'Error') {
+        message.error(text);
+      }
     }
   };
 
@@ -339,16 +361,35 @@ export function TasksPage() {
   };
 
   return (
-    <div className="h-full flex overflow-hidden" style={{ background: token.colorBgContainer }}>
+    <div
+      className="h-full flex overflow-hidden"
+      style={{
+        background: token.colorBgContainer,
+        ['--color-fill-alter' as string]: token.colorFillAlter,
+        ['--color-bg-elevated' as string]: token.colorBgElevated,
+        ['--color-border-secondary' as string]: token.colorBorderSecondary,
+        ['--color-primary-border' as string]: token.colorPrimaryBorder,
+      }}
+    >
       <aside
         style={{
-          width: 360,
+          width: 356,
+          minWidth: 356,
           borderRight: `1px solid ${token.colorBorderSecondary}`,
-          padding: 16,
+          padding: '16px 14px',
           overflow: 'auto',
+          background: token.colorBgContainer,
         }}
       >
-        <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 14 }}>
+        <Space
+          style={{
+            width: '100%',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 16,
+          }}
+          size={12}
+        >
           <Space>
             <Typography.Title level={4} style={{ margin: 0 }}>任务中心</Typography.Title>
             <Badge count={grouped.waiting.length} size="small" />
@@ -364,10 +405,10 @@ export function TasksPage() {
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无 Agent 任务" />
         ) : (
           <>
-            <TaskListSection title="待处理" items={grouped.waiting} selectedRunId={selectedRunId} onSelect={selectRun} />
-            <TaskListSection title="运行中" items={grouped.running} selectedRunId={selectedRunId} onSelect={selectRun} />
-            <TaskListSection title="失败/中断" items={grouped.failed} selectedRunId={selectedRunId} onSelect={selectRun} />
-            <TaskListSection title="最近完成" items={grouped.completed} selectedRunId={selectedRunId} onSelect={selectRun} />
+            <TaskListSection title="待处理" items={grouped.waiting} selectedRunId={selectedRunId} onSelect={selectRun} token={token} />
+            <TaskListSection title="运行中" items={grouped.running} selectedRunId={selectedRunId} onSelect={selectRun} token={token} />
+            <TaskListSection title="失败/中断" items={grouped.failed} selectedRunId={selectedRunId} onSelect={selectRun} token={token} />
+            <TaskListSection title="最近完成" items={grouped.completed} selectedRunId={selectedRunId} onSelect={selectRun} token={token} />
           </>
         )}
       </aside>
@@ -379,7 +420,7 @@ export function TasksPage() {
         ) : null}
         {detail ? (
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
-            <Card size="small">
+            <Card size="small" style={{ borderRadius: 16 }}>
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
                 <Space style={{ width: '100%', justifyContent: 'space-between' }} align="start">
                   <div>
@@ -419,15 +460,32 @@ export function TasksPage() {
                       重跑
                     </Button>
                   ) : null}
+                  {!RUNNING_STATUSES.has(detail.item.status) && !WAITING_STATUSES.has(detail.item.status) ? (
+                    <Popconfirm
+                      title="删除任务记录？"
+                      description="这会从任务中心移除本次运行记录，但不会删除原会话内容。"
+                      okText="删除"
+                      cancelText="取消"
+                      okButtonProps={{ danger: true }}
+                      onConfirm={async () => {
+                        await deleteTask(detail.item.runId);
+                        message.success('任务记录已删除');
+                      }}
+                    >
+                      <Button danger icon={<Trash2 size={14} />}>
+                        删除
+                      </Button>
+                    </Popconfirm>
+                  ) : null}
                 </Space>
               </Space>
             </Card>
 
             {(detailPermissions.length > 0 || detailAsks.length > 0) && (
-              <Card size="small" title="待处理">
+              <Card size="small" title="待处理" style={{ borderRadius: 16 }}>
                 <Space direction="vertical" size={12} style={{ width: '100%' }}>
                   {detailPermissions.map((request: PermissionRequestEvent) => (
-                    <Card key={request.toolUseId} size="small">
+                    <Card key={request.toolUseId} size="small" style={{ borderRadius: 12 }}>
                       <Space direction="vertical" size={8} style={{ width: '100%' }}>
                         <Space>
                           <CircleAlert size={15} />
@@ -452,7 +510,7 @@ export function TasksPage() {
                     </Card>
                   ))}
                   {detailAsks.map((ask: AskUserEvent) => (
-                    <Card key={ask.askId} size="small">
+                    <Card key={ask.askId} size="small" style={{ borderRadius: 12 }}>
                       <Space direction="vertical" size={8} style={{ width: '100%' }}>
                         <Typography.Text strong>{ask.question}</Typography.Text>
                         <Input.TextArea
@@ -474,7 +532,7 @@ export function TasksPage() {
             )}
 
             {detail.item.errorSummary && (
-              <Card size="small" title="错误摘要">
+              <Card size="small" title="错误摘要" style={{ borderRadius: 16 }}>
                 <Typography.Text type="danger">{detail.item.errorSummary}</Typography.Text>
               </Card>
             )}
@@ -482,6 +540,7 @@ export function TasksPage() {
             <Card
               size="small"
               title="任务时间线"
+              style={{ borderRadius: 16 }}
               extra={detail.events.length > MAX_TIMELINE_EVENTS ? (
                 <Typography.Text type="secondary">
                   显示最近 {MAX_TIMELINE_EVENTS} 条 / 共 {detail.events.length} 条

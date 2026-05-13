@@ -41,7 +41,13 @@ impl Drop for RestoreCleanup {
 
 #[tauri::command]
 pub async fn list_backups(state: State<'_, AppState>) -> Result<Vec<BackupManifest>, String> {
-    backup::list_backups(&state.sea_db)
+    let settings = get_settings(&state.sea_db)
+        .await
+        .map_err(|e| e.to_string())?;
+    let decoded_backup_dir = wisespace_core::path_vars::decode_path_opt(&settings.backup_dir);
+    let backup_dir = backup::resolve_backup_dir(decoded_backup_dir.as_deref(), &state.app_data_dir);
+
+    backup::list_backups_with_disk_sync(&state.sea_db, &backup_dir)
         .await
         .map_err(|e| e.to_string())
 }

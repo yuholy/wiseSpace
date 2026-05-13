@@ -292,6 +292,36 @@ pub async fn get_agent_run_detail(
 }
 
 #[tauri::command]
+pub async fn delete_agent_run_task(
+    state: State<'_, AppState>,
+    run_id: String,
+) -> Result<(), String> {
+    let run = agent_run::get_run(&state.sea_db, &run_id)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("Agent run not found".to_string())?;
+
+    if matches!(
+        run.status.as_str(),
+        "queued" | "starting" | "running" | "waiting_approval" | "waiting_input" | "cancelling"
+    ) {
+        return Err("Running or waiting tasks must be cancelled before deletion".to_string());
+    }
+
+    agent_run::delete_run_events_by_run(&state.sea_db, &run_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    agent_run::delete_run_steps_by_run(&state.sea_db, &run_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    agent_run::delete_run(&state.sea_db, &run_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn create_agent_task_from_center(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
@@ -325,7 +355,7 @@ pub async fn create_agent_task_from_center(
     .await
     .map_err(|e| e.to_string())?;
 
-    crate::agent_runtime::sdk_runner::start_sdk_run(
+    if let Err(err) = crate::agent_runtime::sdk_runner::start_sdk_run(
         app,
         &state,
         crate::agent_runtime::sdk_runner::StartSdkRunInput {
@@ -337,7 +367,11 @@ pub async fn create_agent_task_from_center(
             permission_mode: input.permission_mode,
         },
     )
-    .await?;
+    .await
+    {
+        let _ = conversation::delete_conversation(&state.sea_db, &conversation.id).await;
+        return Err(err);
+    }
 
     let run = agent_run::get_latest_run_for_conversation(&state.sea_db, &conversation.id)
         .await

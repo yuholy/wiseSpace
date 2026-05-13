@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { theme } from 'antd';
 import { Minus, PanelTop, Square, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useResolvedDarkMode } from '@/hooks/useResolvedDarkMode';
 import { isTauri, invoke } from '@/lib/invoke';
-import { useUIStore } from '@/stores';
-import appLogo from '@/assets/image/logo.png';
+import { useSettingsStore, useUIStore } from '@/stores';
+import darkLogoUrl from '@/assets/image/dark-logo.svg?url';
+import defaultLogoUrl from '@/assets/image/logo.png?url';
 
 const IS_WINDOWS = navigator.userAgent.includes('Windows');
 
@@ -21,7 +23,10 @@ export function TitleBar() {
   const activePage = useUIStore((s) => s.activePage);
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
+  const themeMode = useSettingsStore((s) => s.settings.theme_mode);
   const [isMaximized, setIsMaximized] = useState(false);
+  const isDark = useResolvedDarkMode(themeMode);
+  const appLogo = isDark ? darkLogoUrl : defaultLogoUrl;
 
   useEffect(() => {
     if (!IS_WINDOWS || !isTauri()) return;
@@ -106,12 +111,17 @@ export function TitleBar() {
       }}
     >
       {IS_WINDOWS ? (
-        <div className="title-bar-nodrag" style={{ display: 'flex', alignItems: 'center', gap: 0, marginRight: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 80 }}>
-            <img src={appLogo} alt="wiseSpace" style={{ width: 18, height: 18 }} draggable={false} />
-            <span style={{ fontSize: 13, fontWeight: 600, color: token.colorTextBase, userSelect: 'none' }}>wiseSpace</span>
+        <div className="title-bar-nodrag" style={{ display: 'flex', alignItems: 'center', gap: 14, marginRight: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <img
+              src={appLogo}
+              alt="wiseSpace"
+              style={{ width: 18, height: 18, display: 'block', flexShrink: 0, objectFit: 'contain' }}
+              draggable={false}
+            />
+            <span style={{ fontSize: 13, fontWeight: 600, color: token.colorTextBase, lineHeight: 1, userSelect: 'none' }}>wiseSpace</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginLeft: 2 }}>
             <div
               style={{
                 width: 30,

@@ -67,11 +67,19 @@ pub async fn start_sdk_run(
         .filter(|value| !value.trim().is_empty())
         .ok_or("Agent workspace is required before starting wiseSpace Local".to_string())?;
     let workspace_path = std::path::Path::new(&effective_cwd);
-    if !workspace_path.is_dir() {
+    if workspace_path.exists() && !workspace_path.is_dir() {
         return Err(format!(
-            "Agent workspace does not exist or is not a directory: {}",
+            "Agent workspace exists but is not a directory: {}",
             effective_cwd
         ));
+    }
+    if !workspace_path.exists() {
+        std::fs::create_dir_all(workspace_path).map_err(|e| {
+            format!(
+                "Failed to create agent workspace '{}': {}",
+                effective_cwd, e
+            )
+        })?;
     }
     let canonical_workspace = workspace_path.canonicalize().map_err(|e| {
         format!(

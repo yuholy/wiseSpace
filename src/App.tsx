@@ -202,8 +202,9 @@ function AppRoot() {
 
   // Sync i18n language with settings store
   useEffect(() => {
-    if (i18n.language !== language) {
-      i18n.changeLanguage(language);
+    const nextLanguage = language === 'en-US' ? 'en-US' : 'zh-CN';
+    if (i18n.language !== nextLanguage) {
+      i18n.changeLanguage(nextLanguage);
     }
   }, [i18n, language]);
 

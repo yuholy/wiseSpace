@@ -320,6 +320,7 @@ pub fn run() {
             commands::agent::agent_list_run_events,
             commands::agent::list_agent_runs_global,
             commands::agent::get_agent_run_detail,
+            commands::agent::delete_agent_run_task,
             commands::agent::create_agent_task_from_center,
             commands::agent::agent_control_run,
             commands::agent::agent_resume_run,

@@ -259,6 +259,30 @@ pub async fn finish_run(
     Ok(())
 }
 
+pub async fn delete_run_events_by_run(db: &DatabaseConnection, run_id: &str) -> Result<u64> {
+    let result = agent_run_events::Entity::delete_many()
+        .filter(agent_run_events::Column::RunId.eq(run_id))
+        .exec(db)
+        .await?;
+    Ok(result.rows_affected)
+}
+
+pub async fn delete_run_steps_by_run(db: &DatabaseConnection, run_id: &str) -> Result<u64> {
+    let result = agent_run_steps::Entity::delete_many()
+        .filter(agent_run_steps::Column::RunId.eq(run_id))
+        .exec(db)
+        .await?;
+    Ok(result.rows_affected)
+}
+
+pub async fn delete_run(db: &DatabaseConnection, run_id: &str) -> Result<()> {
+    let result = agent_runs::Entity::delete_by_id(run_id).exec(db).await?;
+    if result.rows_affected == 0 {
+        return Err(WiseSpaceError::NotFound(format!("AgentRun {}", run_id)));
+    }
+    Ok(())
+}
+
 pub async fn mark_incomplete_runs_interrupted(db: &DatabaseConnection) -> Result<u64> {
     let runs = agent_runs::Entity::find()
         .filter(agent_runs::Column::Status.is_in([

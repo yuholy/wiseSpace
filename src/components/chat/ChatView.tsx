@@ -2,15 +2,13 @@ import React, { useMemo, useCallback, useRef, useState, useEffect } from 'react'
 import { CloseCircleFilled, SyncOutlined } from '@ant-design/icons';
 import { Typography, Button, Dropdown, Input, App, Avatar, Alert, Popconfirm, Popover, theme, Tag, Image, Tooltip, Modal, Spin } from 'antd';
 import type { InputRef } from 'antd';
-import { Pencil, Share2, FileImage, FileCode, FileText, FileType, Bot, Brain, Lightbulb, Code, Languages, Copy, Check, RotateCcw, User, Trash2, ChevronLeft, ChevronRight, ChevronDown, Scissors, Paperclip, AlertCircle, X, ArrowDown, ArrowUp, ArrowLeftRight, Zap, Sparkles, TextCursorInput, GitBranch, ChartNoAxesColumn, MessageSquare, ArrowUpRight, ArrowDownRight, Coins, Clock, Timer, Download } from 'lucide-react';
+import { Pencil, Share2, FileImage, FileCode, FileText, FileType, Bot, Brain, Code, Copy, Check, RotateCcw, User, Trash2, ChevronLeft, ChevronRight, ChevronDown, Scissors, Paperclip, AlertCircle, X, ArrowDown, ArrowUp, ArrowLeftRight, Zap, Sparkles, TextCursorInput, GitBranch, ChartNoAxesColumn, MessageSquare, ArrowUpRight, ArrowDownRight, Coins, Clock, Timer, Download } from 'lucide-react';
 import { ModelIcon } from '@lobehub/icons';
 import { getConvIcon } from '@/lib/convIcon';
 import Bubble from '@ant-design/x/es/bubble';
-import Prompts from '@ant-design/x/es/prompts';
 import Actions from '@ant-design/x/es/actions';
 import Think from '@ant-design/x/es/think';
 import type { BubbleItemType, BubbleListRef, RoleType } from '@ant-design/x/es/bubble/interface';
-import type { PromptsItemType } from '@ant-design/x/es/prompts';
 import NodeRenderer, { setCustomComponents, type NodeComponentProps, type CodeBlockActionContext, type CodeBlockPreviewPayload, type MermaidBlockActionContext, type InfographicBlockActionContext } from 'markstream-react';
 import { useTranslation } from 'react-i18next';
 import { CodeBlockHeaderActions } from './CodeBlockHeaderActions';
@@ -2344,7 +2342,6 @@ export function ChatView() {
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [mermaidPreviewSvg, setMermaidPreviewSvg] = useState<string | null>(null);
   const [mermaidPreviewOpen, setMermaidPreviewOpen] = useState(false);
-  const createConversation = useConversationStore((s) => s.createConversation);
   const providers = useProviderStore((s) => s.providers);
   const settings = useSettingsStore((s) => s.settings);
   const bubbleStyle = settings.bubble_style;
@@ -3017,51 +3014,6 @@ export function ChatView() {
     else key = 'chat.greetingEvening';
     return `👋 ${t(key)}`;
   }, [t]);
-
-  const promptItems: PromptsItemType[] = useMemo(
-    () => [
-      { key: '1', icon: <Lightbulb size={16} />, label: t('chat.welcomePrompt1') },
-      { key: '2', icon: <Languages size={16} />, label: t('chat.welcomePrompt2') },
-      { key: '3', icon: <Code size={16} />, label: t('chat.welcomePrompt3') },
-      { key: '4', icon: <Lightbulb size={16} />, label: t('chat.welcomePrompt4') },
-    ],
-    [t],
-  );
-
-  const handlePromptClick = useCallback(
-    async (info: { data: PromptsItemType }) => {
-      const text = typeof info.data.label === 'string' ? info.data.label : '';
-      if (!text) return;
-
-      try {
-        if (!activeConversationId) {
-          // Prefer settings default model, fall back to first enabled
-          let provider = settings.default_provider_id
-            ? providers.find((p) => p.id === settings.default_provider_id && p.enabled)
-            : undefined;
-          let model = provider?.models.find(
-            (m) => m.model_id === settings.default_model_id && m.enabled,
-          );
-          if (!provider || !model) {
-            provider = providers.find((p) => p.enabled && p.models.some((m) => m.enabled));
-            model = provider?.models.find((m) => m.enabled);
-          }
-          if (!provider || !model) {
-            messageApi.warning(t('chat.noModel'));
-            return;
-          }
-          await createConversation(text.slice(0, 30), model.model_id, provider.id);
-        }
-
-        // Route through InputArea's send pipeline so companion models are respected
-        useConversationStore.getState().setPendingPromptText(text);
-      } catch (e) {
-        console.error('[handlePromptClick] error:', e);
-        messageApi.error(String(e));
-      }
-    },
-    [activeConversationId, providers, settings, createConversation, messageApi, t],
-  );
 
   // ── Bubble items (only show active messages) ────────────────────────
   const activeMessages = useMemo(
@@ -4199,15 +4151,9 @@ export function ChatView() {
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center h-full" style={{ padding: '0 28px' }}>
-                <Typography.Title level={3} style={{ marginBottom: 24, fontWeight: 500 }}>
+                <Typography.Title level={3} style={{ marginBottom: 0, fontWeight: 500 }}>
                   {greetingText}
                 </Typography.Title>
-                <Prompts
-                  items={promptItems}
-                  onItemClick={handlePromptClick}
-                  wrap
-                  style={{ marginTop: 16 }}
-                />
               </div>
             )
           ) : (

@@ -8,7 +8,7 @@ import {
   ChevronRight, Layers, Radio,
 } from 'lucide-react';
 import { Claude } from '@lobehub/icons';
-import appLogo from '@/assets/image/logo.png';
+import appLogo from '@/assets/image/logo.png?url';
 import { useTranslation } from 'react-i18next';
 import { useSkillStore } from '@/stores';
 import type { Skill, MarketplaceSkill } from '@/types';

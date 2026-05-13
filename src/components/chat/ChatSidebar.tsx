@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef, memo, startTransition } from 'react'
 import { Button, Input, App, theme, Tooltip, Avatar, Checkbox, Dropdown, Empty } from 'antd'
-import { MessageSquarePlus, Search, Archive, ListTodo, Trash2, Pencil, Share, Pin, PinOff, Loader, X, Undo2, ArrowLeft, FileImage, FileCode, FileType, FileText, FolderPlus, FolderOpen, GripVertical, ChevronRight, MessageSquareText, PanelLeftClose, Bot, Brain, Code } from 'lucide-react'
+import { MessageSquarePlus, Search, Archive, ListTodo, Trash2, Pencil, Share, Pin, PinOff, Loader, X, Undo2, ArrowLeft, FileImage, FileCode, FileType, FileText, FolderPlus, FolderOpen, GripVertical, ChevronRight, MessageSquareText, PanelLeftClose, Bot, Brain, Code, Briefcase } from 'lucide-react'
 import { ModelIcon } from '@lobehub/icons'
 import { getConvIcon } from '@/lib/convIcon'
 import { getAgentExecutorMeta, getAgentExecutorStorageKey } from '@/lib/agentExecutors'
@@ -396,6 +396,8 @@ export function ChatSidebar() {
   const settings = useSettingsStore((s) => s.settings)
   const settingsLoading = useSettingsStore((s) => s.loading)
   const toggleSidebar = useUIStore((s) => s.toggleSidebar)
+  const chatTaskCenterGroupCollapsed = useUIStore((s) => s.chatTaskCenterGroupCollapsed)
+  const setChatTaskCenterGroupCollapsed = useUIStore((s) => s.setChatTaskCenterGroupCollapsed)
   const categories = useCategoryStore((s) => s.categories)
   const fetchCategories = useCategoryStore((s) => s.fetchCategories)
   const createCategory = useCategoryStore((s) => s.createCategory)
@@ -993,6 +995,14 @@ export function ChatSidebar() {
   // Track known category IDs to detect new ones
   const knownCatIdsRef = useRef(new Set<string>())
   useEffect(() => {
+    const taskCenterKey = 'taskCenter'
+    setExpandedKeys((prev) => {
+      const withoutTaskCenter = prev.filter((key) => key !== taskCenterKey)
+      return chatTaskCenterGroupCollapsed ? withoutTaskCenter : [...withoutTaskCenter, taskCenterKey]
+    })
+  }, [chatTaskCenterGroupCollapsed])
+
+  useEffect(() => {
     const currentIds = new Set(categories.map((c) => c.id))
     // Find newly appeared categories (initial load or newly created)
     const newCats = categories.filter((c) => !knownCatIdsRef.current.has(c.id))
@@ -1033,6 +1043,7 @@ export function ChatSidebar() {
       const expandedCatIds = new Set(
         keys.filter((k) => k.startsWith('cat:')).map((k) => k.slice(4)),
       )
+      setChatTaskCenterGroupCollapsed(!keys.includes('taskCenter'))
       categories.forEach((cat) => {
         const shouldBeCollapsed = !expandedCatIds.has(cat.id)
         if (cat.is_collapsed !== shouldBeCollapsed) {
@@ -1040,7 +1051,7 @@ export function ChatSidebar() {
         }
       })
     },
-    [categories, setCollapsed],
+    [categories, setChatTaskCenterGroupCollapsed, setCollapsed],
   )
 
   const handleDeleteCategory = useCallback(
@@ -1081,9 +1092,22 @@ export function ChatSidebar() {
           />
         )
       }
+      if (group === 'taskCenter') {
+        return (
+          <span className="wisespace-chat-task-center-group-label">
+            <span className="wisespace-chat-task-center-group-label__main">
+              <Briefcase size={13} />
+              <span>{groupLabels[group] ?? group}</span>
+            </span>
+            <span className="wisespace-chat-task-center-group-label__count">
+              {filteredConversations.filter((conv) => !conv.parent_conversation_id && conv.source === 'task_center').length}
+            </span>
+          </span>
+        )
+      }
       return <span className="wisespace-chat-time-group-label">{groupLabels[group] ?? group}</span>
     },
-    [categories, groupLabels, t, handleDeleteCategory, handleNewConversation],
+    [categories, filteredConversations, groupLabels, t, handleDeleteCategory, handleNewConversation],
   )
 
   const handleCreateCategory = useCallback(
@@ -1452,6 +1476,33 @@ export function ChatSidebar() {
         .wisespace-chat-sidebar .wisespace-chat-conversations .ant-conversations-group-title-collapsible:hover {
           background: var(--wisespace-sidebar-hover-bg);
         }
+        .wisespace-chat-task-center-group-label {
+          display: inline-flex;
+          width: 100%;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          color: var(--wisespace-sidebar-text-heading);
+          font-size: 13px;
+          font-weight: 700;
+        }
+        .wisespace-chat-task-center-group-label__main {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          min-width: 0;
+        }
+        .wisespace-chat-task-center-group-label__count {
+          min-width: 20px;
+          height: 20px;
+          padding: 0 6px;
+          border-radius: 999px;
+          background: var(--wisespace-sidebar-soft-bg);
+          color: var(--wisespace-sidebar-text-tertiary);
+          font-size: 11px;
+          line-height: 20px;
+          text-align: center;
+        }
         .wisespace-chat-category-label {
           color: var(--wisespace-sidebar-text-heading);
           font-size: 13px;
@@ -1678,7 +1729,7 @@ export function ChatSidebar() {
                     }}
                     groupable={{
                       label: (group: string) => renderGroupLabel(group),
-                      collapsible: (group: string) => group.startsWith('cat:'),
+                      collapsible: (group: string) => group.startsWith('cat:') || group === 'taskCenter',
                       expandedKeys: expandedKeys,
                       onExpand: handleGroupExpand,
                     }}

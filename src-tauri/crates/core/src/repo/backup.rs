@@ -1,5 +1,6 @@
 use sea_orm::*;
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::entity::backup_manifests;
@@ -219,6 +220,170 @@ fn compute_file_checksum(path: &Path) -> Result<String> {
     Ok(format!("{:x}", hash))
 }
 
+fn parse_backup_filename_timestamp(file_name: &str) -> Option<String> {
+    let stem = Path::new(file_name).file_stem()?.to_string_lossy();
+    let stem = stem.strip_prefix("wisespace-backup-")?;
+    let timestamp_part = stem.split('.').next()?;
+    let dt = chrono::NaiveDateTime::parse_from_str(timestamp_part, "%Y%m%d_%H%M%S").ok()?;
+    Some(dt.format("%Y-%m-%d %H:%M:%S").to_string())
+}
+
+fn backup_created_at_from_path(path: &Path) -> String {
+    if let Some(file_name) = path.file_name().and_then(|name| name.to_str()) {
+        if let Some(parsed) = parse_backup_filename_timestamp(file_name) {
+            return parsed;
+        }
+    }
+
+    std::fs::metadata(path)
+        .ok()
+        .and_then(|metadata| metadata.modified().ok())
+        .map(chrono::DateTime::<chrono::Local>::from)
+        .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+        .unwrap_or_else(|| chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string())
+}
+
+fn infer_backup_format(path: &Path) -> Option<&'static str> {
+    let file_name = path.file_name()?.to_string_lossy();
+    if file_name.starts_with('_') {
+        return None;
+    }
+
+    match path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("zip") => Some("zip"),
+        Some("json") => Some("json"),
+        Some("db" | "sqlite" | "sqlite3") => Some("sqlite"),
+        _ => None,
+    }
+}
+
+fn is_valid_json_backup(path: &Path) -> bool {
+    let Ok(contents) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&contents) else {
+        return false;
+    };
+
+    value.get("tables").map(|tables| tables.is_object()).unwrap_or(false)
+}
+
+fn zip_backup_metadata(path: &Path) -> Option<serde_json::Value> {
+    let file = std::fs::File::open(path).ok()?;
+    let mut archive = zip::ZipArchive::new(file).ok()?;
+
+    let has_db = archive.by_name("wisespace.db").is_ok();
+    let mut metadata_file = archive.by_name("metadata.json").ok()?;
+    let mut metadata_json = String::new();
+    std::io::Read::read_to_string(&mut metadata_file, &mut metadata_json).ok()?;
+    let metadata = serde_json::from_str::<serde_json::Value>(&metadata_json).ok()?;
+
+    if has_db { Some(metadata) } else { None }
+}
+
+fn imported_backup_metadata(path: &Path, format: &str) -> Option<(String, String)> {
+    match format {
+        "zip" => {
+            let metadata = zip_backup_metadata(path)?;
+            let app_version = metadata
+                .get("app_version")
+                .and_then(|value| value.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let object_counts_json = metadata
+                .get("object_counts")
+                .map(|value| {
+                    if let Some(text) = value.as_str() {
+                        text.to_string()
+                    } else {
+                        value.to_string()
+                    }
+                })
+                .unwrap_or_else(|| "{}".to_string());
+            Some((app_version, object_counts_json))
+        }
+        "json" => {
+            if !is_valid_json_backup(path) {
+                return None;
+            }
+            let contents = std::fs::read_to_string(path).ok()?;
+            let value = serde_json::from_str::<serde_json::Value>(&contents).ok()?;
+            let app_version = value
+                .get("version")
+                .and_then(|version| version.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            Some((app_version, "{}".to_string()))
+        }
+        "sqlite" => Some(("unknown".to_string(), "{}".to_string())),
+        _ => None,
+    }
+}
+
+async fn sync_backup_manifests_with_disk(db: &DatabaseConnection, backup_dir: &Path) -> Result<()> {
+    ensure_backup_dir(backup_dir)?;
+
+    let existing = backup_manifests::Entity::find().all(db).await?;
+    let known_paths: HashSet<String> = existing
+        .iter()
+        .filter_map(|model| model.file_path.as_deref())
+        .map(resolve_stored_backup_path)
+        .map(|path| path.to_string_lossy().to_string())
+        .collect();
+
+    for entry in std::fs::read_dir(backup_dir).map_err(|e| {
+        WiseSpaceError::Gateway(format!("Failed to read backup directory: {}", e))
+    })? {
+        let entry = entry
+            .map_err(|e| WiseSpaceError::Gateway(format!("Backup directory entry error: {}", e)))?;
+        let path = entry.path();
+
+        if !path.is_file() {
+            continue;
+        }
+
+        let path_string = path.to_string_lossy().to_string();
+        if known_paths.contains(&path_string) {
+            continue;
+        }
+
+        let Some(format) = infer_backup_format(&path) else {
+            continue;
+        };
+        let Some((source_app_version, object_counts_json)) =
+            imported_backup_metadata(&path, format)
+        else {
+            continue;
+        };
+
+        let checksum = compute_file_checksum(&path)?;
+        let file_size = std::fs::metadata(&path)
+            .map(|metadata| metadata.len() as i64)
+            .unwrap_or(0);
+
+        let am = backup_manifests::ActiveModel {
+            id: Set(gen_id()),
+            version: Set(format.to_string()),
+            created_at: Set(backup_created_at_from_path(&path)),
+            encrypted: Set(0),
+            checksum: Set(checksum),
+            object_counts_json: Set(object_counts_json),
+            source_app_version: Set(source_app_version),
+            file_path: Set(Some(backup_storage_path(&path))),
+            file_size: Set(file_size),
+        };
+
+        am.insert(db).await?;
+    }
+
+    Ok(())
+}
+
 async fn count_objects(db: &DatabaseConnection) -> Result<String> {
     use crate::entity::*;
 
@@ -241,6 +406,14 @@ pub async fn list_backups(db: &DatabaseConnection) -> Result<Vec<BackupManifest>
         .await?;
 
     Ok(models.into_iter().map(model_to_manifest).collect())
+}
+
+pub async fn list_backups_with_disk_sync(
+    db: &DatabaseConnection,
+    backup_dir: &Path,
+) -> Result<Vec<BackupManifest>> {
+    sync_backup_manifests_with_disk(db, backup_dir).await?;
+    list_backups(db).await
 }
 
 pub async fn get_backup(db: &DatabaseConnection, id: &str) -> Result<BackupManifest> {
@@ -444,8 +617,11 @@ pub async fn cleanup_old_backups(db: &DatabaseConnection, max_count: u32) -> Res
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_backup_dir, workspace_dir_for_backup};
-    use std::path::PathBuf;
+    use super::{
+        backup_created_at_from_path, infer_backup_format, parse_backup_filename_timestamp,
+        resolve_backup_dir, workspace_dir_for_backup,
+    };
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn resolve_backup_dir_defaults_to_wisespace_backups_subdir() {
@@ -473,5 +649,33 @@ mod tests {
             workspace_dir_for_backup(),
             crate::storage_paths::default_documents_root().join("workspace")
         );
+    }
+
+    #[test]
+    fn parse_backup_filename_timestamp_reads_generated_backup_names() {
+        assert_eq!(
+            parse_backup_filename_timestamp("wisespace-backup-20260513_093000.DESKTOP.zip"),
+            Some("2026-05-13 09:30:00".to_string())
+        );
+    }
+
+    #[test]
+    fn infer_backup_format_skips_temp_files_and_accepts_supported_extensions() {
+        assert_eq!(infer_backup_format(Path::new("_restore_staging.db")), None);
+        assert_eq!(infer_backup_format(Path::new("manual-import.zip")), Some("zip"));
+        assert_eq!(infer_backup_format(Path::new("manual-import.json")), Some("json"));
+        assert_eq!(infer_backup_format(Path::new("manual-import.sqlite")), Some("sqlite"));
+    }
+
+    #[test]
+    fn backup_created_at_from_path_falls_back_to_file_metadata() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("manual-import.zip");
+        std::fs::write(&path, b"backup").unwrap();
+
+        let created_at = backup_created_at_from_path(&path);
+        assert_eq!(created_at.len(), 19);
+        assert!(created_at.contains('-'));
+        assert!(created_at.contains(':'));
     }
 }

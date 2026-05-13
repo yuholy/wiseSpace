@@ -3,10 +3,12 @@ import { Github, Globe, Terminal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useState, useEffect, useCallback } from 'react';
 import { isTauri, invoke } from '@/lib/invoke';
-import logoUrl from '@/assets/image/logo.png';
+import { APP_REPO_HOST_LABEL, APP_REPO_URL } from '@/lib/repo';
+import logoUrl from '@/assets/image/logo.png?url';
 import { SettingsGroup } from './SettingsGroup';
 
 const { Text } = Typography;
+const OFFICIAL_WEBSITE = 'https://app.wisespace.top';
 
 export function AboutPage() {
   const { t } = useTranslation();
@@ -28,6 +30,19 @@ export function AboutPage() {
         await invoke('open_devtools');
       } catch { /* ignore */ }
     }
+  }, []);
+
+  const openExternalUrl = useCallback(async (url: string) => {
+    if (isTauri()) {
+      try {
+        const { openUrl } = await import('@tauri-apps/plugin-opener');
+        await openUrl(url);
+        return;
+      } catch {
+        // fall through to window.open
+      }
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
   }, []);
 
   return (
@@ -67,23 +82,21 @@ export function AboutPage() {
           <span>{t('settings.website')}</span>
           <Button
             icon={<Globe size={16} />}
-            href="https://app.wisespace.top"
-            target="_blank"
             type="link"
+            onClick={() => openExternalUrl(OFFICIAL_WEBSITE)}
           >
             {t('settings.website')}
           </Button>
         </div>
         <Divider style={{ margin: '4px 0' }} />
         <div style={rowStyle} className="flex items-center justify-between">
-          <span>GitHub</span>
+          <span>{APP_REPO_HOST_LABEL}</span>
           <Button
             icon={<Github size={16} />}
-            href="https://github.com/wiseSpace-Desktop/wiseSpace"
-            target="_blank"
             type="link"
+            onClick={() => openExternalUrl(APP_REPO_URL)}
           >
-            {t('settings.github')}
+            {APP_REPO_HOST_LABEL}
           </Button>
         </div>
         {isTauri() && (

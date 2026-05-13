@@ -24,9 +24,11 @@ interface TaskCenterState {
   waitingCount: number;
   failedCount: number;
   fetchTasks: () => Promise<void>;
+  refreshSelectedDetail: () => Promise<void>;
   selectRun: (runId: string | null) => Promise<void>;
   createTask: (input: CreateTaskFromCenterInput) => Promise<CreateTaskFromCenterResult>;
   cancelTask: (conversationId: string) => Promise<void>;
+  deleteTask: (runId: string) => Promise<void>;
   resumeTask: (runId: string) => Promise<void>;
   rerunTask: (detail: TaskCenterDetail) => Promise<void>;
 }
@@ -53,13 +55,39 @@ export const useTaskCenterStore = create<TaskCenterState>((set, get) => ({
     set({ loading: true });
     try {
       const items = await invoke<TaskCenterItem[]>('list_agent_runs_global');
-      set({ items, loading: false, error: null, ...summarizeCounts(items) });
       const selectedRunId = get().selectedRunId;
+      const hasSelected = selectedRunId ? items.some((item) => item.runId === selectedRunId) : false;
+      const nextSelectedRunId = hasSelected ? selectedRunId : null;
+      set({
+        items,
+        selectedRunId: nextSelectedRunId,
+        detail: nextSelectedRunId ? get().detail : null,
+        loading: false,
+        detailLoading: false,
+        error: null,
+        ...summarizeCounts(items),
+      });
       if (!selectedRunId && items[0]) {
         void get().selectRun(items[0].runId);
+      } else if (selectedRunId && !hasSelected && items[0]) {
+        void get().selectRun(items[0].runId);
+      } else if (nextSelectedRunId) {
+        void get().refreshSelectedDetail();
       }
     } catch (e) {
       set({ error: String(e), loading: false });
+    }
+  },
+
+  refreshSelectedDetail: async () => {
+    const runId = get().selectedRunId;
+    if (!runId) return;
+    try {
+      const detail = await invoke<TaskCenterDetail>('get_agent_run_detail', { runId });
+      await useAgentStore.getState().refreshConversationState(detail.item.conversationId);
+      set({ detail, detailLoading: false, error: null });
+    } catch (e) {
+      set({ error: String(e), detailLoading: false });
     }
   },
 
@@ -96,6 +124,23 @@ export const useTaskCenterStore = create<TaskCenterState>((set, get) => ({
   cancelTask: async (conversationId) => {
     await useAgentStore.getState().cancelRun(conversationId);
     await get().fetchTasks();
+  },
+
+  deleteTask: async (runId) => {
+    await invoke('delete_agent_run_task', { runId });
+    const { items, selectedRunId } = get();
+    const remainingItems = items.filter((item) => item.runId !== runId);
+    const nextSelectedRunId = selectedRunId === runId ? remainingItems[0]?.runId ?? null : selectedRunId;
+    set({
+      items: remainingItems,
+      selectedRunId: nextSelectedRunId,
+      detail: selectedRunId === runId ? null : get().detail,
+      ...summarizeCounts(remainingItems),
+    });
+    await get().fetchTasks();
+    if (nextSelectedRunId) {
+      await get().selectRun(nextSelectedRunId);
+    }
   },
 
   resumeTask: async (runId) => {

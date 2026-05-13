@@ -7,6 +7,7 @@ import { useResolvedAvatarSrc } from '@/hooks/useResolvedAvatarSrc';
 import { LANG_OPTIONS } from '@/lib/constants';
 import { getShortcutBinding, formatShortcutForDisplay } from '@/lib/shortcuts';
 import { invoke, isTauri } from '@/lib/invoke';
+import { APP_REPO_HOST_LABEL, getRepoActionUrl } from '@/lib/repo';
 import { useUIStore, useSettingsStore } from '@/stores';
 import { useBackupStore } from '@/stores/backupStore';
 import { useUserProfileStore } from '@/stores/userProfileStore';
@@ -72,8 +73,8 @@ export function SidebarUserMenu() {
     icon: <span>{opt.icon}</span>,
     label: opt.label,
   }));
+  const currentLanguage = LANG_OPTIONS.some((opt) => opt.key === i18n.language) ? i18n.language : 'zh-CN';
 
-  const GITHUB_REPO = 'https://github.com/wiseSpace-Desktop/wiseSpace';
   const githubMenuItems: MenuProps['items'] = [
     { key: 'feature', icon: <MessageSquarePlus size={14} />, label: t('titlebar.submitFeature') },
     { key: 'bug', icon: <Bug size={14} />, label: t('titlebar.submitBug') },
@@ -225,9 +226,8 @@ export function SidebarUserMenu() {
   }, [message, t]);
 
   const handleGithubClick: MenuProps['onClick'] = useCallback(({ key }: { key: string }) => {
-    let url = GITHUB_REPO;
-    if (key === 'feature') url = `${GITHUB_REPO}/issues/new?labels=enhancement&template=feature_request.yml`;
-    else if (key === 'bug') url = `${GITHUB_REPO}/issues/new?labels=bug&template=bug_report.yml`;
+    const action = key === 'feature' || key === 'bug' || key === 'star' ? key : 'repo';
+    const url = getRepoActionUrl(action);
     if (isTauri()) {
       import('@tauri-apps/plugin-opener').then(({ openUrl }) => openUrl(url)).catch(() => window.open(url, '_blank'));
     } else {
@@ -449,11 +449,11 @@ export function SidebarUserMenu() {
           </Button>
         </Dropdown>
 
-        <Dropdown menu={{ items: langMenuItems, onClick: handleLangChange, selectedKeys: [i18n.language] }} trigger={['click']} placement="topLeft" destroyOnHidden>
+        <Dropdown menu={{ items: langMenuItems, onClick: handleLangChange, selectedKeys: [currentLanguage] }} trigger={['click']} placement="topLeft" destroyOnHidden>
           <Button type="text" style={quickActionButtonStyle}>
             <Globe size={14} />
             <span style={actionLabelStyle}>{t('settings.language')}</span>
-            <span style={actionMetaStyle}>{LANG_OPTIONS.find((opt) => opt.key === i18n.language)?.label ?? i18n.language}</span>
+            <span style={actionMetaStyle}>{LANG_OPTIONS.find((opt) => opt.key === currentLanguage)?.label ?? currentLanguage}</span>
           </Button>
         </Dropdown>
       </div>
@@ -484,7 +484,7 @@ export function SidebarUserMenu() {
         <Dropdown menu={{ items: githubMenuItems, onClick: handleGithubClick }} trigger={['click']} placement="topLeft" destroyOnHidden>
           <Button type="text" style={quickActionButtonStyle}>
             <Github size={14} />
-            <span style={actionLabelStyle}>GitHub</span>
+            <span style={actionLabelStyle}>{APP_REPO_HOST_LABEL}</span>
             <span style={actionMetaStyle}>{t('titlebar.submitFeature')}</span>
           </Button>
         </Dropdown>

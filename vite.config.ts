@@ -2,11 +2,71 @@ import { defineConfig, type Plugin } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import monacoEditorPluginModule from "vite-plugin-monaco-editor";
+import { execSync } from "child_process";
 import path from "path";
 
 const monacoEditorPlugin = (monacoEditorPluginModule as any).default || monacoEditorPluginModule;
 
 const host = process.env.TAURI_DEV_HOST;
+
+function getGitRemoteUrl(): string {
+  try {
+    return execSync("git config --get remote.origin.url", {
+      cwd: __dirname,
+      stdio: ["ignore", "pipe", "ignore"],
+      encoding: "utf8",
+    }).trim();
+  } catch {
+    return "https://github.com/yuholy/wiseSpace";
+  }
+}
+
+function normalizeRemoteUrl(remote: string): string {
+  const trimmed = remote.trim();
+  if (!trimmed) return "https://github.com/yuholy/wiseSpace";
+
+  const scpLike = trimmed.match(/^git@([^:]+):(.+?)(?:\.git)?$/);
+  if (scpLike) {
+    return `https://${scpLike[1]}/${scpLike[2]}`;
+  }
+
+  const sshLike = trimmed.match(/^ssh:\/\/git@([^/]+)\/(.+?)(?:\.git)?$/);
+  if (sshLike) {
+    return `https://${sshLike[1]}/${sshLike[2]}`;
+  }
+
+  if (/^https?:\/\//.test(trimmed)) {
+    return trimmed.replace(/\.git$/, "");
+  }
+
+  return trimmed;
+}
+
+function getRepoHostLabel(repoUrl: string): string {
+  try {
+    const hostName = new URL(repoUrl).hostname.toLowerCase();
+    const labels: Record<string, string> = {
+      "github.com": "GitHub",
+      "gitcode.com": "GitCode",
+      "gitlab.com": "GitLab",
+      "gitee.com": "Gitee",
+      "bitbucket.org": "Bitbucket",
+    };
+    return labels[hostName] ?? hostName;
+  } catch {
+    return "Repository";
+  }
+}
+
+const repoUrl = normalizeRemoteUrl(getGitRemoteUrl());
+const repoHostLabel = getRepoHostLabel(repoUrl);
+const repoIsGithub = (() => {
+  try {
+    return new URL(repoUrl).hostname.toLowerCase() === "github.com";
+  } catch {
+    return false;
+  }
+})();
 
 // Only bundle commonly-used Shiki language grammars (saves ~8 MB in build).
 // Languages not listed here will gracefully degrade (no syntax highlighting).
@@ -41,6 +101,11 @@ function shikiLanguageFilter(): Plugin {
 }
 
 export default defineConfig(async () => ({
+  define: {
+    __APP_REPO_URL__: JSON.stringify(repoUrl),
+    __APP_REPO_HOST_LABEL__: JSON.stringify(repoHostLabel),
+    __APP_REPO_IS_GITHUB__: JSON.stringify(repoIsGithub),
+  },
   plugins: [react(), tailwindcss(), monacoEditorPlugin({}), shikiLanguageFilter()],
   resolve: {
     alias: [

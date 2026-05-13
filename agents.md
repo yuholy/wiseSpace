@@ -105,3 +105,43 @@ All antd `<Image>` components **must** use blur-mask preview:
 - `mask: { blur: true }` — hover shows a blurred overlay (never `mask: false` or plain text mask)
 - `scaleStep: 0.5` — consistent zoom step across the app
 - These settings apply to **all** image previews: chat attachments, file list thumbnails, avatar previews, etc.
+
+## Commit Log Policy
+
+Every code commit in this repository must include a commit log in the commit message body.
+
+Required sections:
+
+- `修改内容`
+- `修改目的`
+- `影响范围`
+- `风险与兼容性`
+- `验证方式`
+
+Rules:
+
+- None of the sections may be omitted.
+- If a section is not applicable, explicitly write `无`.
+- Short one-line commit messages without the structured body are not acceptable for code changes.
+- Agent-related changes should verify both UI behavior and state/data flow when applicable.
+
+Recommended format:
+
+```text
+type(scope): 简短说明
+
+修改内容:
+- ...
+
+修改目的:
+- ...
+
+影响范围:
+- ...
+
+风险与兼容性:
+- ...
+
+验证方式:
+- ...
+```
