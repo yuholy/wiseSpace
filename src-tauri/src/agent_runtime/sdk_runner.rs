@@ -1,14 +1,16 @@
 use super::event::AgentEventRecorder;
+use crate::agent_runtime::context::prepare_local_agent_execution_context;
+use crate::agent_runtime::planner::{build_local_agent_plan, LocalAgentRunRequest};
+use crate::agent_runtime::result_renderer;
 use crate::agent_runtime::compat::{
-    create_adapter_arc, ensure_agent_assistant_message, ensure_legacy_session_for_profile,
-    get_tool_input_summary, persist_agent_partial_content, provider_type_to_registry_key,
-    resolve_agent_provider_id, truncate_preview, AgentCancelTokenGuard, RunningAgentGuard,
-    RUNNING_AGENTS,
+    create_adapter_arc, ensure_agent_assistant_message, get_tool_input_summary,
+    persist_agent_partial_content, provider_type_to_registry_key, truncate_preview,
+    AgentCancelTokenGuard, RunningAgentGuard, RUNNING_AGENTS,
 };
 use crate::agent_runtime::payloads::{
-    AgentAskUserPayload, AgentDonePayload, AgentErrorPayload, AgentPermissionRequestPayload,
-    AgentRateLimitPayload, AgentStatusPayload, AgentTextPayload, AgentThinkingPayload,
-    AgentToolResultPayload, AgentToolStartPayload, AgentToolUsePayload, AgentUsagePayload,
+    AgentAskUserPayload, AgentErrorPayload, AgentPermissionRequestPayload, AgentRateLimitPayload,
+    AgentStatusPayload, AgentTextPayload, AgentThinkingPayload, AgentToolResultPayload,
+    AgentToolStartPayload, AgentToolUsePayload,
 };
 use crate::AppState;
 use open_agent_sdk::{
@@ -23,10 +25,8 @@ use wisespace_agent::permission::{
     classify_tool_risk_with_input, decide_permission, PermissionAction,
 };
 use wisespace_core::repo::{
-    agent_run, agent_session, conversation, message, provider, settings, skill, tool_execution,
+    agent_run, agent_session, conversation, message, provider, skill, tool_execution,
 };
-use wisespace_core::types::{MessageRole, ProviderProxyConfig};
-use wisespace_providers::{resolve_base_url_for_type, ProviderRequestContext};
 
 #[derive(Debug, Clone)]
 pub struct StartSdkRunInput {
@@ -43,106 +43,41 @@ pub async fn start_sdk_run(
     state: &AppState,
     input: StartSdkRunInput,
 ) -> Result<(), String> {
-    let StartSdkRunInput {
-        conversation_id,
-        prompt,
-        provider_id,
-        model_id,
-        cwd,
-        permission_mode,
-    } = input;
-
-    let profile = crate::agent_runtime::profile::update_profile_from_legacy_inputs(
-        &state.sea_db,
-        &conversation_id,
-        cwd.as_deref(),
-        permission_mode.as_deref(),
-    )
-    .await?;
-    let session = ensure_legacy_session_for_profile(&state.sea_db, &profile).await?;
-
-    let effective_cwd = session
-        .cwd
-        .clone()
-        .filter(|value| !value.trim().is_empty())
-        .ok_or("Agent workspace is required before starting wiseSpace Local".to_string())?;
-    let workspace_path = std::path::Path::new(&effective_cwd);
-    if workspace_path.exists() && !workspace_path.is_dir() {
-        return Err(format!(
-            "Agent workspace exists but is not a directory: {}",
-            effective_cwd
-        ));
-    }
-    if !workspace_path.exists() {
-        std::fs::create_dir_all(workspace_path).map_err(|e| {
-            format!(
-                "Failed to create agent workspace '{}': {}",
-                effective_cwd, e
-            )
-        })?;
-    }
-    let canonical_workspace = workspace_path.canonicalize().map_err(|e| {
-        format!(
-            "Failed to access agent workspace '{}': {}",
-            effective_cwd, e
-        )
+    let plan = build_local_agent_plan(LocalAgentRunRequest {
+        conversation_id: input.conversation_id,
+        prompt: input.prompt,
+        provider_id: input.provider_id,
+        model_id: input.model_id,
+        cwd: input.cwd,
+        permission_mode: input.permission_mode,
     })?;
-    let effective_cwd = canonical_workspace.to_string_lossy().to_string();
-
-    crate::agent_runtime::runtime::ensure_no_active_run(&state.sea_db, &conversation_id).await?;
+    if !plan.should_execute_agent {
+        return Err("Local agent planner declined execution".to_string());
+    }
 
     {
         let running = RUNNING_AGENTS.lock().unwrap();
-        if running.contains_key(&conversation_id) {
+        if running.contains_key(&plan.conversation_id) {
             return Err("Agent is already running".to_string());
         }
     }
 
-    let real_provider_id = resolve_agent_provider_id(&state.sea_db, &provider_id).await?;
-
-    agent_session::update_agent_session_status(&state.sea_db, &session.id, "running")
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let run = match crate::agent_runtime::runtime::start_run(
-        &state.sea_db,
-        &conversation_id,
-        crate::agent_runtime::runner::AgentRunnerKind::Sdk,
-        &prompt,
-        Some(&provider_id),
-        Some(&model_id),
-        session.sdk_context_json.as_deref(),
-    )
-    .await
-    {
-        Ok((_, run)) => run,
-        Err(err) => {
-            let _ = agent_session::update_agent_session_status(&state.sea_db, &session.id, "idle")
-                .await;
-            return Err(err);
-        }
-    };
-
-    let user_message = message::create_message(
-        &state.sea_db,
-        &conversation_id,
-        MessageRole::User,
-        &prompt,
-        &[],
-        None,
-        0,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-
-    let pre_conv = conversation::get_conversation(&state.sea_db, &conversation_id)
-        .await
-        .map_err(|e| e.to_string())?;
-    let is_first_message = pre_conv.message_count <= 1;
-
-    conversation::increment_message_count(&state.sea_db, &conversation_id)
-        .await
-        .map_err(|e| e.to_string())?;
+    let exec_ctx = prepare_local_agent_execution_context(state, &plan).await?;
+    let conversation_id = plan.conversation_id.clone();
+    let prompt = plan.prompt.clone();
+    let provider_id = plan.provider_id.clone();
+    let model_id = plan.model_id.clone();
+    let session = exec_ctx.session.clone();
+    let real_provider_id = exec_ctx.real_provider_id.clone();
+    let run = exec_ctx.run.clone();
+    let user_message_id = exec_ctx.user_message_id.clone();
+    let user_message_created_at = exec_ctx.user_message_created_at;
+    let effective_cwd = exec_ctx.effective_cwd.clone();
+    let prov = exec_ctx.provider.clone();
+    let ctx = exec_ctx.request_context.clone();
+    let title_ctx = exec_ctx.title_context.clone();
+    let is_first_message = exec_ctx.is_first_message;
+    let global_settings = exec_ctx.global_settings.clone();
 
     if is_first_message {
         let fallback_title = if prompt.chars().count() > 30 {
@@ -169,41 +104,10 @@ pub async fn start_sdk_run(
         }
     }
 
-    let prov = provider::get_provider(&state.sea_db, &real_provider_id)
-        .await
-        .map_err(|e| e.to_string())?;
-    let key_row = provider::get_active_key(&state.sea_db, &real_provider_id)
-        .await
-        .map_err(|e| e.to_string())?;
-    let decrypted_key =
-        wisespace_core::crypto::decrypt_key(&key_row.key_encrypted, &state.master_key)
-            .map_err(|e| e.to_string())?;
     let model_param_overrides = provider::get_model(&state.sea_db, &real_provider_id, &model_id)
         .await
         .ok()
         .and_then(|model| model.param_overrides);
-
-    let global_settings = settings::get_settings(&state.sea_db)
-        .await
-        .unwrap_or_default();
-    let resolved_proxy = ProviderProxyConfig::resolve(&prov.proxy_config, &global_settings);
-    let ctx = ProviderRequestContext {
-        api_key: decrypted_key,
-        key_id: key_row.id.clone(),
-        provider_id: prov.id.clone(),
-        base_url: Some(resolve_base_url_for_type(
-            &prov.api_host,
-            &prov.provider_type,
-        )),
-        api_path: prov.api_path.clone(),
-        proxy_config: resolved_proxy,
-        custom_headers: prov
-            .custom_headers
-            .as_ref()
-            .and_then(|s| serde_json::from_str(s).ok()),
-    };
-
-    let title_ctx = ctx.clone();
     let adapter = create_adapter_arc(&prov.provider_type)?;
     let provider_type_str = provider_type_to_registry_key(&prov.provider_type);
     let bridge =
@@ -392,9 +296,7 @@ pub async fn start_sdk_run(
         })
     });
 
-    let conv = conversation::get_conversation(&state.sea_db, &conversation_id)
-        .await
-        .map_err(|e| e.to_string())?;
+    let conv = exec_ctx.conversation.clone();
 
     let home = dirs::home_dir().unwrap_or_default();
     let all_skills = open_agent_sdk::skills::load_all_global(&home);
@@ -536,8 +438,8 @@ pub async fn start_sdk_run(
     let db = state.sea_db.clone();
     let session_id = session.id.clone();
     let conv_id = conversation_id.clone();
-    let user_msg_id = user_message.id.clone();
-    let assistant_created_at = user_message.created_at + 1;
+    let user_msg_id = user_message_id.clone();
+    let assistant_created_at = user_message_created_at + 1;
     let master_key = state.master_key;
     let title_prov = prov.clone();
     let title_model_id = model_id.clone();
@@ -1147,71 +1049,26 @@ pub async fn start_sdk_run(
             return;
         }
 
-        let mut final_content = accumulated_text.clone();
-        if in_thinking_block {
-            final_content.push_str("\n</think>\n\n");
-        }
-        if !result_text.is_empty() && !accumulated_text.contains(&result_text) {
-            final_content.push_str(&result_text);
-        }
-
-        if !final_content.is_empty() {
-            if let Some(ref mid) = current_assistant_msg_id {
-                let _ = message::update_message_content(&db, mid, &final_content).await;
-            } else if let Ok(assist_msg) = message::create_message(
-                &db,
-                &conv_id,
-                MessageRole::Assistant,
-                &final_content,
-                &[],
-                Some(&user_msg_id),
-                0,
-            )
-            .await
-            {
-                current_assistant_msg_id = Some(assist_msg.id.clone());
-                let _ = conversation::increment_message_count(&db, &conv_id).await;
-            }
-        }
-
-        let usage_payload = final_usage.as_ref().map(|u| AgentUsagePayload {
-            input_tokens: u.input_tokens,
-            output_tokens: u.output_tokens,
-        });
-        let token_usage_json = final_usage.as_ref().map(|u| {
-            serde_json::json!({
-                "input_tokens": u.input_tokens,
-                "output_tokens": u.output_tokens,
-                "total_tokens": u.input_tokens + u.output_tokens,
-            })
-            .to_string()
-        });
-
-        if let (Some(ref mid), Some(ref usage)) = (&current_assistant_msg_id, &final_usage) {
-            let _ = message::update_message_usage(
-                &db,
-                mid,
-                Some(usage.input_tokens as i64),
-                Some(usage.output_tokens as i64),
-            )
-            .await;
-        }
-
-        let _ = app.emit(
-            "agent-done",
-            AgentDonePayload {
-                conversation_id: conv_id.clone(),
-                assistant_message_id: current_assistant_msg_id.clone().unwrap_or_default(),
-                text: final_content.clone(),
-                thinking: Some(accumulated_thinking.clone())
-                    .filter(|value| !value.trim().is_empty()),
-                model: Some(model_id.clone()),
-                session_id: None,
-                usage: usage_payload.clone(),
-                num_turns: Some(num_turns),
-                cost_usd: Some(cost_usd),
-            },
+        let final_content = result_renderer::build_final_agent_content(
+            &accumulated_text,
+            in_thinking_block,
+            &result_text,
         );
+        let _ = result_renderer::persist_final_agent_message(
+            &db,
+            &conv_id,
+            &user_msg_id,
+            &mut current_assistant_msg_id,
+            &final_content,
+        )
+        .await;
+        let _ = result_renderer::persist_usage(
+            &db,
+            current_assistant_msg_id.as_deref(),
+            final_usage.as_ref(),
+        )
+        .await;
+
         let _ = recorder
             .append(
                 &db,
@@ -1221,7 +1078,10 @@ pub async fn start_sdk_run(
                     "assistantMessageId": current_assistant_msg_id.clone(),
                     "text": final_content.clone(),
                     "thinking": accumulated_thinking.clone(),
-                    "usage": usage_payload,
+                    "usage": final_usage.as_ref().map(|u| serde_json::json!({
+                        "input_tokens": u.input_tokens,
+                        "output_tokens": u.output_tokens,
+                    })),
                     "numTurns": num_turns,
                     "costUsd": cost_usd,
                 }),
@@ -1313,14 +1173,18 @@ pub async fn start_sdk_run(
         {
             tracing::error!("[agent] Failed to update session after query: {}", e);
         }
-        let _ = agent_run::finish_run(
+        let _ = result_renderer::finish_run_with_result(
+            &app,
             &db,
-            &run.id,
-            "completed",
-            sdk_context.as_deref(),
-            token_usage_json.as_deref(),
+            &run,
+            current_assistant_msg_id.as_deref(),
+            &final_content,
+            &accumulated_thinking,
+            &model_id,
+            final_usage.as_ref(),
+            num_turns,
             cost_usd,
-            None,
+            sdk_context.as_deref(),
         )
         .await;
     });

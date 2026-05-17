@@ -16,6 +16,7 @@ function normalizeFileRow(row: FileRow | FilesPageEntry): FileRow {
       hasThumbnail: Boolean(previewUrl),
       previewUrl,
       missing: row.missing,
+      sourceKind: row.sourceKind,
     };
   }
 
@@ -92,7 +93,7 @@ export const useFileStore = create<FileStoreState>((set, get) => ({
 
   cleanupMissingEntry: async (entryId: string) => {
     const row = get().rows.find((r) => r.id === entryId);
-    if (!row) return;
+    if (!row || !row.missing) return;
     try {
       await invoke('cleanup_missing_files_page_entry', { entryId });
       set({ rows: get().rows.filter((r) => r.id !== entryId) });

@@ -793,6 +793,21 @@
       "similarity": "相似度",
       "updateSuccess": "更新成功"
     },
+    "embeddingReadiness": {
+      "ready": "向量配置已就绪",
+      "notReady": "向量配置还未完成",
+      "providers": "已启用 {{count}} 个 Provider",
+      "keys": "已启用 {{count}} 个 API Key",
+      "models": "可用 {{count}} 个向量模型",
+      "hint": "知识库和记忆至少需要一个启用的 Provider、一个启用的 API Key，以及一个启用的向量模型。",
+      "openProviders": "打开 Provider 设置",
+      "reason": {
+        "no_enabled_provider": "没有启用的 Provider",
+        "no_api_key": "没有启用的 API Key",
+        "no_embedding_model": "还没有配置向量模型",
+        "embedding_model_disabled": "已存在向量模型，但当前被禁用"
+      }
+    },
     "desktopIntegration": {
       "title": "桌面集成"
     },

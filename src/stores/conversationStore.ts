@@ -499,6 +499,22 @@ function isSameProviderModel(left: Message, right: Message): boolean {
   return left.provider_id === right.provider_id && left.model_id === right.model_id;
 }
 
+function replaceAgentMessageId(messages: Message[], oldId: string, newId: string): Message[] {
+  return messages.map((message) => (
+    message.id === oldId ? { ...message, id: newId } : message
+  ));
+}
+
+function patchAgentMessage(
+  messages: Message[],
+  targetId: string,
+  updater: (message: Message) => Message,
+): Message[] {
+  return messages.map((message) => (
+    message.id === targetId ? updater(message) : message
+  ));
+}
+
 function isTemporaryMessageId(messageId: string | null | undefined): messageId is string {
   return typeof messageId === 'string' && messageId.startsWith('temp-');
 }
@@ -2017,22 +2033,22 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         // This replaces the temp ID so tool call events can be matched
         listen<{ conversationId: string; assistantMessageId: string }>('agent-message-id', (event) => {
           if (event.payload.conversationId !== conversationId || !isCurrentAgentRun()) return;
-          // Flush pending buffer before switching IDs
           flushAgentStreamChunks();
           const realId = event.payload.assistantMessageId;
           const oldId = currentMsgId;
           currentMsgId = realId;
           set((s) => ({
             streamingMessageId: realId,
-            messages: s.messages.map((m) =>
-              m.id === oldId ? { ...m, id: realId } : m
-            ),
+            messages: replaceAgentMessageId(s.messages, oldId, realId),
           }));
         }).then(keepAgentUnlisten((fn) => { unlistenMessageId = fn; }));
 
         // Listen for incremental text chunks — buffer and flush periodically
         listen<AgentStreamTextEvent>('agent-stream-text', (event) => {
           if (event.payload.conversationId !== conversationId || !isCurrentAgentRun()) return;
+          if (event.payload.assistantMessageId && event.payload.assistantMessageId !== currentMsgId) {
+            currentMsgId = event.payload.assistantMessageId;
+          }
           _agentPendingText += event.payload.text;
           scheduleAgentFlush();
         }).then(keepAgentUnlisten((fn) => { unlistenStreamText = fn; }));
@@ -2040,6 +2056,9 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         // Listen for incremental thinking chunks — buffer and flush periodically
         listen<AgentStreamThinkingEvent>('agent-stream-thinking', (event) => {
           if (event.payload.conversationId !== conversationId || !isCurrentAgentRun()) return;
+          if (event.payload.assistantMessageId && event.payload.assistantMessageId !== currentMsgId) {
+            currentMsgId = event.payload.assistantMessageId;
+          }
           _agentPendingThinking += event.payload.thinking;
           scheduleAgentFlush();
         }).then(keepAgentUnlisten((fn) => { unlistenStreamThinking = fn; }));
@@ -2076,29 +2095,32 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
             }
           }
 
+          const previousAssistantId = currentMsgId;
+          const finalAssistantId = event.payload.assistantMessageId || currentMsgId;
+          currentMsgId = finalAssistantId;
           set((s) => ({
             streaming: false,
             streamingMessageId: null,
             streamingConversationId: null,
             thinkingActiveMessageIds: (() => {
               const next = new Set(s.thinkingActiveMessageIds);
-              next.delete(currentMsgId);
+              next.delete(previousAssistantId);
+              next.delete(finalAssistantId);
               return next;
             })(),
-            messages: s.messages.map((m) => {
-              if (m.id === currentMsgId) {
-                return {
-                  ...m,
-                  id: event.payload.assistantMessageId || m.id,
-                  content: finalContent,
-                  thinking: finalThinking,
-                  status: 'complete' as const,
-                  prompt_tokens: event.payload.usage?.input_tokens ?? null,
-                  completion_tokens: event.payload.usage?.output_tokens ?? null,
-                };
-              }
-              return m;
-            }),
+            messages: patchAgentMessage(
+              replaceAgentMessageId(s.messages, previousAssistantId, finalAssistantId),
+              finalAssistantId,
+              (m) => ({
+                ...m,
+                id: finalAssistantId,
+                content: finalContent,
+                thinking: finalThinking,
+                status: 'complete' as const,
+                prompt_tokens: event.payload.usage?.input_tokens ?? null,
+                completion_tokens: event.payload.usage?.output_tokens ?? null,
+              }),
+            ),
           }));
 
           cleanup();
@@ -2114,9 +2136,9 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         // Listen for agent-error
         listen<AgentErrorEvent>('agent-error', (event) => {
           if (event.payload.conversationId !== conversationId || !isCurrentAgentRun()) return;
-          // Clear pending buffer (error event overwrites content)
           clearAgentStreamBuffer();
-          // Skip if streaming was already cancelled
+          const targetMessageId = event.payload.assistantMessageId || currentMsgId;
+          currentMsgId = targetMessageId;
           const isStillStreaming = get().streaming && get().streamingMessageId === currentMsgId;
           if (!isStillStreaming) {
             cleanup();
@@ -2130,19 +2152,14 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
             streamingConversationId: null,
             thinkingActiveMessageIds: (() => {
               const next = new Set(s.thinkingActiveMessageIds);
-              next.delete(currentMsgId);
+              next.delete(targetMessageId);
               return next;
             })(),
-            messages: s.messages.map((m) => {
-              if (m.id === currentMsgId) {
-                return {
-                  ...m,
-                  content: event.payload.message,
-                  status: 'error' as const,
-                };
-              }
-              return m;
-            }),
+            messages: patchAgentMessage(s.messages, targetMessageId, (m) => ({
+              ...m,
+              content: event.payload.message,
+              status: 'error' as const,
+            })),
           }));
 
           cleanup();

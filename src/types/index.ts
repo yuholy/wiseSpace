@@ -621,6 +621,7 @@ export interface FileRow {
   hasThumbnail?: boolean;
   previewUrl?: string;
   missing?: boolean;
+  sourceKind?: string;
 }
 
 export interface FilesPageEntry {

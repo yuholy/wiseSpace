@@ -18,7 +18,7 @@ export function FilesContent({ activeCategory }: FilesContentProps) {
     throw new Error(`Unhandled file category: ${activeCategory}`);
   }
 
-  const { rows, search, error, loadCategory, setSearch, setSortKey, clearError, revealEntry, cleanupMissingEntry } =
+  const { rows, search, error, loadCategory, setSearch, setSortKey, clearError, openEntry, revealEntry, cleanupMissingEntry } =
     useFileStore();
 
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
@@ -114,6 +114,7 @@ export function FilesContent({ activeCategory }: FilesContentProps) {
         category={activeCategory}
         selectedRowKeys={selectedRowKeys}
         onSelectionChange={setSelectedRowKeys}
+        onOpen={(path) => void openEntry(path)}
         onReveal={(path) => void revealEntry(path)}
         onDelete={(id) => void handleDeleteEntry(id)}
       />

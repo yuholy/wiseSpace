@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { Button, Tooltip, App, theme, Dropdown, Tag, Popover, Checkbox, Badge, Popconfirm } from 'antd';
 import type { MenuProps } from 'antd';
-import { Paperclip, Trash2, Mic, Eraser, Scissors, Globe, Brain, Atom, Plug, SlidersHorizontal, ArrowUp, Square, Check, Zap, ZapOff, Shrink, Upload, GitCompareArrows, X, BookOpen, GripHorizontal, CircleOff, SignalLow, SignalMedium, SignalHigh, Signal, Bot, MessageSquare, Shield, ShieldCheck, ShieldAlert, FolderOpen, ExternalLink, Code } from 'lucide-react';
+import { Paperclip, Trash2, Mic, Eraser, Scissors, Globe, Brain, Atom, Plug, SlidersHorizontal, ArrowUp, Square, Check, Zap, ZapOff, Shrink, Upload, GitCompareArrows, X, BookOpen, GripHorizontal, CircleOff, SignalLow, SignalMedium, SignalHigh, Signal, Bot, MessageSquare, Shield, ShieldCheck, ShieldAlert, FolderOpen, ExternalLink } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAgentStore, useConversationStore, useProviderStore, useSettingsStore, useSearchStore, useMcpStore, useMemoryStore, useKnowledgeStore } from '@/stores';
 import { useUIStore } from '@/stores/uiStore';
@@ -25,14 +25,7 @@ import { ModelIcon } from '@lobehub/icons';
 import type { AttachmentInput, ProviderType, RealtimeConfig } from '@/types';
 import { invoke } from '@/lib/invoke';
 import { open } from '@tauri-apps/plugin-dialog';
-import {
-  AGENT_EXECUTORS,
-  getAgentExecutorMeta,
-  getAgentExecutorStorageKey,
-  normalizeAgentExecutorId,
-  getAgentExecutorModelStorageKey,
-  type AgentExecutorId,
-} from '@/lib/agentExecutors';
+import { getAgentExecutorStorageKey } from '@/lib/agentExecutors';
 
 async function fileToAttachmentInput(file: File): Promise<AttachmentInput> {
   return new Promise((resolve) => {
@@ -95,8 +88,6 @@ export function InputArea() {
   const activeConversationId = useConversationStore((s) => s.activeConversationId);
   const sendMessage = useConversationStore((s) => s.sendMessage);
   const sendAgentMessage = useConversationStore((s) => s.sendAgentMessage);
-  const agentExecutorId = useConversationStore((s) => s.activeAgentExecutorId);
-  const activeAgentExecutorModel = useConversationStore((s) => s.activeAgentExecutorModel);
   const setAgentExecutorId = useConversationStore((s) => s.setActiveAgentExecutorId);
   const setActiveAgentExecutorModel = useConversationStore((s) => s.setActiveAgentExecutorModel);
   const agentProfiles = useAgentStore((s) => s.profilesByConversation);
@@ -155,13 +146,12 @@ export function InputArea() {
 
   // Agent permission mode state
   const [agentPermissionMode, setAgentPermissionMode] = useState<string>('default');
-  const [agentExecutorModel, setAgentExecutorModel] = useState<string | null>(null);
   // Agent working directory state
   const [agentCwd, setAgentCwd] = useState<string | null>(null);
   const currentAgentProfile = activeConversationId ? agentProfiles[activeConversationId] : undefined;
   const resolvedAgentCwd = currentAgentProfile?.workspaceRoot ?? agentCwd;
   const resolvedAgentPermissionMode = currentAgentProfile?.permissionMode ?? agentPermissionMode;
-  const resolvedAgentExecutorModel = activeAgentExecutorModel ?? agentExecutorModel;
+  const localAgentExecutorId = 'wisespace-local';
 
   // Knowledge base state
   const knowledgeBases = useKnowledgeStore((s) => s.bases);
@@ -230,33 +220,12 @@ export function InputArea() {
   }, [currentMode, currentAgentProfile?.workspaceRoot, currentAgentProfile?.permissionMode]);
 
   useEffect(() => {
-    if (!activeConversationId) {
-      setAgentExecutorId('wisespace-local');
-      setAgentExecutorModel(null);
-      return;
-    }
-    const saved = localStorage.getItem(getAgentExecutorStorageKey(activeConversationId));
-    setAgentExecutorId(normalizeAgentExecutorId(saved));
-  }, [activeConversationId, setAgentExecutorId]);
-
-  useEffect(() => {
-    if (!activeConversationId) {
-      setAgentExecutorModel(null);
-      return;
-    }
-    const savedModel = localStorage.getItem(getAgentExecutorModelStorageKey(activeConversationId, agentExecutorId));
-    setAgentExecutorModel(savedModel || null);
-  }, [activeConversationId, agentExecutorId]);
-
-  const handleAgentExecutorChange = useCallback((executorId: AgentExecutorId) => {
-    setAgentExecutorId(executorId);
+    setAgentExecutorId(localAgentExecutorId);
+    setActiveAgentExecutorModel(null);
     if (activeConversationId) {
-      const savedModel = localStorage.getItem(getAgentExecutorModelStorageKey(activeConversationId, executorId));
-      setAgentExecutorModel(savedModel || null);
-    } else {
-      setAgentExecutorModel(null);
+      localStorage.setItem(getAgentExecutorStorageKey(activeConversationId), localAgentExecutorId);
     }
-  }, [activeConversationId, setAgentExecutorId]);
+  }, [activeConversationId, setActiveAgentExecutorModel, setAgentExecutorId]);
 
   // Draft persistence: save old draft & restore new when conversation changes
   useEffect(() => {
@@ -482,45 +451,6 @@ export function InputArea() {
       default: return t('common.permissionDefault');
     }
   }, [resolvedAgentPermissionMode, t]);
-
-  const agentExecutorItems = useMemo<MenuProps['items']>(() => AGENT_EXECUTORS.map((executor) => ({
-    key: executor.id,
-    label: executor.name,
-    icon: executor.id === 'claude-code'
-      ? <Code size={14} />
-      : executor.id === 'deepseek-tui'
-        ? <Brain size={14} />
-        : <Bot size={14} />,
-  })), []);
-
-  const agentExecutor = getAgentExecutorMeta(agentExecutorId);
-  const agentExecutorLabel = agentExecutor.name;
-  const agentExecutorIcon = agentExecutorId === 'claude-code'
-    ? <Code size={14} />
-    : agentExecutorId === 'deepseek-tui'
-      ? <Brain size={14} />
-      : <Bot size={14} />;
-  const agentModelItems = useMemo<MenuProps['items']>(() => {
-    if (!agentExecutor.supportsModelSelection) return [];
-    const options = agentExecutor.modelOptions ?? [];
-    return [
-      {
-        key: '__default__',
-        label: 'Use executor default',
-      },
-      ...options.map((model) => ({
-        key: model,
-        label: model,
-      })),
-    ];
-  }, [agentExecutor]);
-  const agentModelLabel = resolvedAgentExecutorModel || 'Executor model';
-
-  const handleAgentModelChange = useCallback((modelKey: string) => {
-    const nextModel = modelKey === '__default__' ? null : modelKey;
-    setAgentExecutorModel(nextModel);
-    setActiveAgentExecutorModel(nextModel);
-  }, [setActiveAgentExecutorModel]);
 
   // Agent CWD helpers
   const abbreviatePath = useCallback((path: string): string => {
@@ -896,10 +826,10 @@ export function InputArea() {
       });
       if (currentMode === 'agent') {
         await sendAgentMessage(trimmed, attachments, {
-          executorId: agentExecutorId,
+          executorId: localAgentExecutorId,
           cwd: resolvedAgentCwd,
           permissionMode: resolvedAgentPermissionMode,
-          executorModel: resolvedAgentExecutorModel,
+          executorModel: null,
         });
       } else if (companionModels.length > 0) {
         await sendMultiModelMessage(trimmed, companionModels, attachments, searchEnabled ? searchProviderId : null);
@@ -923,7 +853,7 @@ export function InputArea() {
         }
       });
     }
-  }, [value, attachedFiles, sendMessage, sendAgentMessage, sendMultiModelMessage, companionModels, activeConversationId, providers, settings, createConversation, messageApi, t, searchEnabled, searchProviderId, currentMode, agentExecutorId, resolvedAgentCwd, resolvedAgentPermissionMode, resolvedAgentExecutorModel]);
+  }, [value, attachedFiles, sendMessage, sendAgentMessage, sendMultiModelMessage, companionModels, activeConversationId, providers, settings, createConversation, messageApi, t, searchEnabled, searchProviderId, currentMode, localAgentExecutorId, resolvedAgentCwd, resolvedAgentPermissionMode]);
 
   const handleFillLastMessage = useCallback(() => {
     if (streaming) return;
@@ -1600,58 +1530,9 @@ export function InputArea() {
             </Button>
           </Dropdown>
           {currentMode === 'agent' && (
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-              <Dropdown
-                menu={{
-                  items: agentExecutorItems,
-                  selectedKeys: [agentExecutorId],
-                  onClick: ({ key }) => handleAgentExecutorChange(key as AgentExecutorId),
-                }}
-                trigger={['click']}
-              >
-                <Button
-                  type="text"
-                  size="small"
-                  icon={agentExecutorIcon}
-                  style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}
-                >
-                  {agentExecutorLabel}
-                </Button>
-              </Dropdown>
-              <Tooltip title="Agent executor settings">
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<SlidersHorizontal size={13} />}
-                  style={{ minWidth: 24, padding: '0 4px' }}
-                  onClick={() => {
-                    setSettingsSection('agentExecutors');
-                    setActivePage('settings');
-                  }}
-                />
-              </Tooltip>
-            </div>
-          )}
-          {currentMode === 'agent' && agentExecutor.supportsModelSelection && (
-            <Dropdown
-              menu={{
-                items: agentModelItems,
-                selectedKeys: [resolvedAgentExecutorModel ?? '__default__'],
-                onClick: ({ key }) => handleAgentModelChange(String(key)),
-              }}
-              trigger={['click']}
-            >
-              <Button
-                type="text"
-                size="small"
-                icon={<Atom size={14} />}
-                style={{ display: 'flex', alignItems: 'center', gap: 4, maxWidth: 180, fontSize: 12 }}
-              >
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {agentModelLabel}
-                </span>
-              </Button>
-            </Dropdown>
+            <Tag color="blue" bordered={false} style={{ marginInlineEnd: 0 }}>
+              {t('agent.localRuntimeLabel', 'wiseSpace Local')}
+            </Tag>
           )}
           {currentMode === 'agent' && (
             <Tooltip title={resolvedAgentCwd || 'Choose Agent workspace'}>

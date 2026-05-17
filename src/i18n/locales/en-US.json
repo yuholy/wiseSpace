@@ -793,6 +793,21 @@
       "similarity": "Similarity",
       "updateSuccess": "Updated successfully"
     },
+    "embeddingReadiness": {
+      "ready": "Embedding setup is ready",
+      "notReady": "Embedding setup needs attention",
+      "providers": "{{count}} provider(s) enabled",
+      "keys": "{{count}} API key(s) enabled",
+      "models": "{{count}} embedding model(s) available",
+      "hint": "Knowledge base and memory need at least one enabled provider, one enabled API key, and one enabled embedding model.",
+      "openProviders": "Open provider settings",
+      "reason": {
+        "no_enabled_provider": "No enabled provider",
+        "no_api_key": "No enabled API key",
+        "no_embedding_model": "No embedding model configured",
+        "embedding_model_disabled": "Embedding models exist but are disabled"
+      }
+    },
     "desktopIntegration": {
       "title": "Desktop Integration"
     },
@@ -1161,6 +1176,7 @@
     "columnName": "Name",
     "columnSize": "Size",
     "columnCreatedAt": "Created",
+    "columnSource": "Source",
     "columnActions": "Actions",
     "missing": "Missing",
     "cleanup": "Clean up",
@@ -1232,7 +1248,8 @@
     "askUserPlaceholder": "Type your answer...",
     "askUserSupplementPlaceholder": "Additional input (optional)...",
     "askUserSubmit": "Submit",
-    "askUserSubmitted": "Submitted"
+    "askUserSubmitted": "Submitted",
+    "localRuntimeLabel": "wiseSpace Local"
   },
   "drawing": {
     "title": "Drawing",

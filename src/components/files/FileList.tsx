@@ -1,9 +1,9 @@
 /** FileList renders file rows in an antd Table with built-in multi-column sorting. */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Empty, Image, Popconfirm, Table, Tag, theme } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { FolderOpen, Image as ImageIcon, Trash2 } from 'lucide-react';
+import { ExternalLink, FolderOpen, Image as ImageIcon, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@/lib/invoke';
 import type { FileCategory, FileRow } from '@/types';
@@ -13,19 +13,19 @@ interface FileListProps {
   category?: FileCategory;
   selectedRowKeys?: string[];
   onSelectionChange?: (keys: string[]) => void;
+  onOpen?: (path: string) => void;
   onReveal?: (path: string) => void;
   onDelete?: (id: string) => void;
 }
 
 function formatSize(bytes?: number): string {
-  if (bytes == null) return '—';
+  if (bytes == null) return '-';
   if (bytes === 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
   const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
   return `${(bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0)} ${units[i]}`;
 }
 
-/** Load base64 data URL for an image thumbnail via Rust command. */
 function useThumbnailSrc(storagePath: string | undefined, missing: boolean | undefined): string | undefined {
   const [src, setSrc] = useState<string | undefined>(undefined);
   useEffect(() => {
@@ -41,7 +41,6 @@ function useThumbnailSrc(storagePath: string | undefined, missing: boolean | und
 
 function ImageThumbnail({ record }: { record: FileRow }) {
   const { token } = theme.useToken();
-  // Extract relative storage path from the full resolved path — use the row's raw storage_path if available
   const src = useThumbnailSrc(record.storagePath, record.missing);
   return (
     <div
@@ -67,7 +66,25 @@ function ImageThumbnail({ record }: { record: FileRow }) {
   );
 }
 
-export function FileList({ rows = [], category, selectedRowKeys = [], onSelectionChange, onReveal, onDelete }: FileListProps) {
+function sourceKindLabel(sourceKind?: string) {
+  switch (sourceKind) {
+    case 'backup_manifest':
+      return 'Backup';
+    case 'attachment':
+    default:
+      return 'Attachment';
+  }
+}
+
+export function FileList({
+  rows = [],
+  category,
+  selectedRowKeys = [],
+  onSelectionChange,
+  onOpen,
+  onReveal,
+  onDelete,
+}: FileListProps) {
   const { token } = theme.useToken();
   const { t } = useTranslation();
   const showThumbnails = category === 'images';
@@ -112,13 +129,22 @@ export function FileList({ rows = [], category, selectedRowKeys = [], onSelectio
       sorter: { compare: (a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''), multiple: 3 },
       defaultSortOrder: 'descend',
       render: (date: string | undefined) => (
-        <span className="text-xs" style={{ color: token.colorTextSecondary }}>{date ?? '—'}</span>
+        <span className="text-xs" style={{ color: token.colorTextSecondary }}>{date ?? '-'}</span>
+      ),
+    },
+    {
+      title: t('files.columnSource', 'Source'),
+      dataIndex: 'sourceKind',
+      key: 'sourceKind',
+      width: 120,
+      render: (sourceKind: string | undefined) => (
+        <Tag bordered={false}>{sourceKindLabel(sourceKind)}</Tag>
       ),
     },
     {
       title: t('files.columnActions'),
       key: 'actions',
-      width: 160,
+      width: 220,
       render: (_: unknown, record: FileRow) => {
         if (record.missing) {
           return (
@@ -147,15 +173,26 @@ export function FileList({ rows = [], category, selectedRowKeys = [], onSelectio
         }
         return (
           <span className="flex items-center gap-1">
+            {onOpen && record.path && (
+              <Button
+                type="text"
+                size="small"
+                icon={<ExternalLink size={14} />}
+                onClick={() => onOpen(record.path)}
+                aria-label={`${t('files.open')} ${record.name}`}
+              >
+                {t('files.open')}
+              </Button>
+            )}
             {onReveal && record.path && (
               <Button
                 type="text"
                 size="small"
                 icon={<FolderOpen size={14} />}
                 onClick={() => onReveal(record.path)}
-                aria-label={`${t('files.open')} ${record.name}`}
+                aria-label={`${t('files.openOriginalDirectory', 'Open folder')} ${record.name}`}
               >
-                {t('files.open')}
+                {t('files.openOriginalDirectory', 'Open folder')}
               </Button>
             )}
             {onDelete && (
@@ -182,11 +219,6 @@ export function FileList({ rows = [], category, selectedRowKeys = [], onSelectio
     },
   );
 
-  const handleSelectionChange = useCallback(
-    (keys: React.Key[]) => { onSelectionChange?.(keys as string[]); },
-    [onSelectionChange],
-  );
-
   return (
     <Table<FileRow>
       dataSource={rows}
@@ -195,7 +227,7 @@ export function FileList({ rows = [], category, selectedRowKeys = [], onSelectio
       size="small"
       rowSelection={{
         selectedRowKeys,
-        onChange: handleSelectionChange,
+        onChange: (keys) => onSelectionChange?.(keys as string[]),
       }}
       pagination={{
         defaultPageSize: 15,

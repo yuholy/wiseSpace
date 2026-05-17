@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { invoke } from '@/lib/invoke';
+import { evaluateEmbeddingReadiness, type EmbeddingReadiness } from '@/lib/embeddingReadiness';
+import { useProviderStore } from '@/stores/providerStore';
 import type { MemoryNamespace, MemoryItem, UpdateMemoryNamespaceInput, UpdateMemoryItemInput } from '@/types';
 
 interface MemoryState {
@@ -8,8 +10,10 @@ interface MemoryState {
   loading: boolean;
   error: string | null;
   selectedNamespaceId: string | null;
+  embeddingReadiness: EmbeddingReadiness;
 
   loadNamespaces: () => Promise<void>;
+  refreshEmbeddingReadiness: () => Promise<void>;
   createNamespace: (name: string, scope: string, embeddingProvider?: string) => Promise<MemoryNamespace | null>;
   deleteNamespace: (id: string) => Promise<void>;
   updateNamespace: (id: string, input: UpdateMemoryNamespaceInput) => Promise<void>;
@@ -27,12 +31,38 @@ export const useMemoryStore = create<MemoryState>((set, get) => ({
   loading: false,
   error: null,
   selectedNamespaceId: null,
+  embeddingReadiness: {
+    ready: false,
+    availableModelCount: 0,
+    enabledProviderCount: 0,
+    enabledKeyCount: 0,
+    missingReasons: ['no_enabled_provider'],
+  },
+
+  refreshEmbeddingReadiness: async () => {
+    const providerState = useProviderStore.getState();
+    if (providerState.providers.length === 0) {
+      await providerState.fetchProviders();
+    }
+    set({
+      embeddingReadiness: evaluateEmbeddingReadiness(
+        useProviderStore.getState().providers,
+      ),
+    });
+  },
 
   loadNamespaces: async () => {
     set({ loading: true });
     try {
       const namespaces = await invoke<MemoryNamespace[]>('list_memory_namespaces');
-      set({ namespaces, loading: false, error: null });
+      set({
+        namespaces,
+        loading: false,
+        error: null,
+        embeddingReadiness: evaluateEmbeddingReadiness(
+          useProviderStore.getState().providers,
+        ),
+      });
     } catch (e) {
       set({ error: String(e), loading: false });
     }

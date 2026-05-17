@@ -22,6 +22,7 @@ import { Plus, Trash2, Trash, Settings, GripVertical, MoreHorizontal, Search, Fi
 import { useTranslation } from 'react-i18next';
 import { useKnowledgeStore } from '@/stores';
 import { EmbeddingModelSelect } from '@/components/shared/EmbeddingModelSelect';
+import { EmbeddingReadinessAlert } from '@/components/shared/EmbeddingReadinessAlert';
 import { RerankModelSelect } from '@/components/shared/RerankModelSelect';
 import { IconEditor } from '@/components/shared/IconEditor';
 import { KnowledgeBaseIcon } from '@/components/shared/KnowledgeBaseIcon';
@@ -254,7 +255,7 @@ function KnowledgeBaseDetail({
   onDeleted: () => void;
 }) {
   const { t } = useTranslation();
-  const { documents, loading, updateBase, loadDocuments, addDocument, deleteDocument } =
+  const { documents, loading, updateBase, loadDocuments, addDocument, deleteDocument, embeddingReadiness } =
     useKnowledgeStore();
   const [messageApi, contextHolder] = message.useMessage();
 
@@ -704,6 +705,11 @@ function KnowledgeBaseDetail({
           </Tooltip>
         </div>
       </div>
+      {!embeddingReadiness.ready && (
+        <div className="mb-4">
+          <EmbeddingReadinessAlert readiness={embeddingReadiness} compact />
+        </div>
+      )}
 
       {/* Settings Modal */}
       <Modal
@@ -1199,14 +1205,22 @@ function KnowledgeBaseDetail({
 
 export default function KnowledgeSettings() {
   const { t } = useTranslation();
-  const { bases, loadBases, createBase, setSelectedBaseId } = useKnowledgeStore();
+  const {
+    bases,
+    loadBases,
+    createBase,
+    setSelectedBaseId,
+    embeddingReadiness,
+    refreshEmbeddingReadiness,
+  } = useKnowledgeStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [form] = Form.useForm();
 
   useEffect(() => {
     loadBases();
-  }, [loadBases]);
+    void refreshEmbeddingReadiness();
+  }, [loadBases, refreshEmbeddingReadiness]);
 
   useEffect(() => {
     if (!selectedId && bases.length > 0) {
@@ -1269,11 +1283,17 @@ export default function KnowledgeSettings() {
       <Modal
         title={t('settings.knowledge.add')}
         open={modalOpen}
+        okButtonProps={{ disabled: !embeddingReadiness.ready }}
         onOk={handleCreate}
         onCancel={() => { setModalOpen(false); form.resetFields(); }}
         mask={{ enabled: true, blur: true }}
       >
         <Form form={form} layout="vertical">
+          {!embeddingReadiness.ready && (
+            <div className="mb-4">
+              <EmbeddingReadinessAlert readiness={embeddingReadiness} />
+            </div>
+          )}
           <Form.Item name="name" label={t('settings.knowledge.name')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>

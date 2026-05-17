@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { invoke } from '@/lib/invoke';
+import { evaluateEmbeddingReadiness, type EmbeddingReadiness } from '@/lib/embeddingReadiness';
+import { useProviderStore } from '@/stores/providerStore';
 import type {
   KnowledgeBase,
   KnowledgeDocument,
@@ -13,8 +15,10 @@ interface KnowledgeState {
   loading: boolean;
   error: string | null;
   selectedBaseId: string | null;
+  embeddingReadiness: EmbeddingReadiness;
 
   loadBases: () => Promise<void>;
+  refreshEmbeddingReadiness: () => Promise<void>;
   createBase: (input: CreateKnowledgeBaseInput) => Promise<KnowledgeBase | null>;
   updateBase: (id: string, input: UpdateKnowledgeBaseInput) => Promise<void>;
   deleteBase: (id: string) => Promise<void>;
@@ -31,12 +35,38 @@ export const useKnowledgeStore = create<KnowledgeState>((set, get) => ({
   loading: false,
   error: null,
   selectedBaseId: null,
+  embeddingReadiness: {
+    ready: false,
+    availableModelCount: 0,
+    enabledProviderCount: 0,
+    enabledKeyCount: 0,
+    missingReasons: ['no_enabled_provider'],
+  },
+
+  refreshEmbeddingReadiness: async () => {
+    const providerState = useProviderStore.getState();
+    if (providerState.providers.length === 0) {
+      await providerState.fetchProviders();
+    }
+    set({
+      embeddingReadiness: evaluateEmbeddingReadiness(
+        useProviderStore.getState().providers,
+      ),
+    });
+  },
 
   loadBases: async () => {
     set({ loading: true });
     try {
       const bases = await invoke<KnowledgeBase[]>('list_knowledge_bases');
-      set({ bases, loading: false, error: null });
+      set({
+        bases,
+        loading: false,
+        error: null,
+        embeddingReadiness: evaluateEmbeddingReadiness(
+          useProviderStore.getState().providers,
+        ),
+      });
     } catch (e) {
       set({ error: String(e), loading: false });
     }

@@ -3683,16 +3683,11 @@ export function ChatView() {
                   Agent
                 </Tag>
                 <Typography.Text style={{ fontSize: 13 }}>
-                  {activeAgentExecutor.name}
+                  {t('agent.localRuntimeLabel', 'wiseSpace Local')}
                 </Typography.Text>
-                {activeAgentExecutor.id === 'wisespace-local' && modelName && modelName !== 'AI' && (
+                {modelName && modelName !== 'AI' && (
                   <Typography.Text type="secondary" style={{ fontSize: 11 }}>
                     {modelName}
-                  </Typography.Text>
-                )}
-                {activeAgentExecutor.id !== 'wisespace-local' && activeAgentExecutorModel && (
-                  <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                    {activeAgentExecutorModel}
                   </Typography.Text>
                 )}
                 {msg && (

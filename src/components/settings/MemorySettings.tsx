@@ -23,6 +23,7 @@ import { invoke } from '@/lib/invoke';
 import { useTranslation } from 'react-i18next';
 import { useMemoryStore } from '@/stores';
 import { EmbeddingModelSelect } from '@/components/shared/EmbeddingModelSelect';
+import { EmbeddingReadinessAlert } from '@/components/shared/EmbeddingReadinessAlert';
 import { IconEditor } from '@/components/shared/IconEditor';
 import { NamespaceIcon } from '@/components/shared/NamespaceIcon';
 import { listen } from '@tauri-apps/api/event';
@@ -235,7 +236,16 @@ function MemoryItemsPanel({
   namespace: MemoryNamespace;
 }) {
   const { t } = useTranslation();
-  const { items, loading, loadItems, addItem, deleteItem, updateItem, updateNamespace } = useMemoryStore();
+  const {
+    items,
+    loading,
+    loadItems,
+    addItem,
+    deleteItem,
+    updateItem,
+    updateNamespace,
+    embeddingReadiness,
+  } = useMemoryStore();
   const [itemModalOpen, setItemModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<MemoryItem | null>(null);
   const [itemForm] = Form.useForm();
@@ -464,6 +474,11 @@ function MemoryItemsPanel({
           </Tooltip>
         </div>
       </div>
+      {!embeddingReadiness.ready && (
+        <div className="mb-4">
+          <EmbeddingReadinessAlert readiness={embeddingReadiness} compact />
+        </div>
+      )}
 
       {/* Settings Modal */}
       <Modal
@@ -755,14 +770,22 @@ function MemoryItemsPanel({
 
 export default function MemorySettings() {
   const { t } = useTranslation();
-  const { namespaces, loadNamespaces, createNamespace, setSelectedNamespaceId } = useMemoryStore();
+  const {
+    namespaces,
+    loadNamespaces,
+    createNamespace,
+    setSelectedNamespaceId,
+    embeddingReadiness,
+    refreshEmbeddingReadiness,
+  } = useMemoryStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [nsModalOpen, setNsModalOpen] = useState(false);
   const [nsForm] = Form.useForm();
 
   useEffect(() => {
     loadNamespaces();
-  }, [loadNamespaces]);
+    void refreshEmbeddingReadiness();
+  }, [loadNamespaces, refreshEmbeddingReadiness]);
 
   useEffect(() => {
     if (!selectedId && namespaces.length > 0) {
@@ -823,11 +846,17 @@ export default function MemorySettings() {
       <Modal
         title={t('settings.memory.addNamespace')}
         open={nsModalOpen}
+        okButtonProps={{ disabled: !embeddingReadiness.ready }}
         onOk={handleCreate}
         onCancel={() => { setNsModalOpen(false); nsForm.resetFields(); }}
         mask={{ enabled: true, blur: true }}
       >
         <Form form={nsForm} layout="vertical">
+          {!embeddingReadiness.ready && (
+            <div className="mb-4">
+              <EmbeddingReadinessAlert readiness={embeddingReadiness} />
+            </div>
+          )}
           <Form.Item name="name" label={t('settings.memory.namespaceName')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
