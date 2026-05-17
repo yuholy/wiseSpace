@@ -152,6 +152,10 @@ export function InputArea() {
   const resolvedAgentCwd = currentAgentProfile?.workspaceRoot ?? agentCwd;
   const resolvedAgentPermissionMode = currentAgentProfile?.permissionMode ?? agentPermissionMode;
   const localAgentExecutorId = 'wisespace-local';
+  const agentWorkspaceTooltip = resolvedAgentCwd
+    ? `当前工作空间：${resolvedAgentCwd}\n点击可切换目录`
+    : '选择 Agent 工作空间。未设置时会自动创建默认工作空间。';
+  const agentWorkspaceLabel = resolvedAgentCwd ? '工作空间' : '选择工作空间';
 
   // Knowledge base state
   const knowledgeBases = useKnowledgeStore((s) => s.bases);
@@ -1535,7 +1539,7 @@ export function InputArea() {
             </Tag>
           )}
           {currentMode === 'agent' && (
-            <Tooltip title={resolvedAgentCwd || 'Choose Agent workspace'}>
+            <Tooltip title={agentWorkspaceTooltip}>
               <Button
                 type="text"
                 size="small"
@@ -1544,7 +1548,7 @@ export function InputArea() {
                 style={{ display: 'flex', alignItems: 'center', gap: 4, maxWidth: 200, fontSize: 12 }}
               >
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {resolvedAgentCwd ? abbreviatePath(resolvedAgentCwd) : 'Choose workspace'}
+                  {resolvedAgentCwd ? `${agentWorkspaceLabel}: ${abbreviatePath(resolvedAgentCwd)}` : agentWorkspaceLabel}
                 </span>
               </Button>
             </Tooltip>

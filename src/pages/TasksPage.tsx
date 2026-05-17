@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   App,
   Badge,
   Button,
@@ -22,6 +23,8 @@ import {
 import {
   Check,
   CircleAlert,
+  Copy,
+  ExternalLink,
   FolderOpen,
   MessageSquare,
   Play,
@@ -50,8 +53,8 @@ const MAX_TIMELINE_EVENTS = 30;
 const EVENT_LABELS: Record<string, string> = {
   ask_resolved: '已回复问题',
   ask_user: '等待补充信息',
-  permission_request: '等待工具权限',
-  permission_resolved: '权限已处理',
+  permission_request: '等待工具授权',
+  permission_resolved: '授权已处理',
   run_cancel_requested: '请求取消',
   run_failed: '运行失败',
   run_finished: '运行完成',
@@ -112,6 +115,28 @@ function eventLabel(eventType: string) {
   return EVENT_LABELS[eventType] ?? eventType;
 }
 
+function getResumeCapabilityLabel(capability?: string | null) {
+  switch (capability) {
+    case 'resumable':
+      return '可恢复';
+    case 'replay_only':
+      return '仅可重跑';
+    default:
+      return '不可恢复';
+  }
+}
+
+function getInterruptedReasonLabel(reason?: string | null) {
+  switch (reason) {
+    case 'app_restart':
+      return '应用重启后中断';
+    case 'manual_cancel':
+      return '手动取消';
+    default:
+      return reason || '未知原因';
+  }
+}
+
 function eventSummary(event: AgentRunEvent) {
   const eventType = eventField(event, 'eventType', 'event_type') ?? '';
   const payload = parseEventPayload(event);
@@ -159,6 +184,7 @@ function TaskListSection({
   token: ReturnType<typeof theme.useToken>['token'];
 }) {
   if (items.length === 0) return null;
+
   return (
     <div style={{ marginBottom: 18 }}>
       <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 8, padding: '0 2px' }}>
@@ -196,15 +222,29 @@ function TaskListSection({
                     <Typography.Text ellipsis style={{ maxWidth: 164, fontWeight: 600 }}>
                       {item.conversationTitle || item.promptPreview}
                     </Typography.Text>
-                    <Tag color={getAgentRunStatusColor(item.status)} style={{ marginInlineEnd: 0, flexShrink: 0 }}>
-                      {getAgentRunStatusLabel(item.status)}
-                    </Tag>
+                    <Space size={4}>
+                      {item.status === 'interrupted' ? (
+                        <Tag color="orange" style={{ marginInlineEnd: 0, flexShrink: 0 }}>
+                          {getResumeCapabilityLabel(item.resumeCapability)}
+                        </Tag>
+                      ) : null}
+                      <Tag color={getAgentRunStatusColor(item.status)} style={{ marginInlineEnd: 0, flexShrink: 0 }}>
+                        {getAgentRunStatusLabel(item.status)}
+                      </Tag>
+                    </Space>
                   </Space>
                 )}
                 description={(
-                  <Typography.Text type="secondary" ellipsis>
-                    {item.promptPreview}
-                  </Typography.Text>
+                  <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                    <Typography.Text type="secondary" ellipsis>
+                      {item.promptPreview}
+                    </Typography.Text>
+                    {item.workspaceRoot ? (
+                      <Typography.Text type="secondary" ellipsis style={{ fontSize: 12 }}>
+                        {item.workspaceRoot}
+                      </Typography.Text>
+                    ) : null}
+                  </Space>
                 )}
               />
             </List.Item>
@@ -248,8 +288,7 @@ export function TasksPage() {
   const pendingAskUserById = useAgentStore((s) => s.pendingAskUser);
   const approveToolUse = useAgentStore((s) => s.approveToolUse);
   const respondAskUser = useAgentStore((s) => s.respondAskUser);
-  const canResumeRun = useAgentStore((s) => s.canResumeRun);
-  const canReplayRun = useAgentStore((s) => s.canReplayRun);
+
   const pendingPermissions = useMemo(() => Object.values(pendingPermissionsById), [pendingPermissionsById]);
   const pendingAskUser = useMemo(() => Object.values(pendingAskUserById), [pendingAskUserById]);
 
@@ -285,15 +324,27 @@ export function TasksPage() {
   }, [fetchTasks, selectRun, selectedRunId]);
 
   const grouped = useMemo(() => groupTaskCenterItemsByStatus(items), [items]);
+  const interruptedItems = grouped.interrupted;
+  const resumableItems = useMemo(
+    () => interruptedItems.filter((item) => item.resumeCapability === 'resumable'),
+    [interruptedItems],
+  );
+  const replayOnlyItems = useMemo(
+    () => interruptedItems.filter((item) => item.resumeCapability === 'replay_only'),
+    [interruptedItems],
+  );
 
-  const modelOptions = useMemo(() => providers
-    .filter((provider) => provider.enabled)
-    .flatMap((provider) => provider.models
-      .filter((model) => model.enabled && model.model_type === 'Chat')
-      .map((model) => ({
-        label: `${provider.name} / ${model.name || model.model_id}`,
-        value: `${provider.id}::${model.model_id}`,
-      }))), [providers]);
+  const modelOptions = useMemo(
+    () => providers
+      .filter((provider) => provider.enabled)
+      .flatMap((provider) => provider.models
+        .filter((model) => model.enabled && model.model_type === 'Chat')
+        .map((model) => ({
+          label: `${provider.name} / ${model.name || model.model_id}`,
+          value: `${provider.id}::${model.model_id}`,
+        }))),
+    [providers],
+  );
 
   useEffect(() => {
     if (!createOpen) return;
@@ -354,6 +405,33 @@ export function TasksPage() {
     setActivePage('chat');
   };
 
+  const openWorkspace = async (workspaceRoot?: string | null) => {
+    if (!workspaceRoot) return;
+    try {
+      const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
+      await revealItemInDir(workspaceRoot);
+    } catch (error) {
+      console.warn('Failed to open workspace directory:', error);
+      message.error('打开工作空间失败');
+    }
+  };
+
+  const copyWorkspacePath = async (workspaceRoot?: string | null) => {
+    if (!workspaceRoot) return;
+    try {
+      await navigator.clipboard.writeText(workspaceRoot);
+      message.success('工作空间路径已复制');
+    } catch (error) {
+      console.warn('Failed to copy workspace path:', error);
+      message.error('复制路径失败');
+    }
+  };
+
+  const detailResumeCapability = detail?.run.resumeCapability ?? detail?.item.resumeCapability;
+  const detailInterruptedReason = detail?.run.interruptedReason ?? detail?.item.interruptedReason;
+  const canResumeDetail = detail?.item.status === 'interrupted' && detailResumeCapability === 'resumable';
+  const canReplayDetail = detail?.item.status === 'interrupted' && detailResumeCapability === 'replay_only';
+
   return (
     <div
       className="h-full flex overflow-hidden"
@@ -393,18 +471,52 @@ export function TasksPage() {
           </Button>
         </Space>
 
+        {interruptedItems.length > 0 ? (
+          <Alert
+            showIcon
+            type="warning"
+            style={{ marginBottom: 16 }}
+            message={`发现 ${interruptedItems.length} 个中断任务`}
+            description={(
+              <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                <Typography.Text type="secondary">
+                  {resumableItems.length > 0
+                    ? `${resumableItems.length} 个任务可直接恢复`
+                    : '当前没有可直接恢复的任务'}
+                  {replayOnlyItems.length > 0 ? `，${replayOnlyItems.length} 个任务只能重跑` : ''}
+                </Typography.Text>
+                <Space wrap>
+                  <Button size="small" onClick={() => void selectRun(interruptedItems[0].runId)}>
+                    查看中断任务
+                  </Button>
+                  {resumableItems[0] ? (
+                    <Button
+                      size="small"
+                      type="primary"
+                      icon={<RefreshCcw size={14} />}
+                      onClick={() => void resumeTask(resumableItems[0].runId)}
+                    >
+                      恢复最近任务
+                    </Button>
+                  ) : null}
+                </Space>
+              </Space>
+            )}
+          />
+        ) : null}
+
         {loading && items.length === 0 ? (
           <Spin />
         ) : items.length === 0 ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无 Agent 任务" />
         ) : (
           <>
-            <TaskListSection title="Pending" items={grouped.waiting} selectedRunId={selectedRunId} onSelect={selectRun} token={token} />
-            <TaskListSection title="Running" items={grouped.running} selectedRunId={selectedRunId} onSelect={selectRun} token={token} />
-            <TaskListSection title="Interrupted" items={grouped.interrupted} selectedRunId={selectedRunId} onSelect={selectRun} token={token} />
-            <TaskListSection title="Failed" items={grouped.failed} selectedRunId={selectedRunId} onSelect={selectRun} token={token} />
-            <TaskListSection title="Cancelled" items={grouped.cancelled} selectedRunId={selectedRunId} onSelect={selectRun} token={token} />
-            <TaskListSection title="Completed" items={grouped.completed} selectedRunId={selectedRunId} onSelect={selectRun} token={token} />
+            <TaskListSection title="待处理" items={grouped.waiting} selectedRunId={selectedRunId} onSelect={selectRun} token={token} />
+            <TaskListSection title="运行中" items={grouped.running} selectedRunId={selectedRunId} onSelect={selectRun} token={token} />
+            <TaskListSection title="已中断" items={grouped.interrupted} selectedRunId={selectedRunId} onSelect={selectRun} token={token} />
+            <TaskListSection title="失败" items={grouped.failed} selectedRunId={selectedRunId} onSelect={selectRun} token={token} />
+            <TaskListSection title="已取消" items={grouped.cancelled} selectedRunId={selectedRunId} onSelect={selectRun} token={token} />
+            <TaskListSection title="已完成" items={grouped.completed} selectedRunId={selectedRunId} onSelect={selectRun} token={token} />
           </>
         )}
       </aside>
@@ -414,6 +526,7 @@ export function TasksPage() {
         {!detail && !detailLoading ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="选择一个任务查看详情" />
         ) : null}
+
         {detail ? (
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
             <Card size="small" style={{ borderRadius: 16 }}>
@@ -425,46 +538,102 @@ export function TasksPage() {
                     </Typography.Title>
                     <Typography.Text type="secondary">{detail.item.promptPreview}</Typography.Text>
                   </div>
-                  <Tag color={getAgentRunStatusColor(detail.item.status)}>{getAgentRunStatusLabel(detail.item.status)}</Tag>
+                  <Space size={6}>
+                    {detail.item.status === 'interrupted' ? (
+                      <Tag color="orange">{getResumeCapabilityLabel(detailResumeCapability)}</Tag>
+                    ) : null}
+                    <Tag color={getAgentRunStatusColor(detail.item.status)}>{getAgentRunStatusLabel(detail.item.status)}</Tag>
+                  </Space>
                 </Space>
+
+                {detail.item.status === 'interrupted' ? (
+                  <Alert
+                    showIcon
+                    type="warning"
+                    message={getInterruptedReasonLabel(detailInterruptedReason)}
+                    description={
+                      detailResumeCapability === 'resumable'
+                        ? '这个任务保留了可恢复上下文，可以继续之前的执行进度。'
+                        : detailResumeCapability === 'replay_only'
+                          ? '这个任务没有可恢复上下文，但可以按原始提示重新发起。'
+                          : '这个任务当前不可恢复。'
+                    }
+                  />
+                ) : null}
 
                 <Descriptions size="small" column={2}>
                   <Descriptions.Item label="来源会话">{detail.item.conversationId}</Descriptions.Item>
                   <Descriptions.Item label="来源">{detail.item.conversationSource}</Descriptions.Item>
                   <Descriptions.Item label="工作空间">{detail.item.workspaceRoot || '-'}</Descriptions.Item>
                   <Descriptions.Item label="模型">{detail.item.modelId || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="Started">{detail.item.startedAt}</Descriptions.Item>
-                  <Descriptions.Item label="Finished">{detail.item.finishedAt || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="开始时间">{detail.item.startedAt}</Descriptions.Item>
+                  <Descriptions.Item label="结束时间">{detail.item.finishedAt || '-'}</Descriptions.Item>
                 </Descriptions>
+
+                {detail.item.workspaceRoot ? (
+                  <Alert
+                    type="info"
+                    showIcon
+                    message="当前任务工作空间"
+                    description={detail.item.workspaceRoot}
+                    action={(
+                      <Space>
+                        <Button size="small" icon={<FolderOpen size={14} />} onClick={() => void openWorkspace(detail.item.workspaceRoot)}>
+                          打开
+                        </Button>
+                        <Button size="small" icon={<Copy size={14} />} onClick={() => void copyWorkspacePath(detail.item.workspaceRoot)}>
+                          复制路径
+                        </Button>
+                      </Space>
+                    )}
+                  />
+                ) : (
+                  <Alert
+                    type="info"
+                    showIcon
+                    message="当前未设置自定义工作空间"
+                    description="Agent 会在首次执行时自动创建默认工作空间。"
+                  />
+                )}
 
                 <Space wrap>
                   <Button icon={<MessageSquare size={14} />} onClick={() => openConversation(detail.item.conversationId)}>
                     打开会话
                   </Button>
+                  {detail.item.workspaceRoot ? (
+                    <>
+                      <Button icon={<ExternalLink size={14} />} onClick={() => void openWorkspace(detail.item.workspaceRoot)}>
+                        打开工作空间
+                      </Button>
+                      <Button icon={<Copy size={14} />} onClick={() => void copyWorkspacePath(detail.item.workspaceRoot)}>
+                        复制路径
+                      </Button>
+                    </>
+                  ) : null}
                   {(isAgentRunStatus(detail.item.status) && AGENT_RUNNING_RUN_STATUSES.has(detail.item.status))
                     || (isAgentRunStatus(detail.item.status) && AGENT_WAITING_RUN_STATUSES.has(detail.item.status)) ? (
-                    <Button danger icon={<Square size={14} />} onClick={() => cancelTask(detail.item.conversationId)}>
+                    <Button danger icon={<Square size={14} />} onClick={() => void cancelTask(detail.item.conversationId)}>
                       取消
                     </Button>
                   ) : null}
-                  {detail.item.status === 'interrupted' && canResumeRun(detail.item.runId) ? (
-                    <Button icon={<RefreshCcw size={14} />} onClick={() => resumeTask(detail.item.runId)}>
+                  {canResumeDetail ? (
+                    <Button icon={<RefreshCcw size={14} />} onClick={() => void resumeTask(detail.item.runId)}>
                       恢复
                     </Button>
                   ) : null}
                   {detail.item.status === 'failed'
                     || detail.item.status === 'completed'
                     || detail.item.status === 'cancelled'
-                    || (detail.item.status === 'interrupted' && canReplayRun(detail.item.runId)) ? (
-                    <Button icon={<RotateCcw size={14} />} onClick={() => rerunTask(detail)}>
+                    || canReplayDetail ? (
+                    <Button icon={<RotateCcw size={14} />} onClick={() => void rerunTask(detail)}>
                       重跑
                     </Button>
                   ) : null}
                   {!(isAgentRunStatus(detail.item.status) && AGENT_RUNNING_RUN_STATUSES.has(detail.item.status))
                     && !(isAgentRunStatus(detail.item.status) && AGENT_WAITING_RUN_STATUSES.has(detail.item.status)) ? (
                     <Popconfirm
-                      title="Delete task record?"
-                      description="This removes the run from Task Center but keeps the conversation history."
+                      title="删除任务记录？"
+                      description="这会把该 run 从任务中心移除，但不会删除原有会话消息。"
                       okText="删除"
                       cancelText="取消"
                       okButtonProps={{ danger: true }}
@@ -497,19 +666,20 @@ export function TasksPage() {
                           {JSON.stringify(request.input, null, 2)}
                         </Typography.Paragraph>
                         <Space>
-                          <Button icon={<Check size={14} />} onClick={() => approveToolUse(request.conversationId, request.toolUseId, 'allow_once')}>
+                          <Button icon={<Check size={14} />} onClick={() => void approveToolUse(request.conversationId, request.toolUseId, 'allow_once')}>
                             允许一次
                           </Button>
-                          <Button onClick={() => approveToolUse(request.conversationId, request.toolUseId, 'allow_always')}>
+                          <Button onClick={() => void approveToolUse(request.conversationId, request.toolUseId, 'allow_always')}>
                             始终允许
                           </Button>
-                          <Button danger icon={<X size={14} />} onClick={() => approveToolUse(request.conversationId, request.toolUseId, 'deny')}>
+                          <Button danger icon={<X size={14} />} onClick={() => void approveToolUse(request.conversationId, request.toolUseId, 'deny')}>
                             拒绝
                           </Button>
                         </Space>
                       </Space>
                     </Card>
                   ))}
+
                   {detailAsks.map((ask: AskUserEvent) => (
                     <Card key={ask.askId} size="small" style={{ borderRadius: 12 }}>
                       <Space direction="vertical" size={8} style={{ width: '100%' }}>
@@ -521,7 +691,7 @@ export function TasksPage() {
                         />
                         <Button
                           type="primary"
-                          onClick={() => respondAskUser(ask.askId, answerDrafts[ask.askId] ?? '')}
+                          onClick={() => void respondAskUser(ask.askId, answerDrafts[ask.askId] ?? '')}
                         >
                           回复
                         </Button>
@@ -540,14 +710,14 @@ export function TasksPage() {
 
             <Card
               size="small"
-              title="Timeline"
+              title="时间线"
               style={{ borderRadius: 16 }}
               extra={detail.events.length > MAX_TIMELINE_EVENTS ? (
                 <Typography.Text type="secondary">
-                  Showing latest {MAX_TIMELINE_EVENTS} / {detail.events.length} events
+                  显示最近 {MAX_TIMELINE_EVENTS} / 共 {detail.events.length} 条事件
                 </Typography.Text>
               ) : (
-                <Typography.Text type="secondary">Total {detail.events.length} events</Typography.Text>
+                <Typography.Text type="secondary">共 {detail.events.length} 条事件</Typography.Text>
               )}
             >
               {detail.events.length === 0 ? (
@@ -620,9 +790,9 @@ export function TasksPage() {
           <Form.Item label="工作空间">
             <Space.Compact style={{ width: '100%' }}>
               <Form.Item name="workspaceRoot" noStyle>
-                <Input placeholder="默认使用新会话工作空间" />
+                <Input placeholder="默认使用会话工作空间" />
               </Form.Item>
-              <Button icon={<FolderOpen size={14} />} onClick={handleOpenWorkspace} />
+              <Button icon={<FolderOpen size={14} />} onClick={() => void handleOpenWorkspace()} />
             </Space.Compact>
           </Form.Item>
           <Form.Item name="permissionMode" label="权限模式">
@@ -639,4 +809,3 @@ export function TasksPage() {
     </div>
   );
 }
-

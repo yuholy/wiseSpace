@@ -25,6 +25,7 @@ export function Sidebar() {
   const setActivePage = useUIStore((s) => s.setActivePage);
   const settings = useSettingsStore((s) => s.settings);
   const waitingCount = useTaskCenterStore((s) => s.waitingCount);
+  const interruptedCount = useTaskCenterStore((s) => s.interruptedCount);
   const failedCount = useTaskCenterStore((s) => s.failedCount);
 
   const NAV_SHORTCUT_MAP: Partial<Record<PageKey, ShortcutAction>> = {
@@ -68,7 +69,7 @@ export function Sidebar() {
           }}
         >
           {item.key === 'tasks' ? (
-            <Badge count={waitingCount || failedCount} size="small" offset={[3, -3]}>
+            <Badge count={waitingCount || interruptedCount || failedCount} size="small" offset={[3, -3]}>
               {item.icon}
             </Badge>
           ) : item.icon}

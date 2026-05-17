@@ -63,6 +63,8 @@ export interface TaskCenterItem {
   conversationTitle: string;
   conversationSource: string;
   status: AgentRunStatus | string;
+  resumeCapability: ResumeCapability | string;
+  interruptedReason?: string | null;
   promptPreview: string;
   workspaceRoot?: string | null;
   providerId?: string | null;

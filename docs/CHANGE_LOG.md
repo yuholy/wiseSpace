@@ -2,6 +2,19 @@
 
 ## 2026-05-17
 
+### feat(workspace): improve task-center workspace actions and agent workspace visibility
+- Scope: better local workspace visibility across task center and chat input, plus clearer interrupted-run workspace handling.
+- Frontend:
+  - Rebuilt the tasks page copy and detail layout to remove corrupted Chinese text.
+  - Added workspace visibility to task center list items and task detail panels.
+  - Added direct task-center actions to open the workspace folder and copy the workspace path.
+  - Added interrupted-run summaries that explain whether a task is resumable or replay-only.
+  - Improved the chat input agent-workspace label and tooltip so the default workspace behavior is easier to understand.
+- Backend:
+  - Extended task-center list payloads with `resumeCapability` and `interruptedReason` so workspace and recovery actions can be decided without opening task detail first.
+- Verification:
+  - `pnpm typecheck`
+
 ### chore(release): prepare v0.1.1
 - Scope: version bump and release packaging for the latest local agent runtime, recovery, and task-center fixes.
 - Release:
