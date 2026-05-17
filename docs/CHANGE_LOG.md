@@ -2,6 +2,16 @@
 
 ## 2026-05-17
 
+### chore(release): prepare v0.1.1
+- Scope: version bump and release packaging for the latest local agent runtime, recovery, and task-center fixes.
+- Release:
+  - Bumped app and Rust crate versions from `0.1.0` to `0.1.1`.
+  - Built desktop release artifacts: `wiseSpace_0.1.1_x64_en-US.msi` and `wiseSpace_0.1.1_x64-setup.exe`.
+  - Updater signing remains blocked until `TAURI_SIGNING_PRIVATE_KEY` is provided in the release environment.
+- Verification:
+  - `pnpm typecheck`
+  - `pnpm tauri build`
+
 ### feat(agent): unify local runtime state and recovery semantics
 - Scope: normalized local agent run states, interrupted run recovery, task center state consistency, and task page Chinese copy fixes.
 - Backend:

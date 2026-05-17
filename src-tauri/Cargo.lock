@@ -8961,7 +8961,7 @@ dependencies = [
 
 [[package]]
 name = "wisespace"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -9023,7 +9023,7 @@ dependencies = [
 
 [[package]]
 name = "wisespace-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -9055,7 +9055,7 @@ dependencies = [
 
 [[package]]
 name = "wisespace-gateway"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "axum",
@@ -9077,7 +9077,7 @@ dependencies = [
 
 [[package]]
 name = "wisespace-migration"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "sea-orm-migration",
@@ -9086,7 +9086,7 @@ dependencies = [
 
 [[package]]
 name = "wisespace-providers"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
