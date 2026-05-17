@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@/lib/invoke';
+import { AGENT_WAITING_RUN_STATUSES, isAgentRunStatus } from '@/lib/agentRunStatus';
 import { useAgentStore } from './agentStore';
 import type {
   AgentPermissionMode,
@@ -10,9 +11,6 @@ import type {
   TaskCenterItem,
 } from '@/types/agent';
 
-const WAITING_STATUSES = new Set(['waiting_approval', 'waiting_input', 'interrupted']);
-const FAILED_STATUSES = new Set(['failed', 'cancelled']);
-
 interface TaskCenterState {
   items: TaskCenterItem[];
   selectedRunId: string | null;
@@ -22,6 +20,7 @@ interface TaskCenterState {
   creating: boolean;
   error: string | null;
   waitingCount: number;
+  interruptedCount: number;
   failedCount: number;
   fetchTasks: () => Promise<void>;
   refreshSelectedDetail: () => Promise<void>;
@@ -35,8 +34,9 @@ interface TaskCenterState {
 
 function summarizeCounts(items: TaskCenterItem[]) {
   return {
-    waitingCount: items.filter((item) => WAITING_STATUSES.has(item.status)).length,
-    failedCount: items.filter((item) => FAILED_STATUSES.has(item.status)).length,
+    waitingCount: items.filter((item) => isAgentRunStatus(item.status) && AGENT_WAITING_RUN_STATUSES.has(item.status)).length,
+    interruptedCount: items.filter((item) => item.status === 'interrupted').length,
+    failedCount: items.filter((item) => item.status === 'failed').length,
   };
 }
 
@@ -49,6 +49,7 @@ export const useTaskCenterStore = create<TaskCenterState>((set, get) => ({
   creating: false,
   error: null,
   waitingCount: 0,
+  interruptedCount: 0,
   failedCount: 0,
 
   fetchTasks: async () => {

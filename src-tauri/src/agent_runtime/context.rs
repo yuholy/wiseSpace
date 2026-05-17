@@ -4,7 +4,7 @@ use crate::agent_runtime::runner::AgentRunnerKind;
 use crate::agent_runtime::runtime;
 use crate::AppState;
 use std::path::Path;
-use wisespace_core::repo::{agent_session, conversation, message, provider, settings};
+use wisespace_core::repo::{conversation, message, provider, settings};
 use wisespace_core::types::{
     AgentProfile, AgentRun, AgentSession, AppSettings, MessageRole, ProviderConfig,
 };
@@ -71,10 +71,6 @@ pub async fn prepare_local_agent_execution_context(
 
     let real_provider_id = resolve_agent_provider_id(&state.sea_db, &plan.provider_id).await?;
 
-    agent_session::update_agent_session_status(&state.sea_db, &session.id, "running")
-        .await
-        .map_err(|e| e.to_string())?;
-
     let run = match runtime::start_run(
         &state.sea_db,
         &plan.conversation_id,
@@ -87,11 +83,7 @@ pub async fn prepare_local_agent_execution_context(
     .await
     {
         Ok((_, run)) => run,
-        Err(err) => {
-            let _ = agent_session::update_agent_session_status(&state.sea_db, &session.id, "idle")
-                .await;
-            return Err(err);
-        }
+        Err(err) => return Err(err),
     };
 
     let user_message = message::create_message(

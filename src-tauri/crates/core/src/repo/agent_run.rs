@@ -298,14 +298,25 @@ pub async fn mark_incomplete_runs_interrupted(db: &DatabaseConnection) -> Result
 
     let mut affected = 0u64;
     for run in runs {
+        let resume_capability = match run.runner_kind.as_str() {
+            "sdk" => {
+                if run
+                    .sdk_context_json
+                    .as_deref()
+                    .is_some_and(|value| !value.trim().is_empty())
+                {
+                    "resumable"
+                } else {
+                    "replay_only"
+                }
+            }
+            _ => "none",
+        };
         let mut am: agent_runs::ActiveModel = run.clone().into();
         am.status = Set("interrupted".to_string());
         am.finished_at = Set(Some(now_string()));
         am.interrupted_reason = Set(Some("app_restart".to_string()));
-        am.resume_capability = Set(match run.runner_kind.as_str() {
-            "sdk" => "resumable".to_string(),
-            _ => "none".to_string(),
-        });
+        am.resume_capability = Set(resume_capability.to_string());
         am.resume_token_json = Set(match run.runner_kind.as_str() {
             "sdk" => run.sdk_context_json.clone(),
             _ => None,
@@ -314,10 +325,7 @@ pub async fn mark_incomplete_runs_interrupted(db: &DatabaseConnection) -> Result
 
         let payload = serde_json::json!({
             "reason": "app_restart",
-            "resumeCapability": match run.runner_kind.as_str() {
-                "sdk" => "resumable",
-                _ => "none",
-            },
+            "resumeCapability": resume_capability,
         })
         .to_string();
         let _ = append_run_event(db, &run.id, None, "run_interrupted", &payload).await?;
@@ -406,4 +414,77 @@ pub async fn append_run_event(
     .insert(db)
     .await?;
     Ok(model_to_agent_run_event(model))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::repo::agent_profile;
+
+    async fn create_test_run_with_context(
+        db: &DatabaseConnection,
+        conversation_id: &str,
+        sdk_context_json: Option<&str>,
+    ) -> AgentRun {
+        let profile = agent_profile::upsert_profile(
+            db,
+            conversation_id,
+            Some("workspace/test"),
+            Some("default"),
+            Some("sdk"),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let run = create_run(
+            db,
+            conversation_id,
+            &profile.id,
+            "sdk",
+            Some("provider-test"),
+            Some("model-test"),
+            "hello",
+            sdk_context_json,
+            profile.workspace_root.as_deref(),
+        )
+        .await
+        .unwrap();
+
+        update_run_status(db, &run.id, "running", None).await.unwrap();
+        get_run(db, &run.id).await.unwrap().unwrap()
+    }
+
+    #[tokio::test]
+    async fn mark_incomplete_runs_interrupted_marks_sdk_runs_resumable_when_context_exists() {
+        let db = crate::db::create_test_pool().await.unwrap().conn;
+        let run =
+            create_test_run_with_context(&db, "conv_resume", Some("[{\"role\":\"user\"}]")).await;
+
+        mark_incomplete_runs_interrupted(&db).await.unwrap();
+
+        let updated = get_run(&db, &run.id).await.unwrap().unwrap();
+        assert_eq!(updated.status, "interrupted");
+        assert_eq!(updated.resume_capability, "resumable");
+        assert_eq!(updated.interrupted_reason.as_deref(), Some("app_restart"));
+        assert_eq!(
+            updated.resume_token_json.as_deref(),
+            Some("[{\"role\":\"user\"}]")
+        );
+    }
+
+    #[tokio::test]
+    async fn mark_incomplete_runs_interrupted_marks_sdk_runs_replay_only_without_context() {
+        let db = crate::db::create_test_pool().await.unwrap().conn;
+        let run = create_test_run_with_context(&db, "conv_replay", None).await;
+
+        mark_incomplete_runs_interrupted(&db).await.unwrap();
+
+        let updated = get_run(&db, &run.id).await.unwrap().unwrap();
+        assert_eq!(updated.status, "interrupted");
+        assert_eq!(updated.resume_capability, "replay_only");
+        assert_eq!(updated.interrupted_reason.as_deref(), Some("app_restart"));
+        assert_eq!(updated.resume_token_json, None);
+    }
 }

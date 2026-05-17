@@ -143,9 +143,11 @@ pub async fn resolve_permission_request(
             }),
         )
         .await?;
-        agent_run::update_run_status(db, &run.id, "running", None)
-            .await
-            .map_err(|e| e.to_string())?;
+        if run.status == "waiting_approval" {
+            agent_run::update_run_status(db, &run.id, "running", None)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
     }
     Ok(())
 }
@@ -161,7 +163,7 @@ pub async fn resolve_ask_request(
             .await
             .map_err(|e| e.to_string())?
         {
-            if matches!(run.status.as_str(), "waiting_input" | "waiting_approval") {
+            if run.status == "waiting_input" {
                 append_runtime_event(
                     db,
                     &run.id,
@@ -308,6 +310,32 @@ mod tests {
         assert_eq!(event.event_type, "ask_resolved");
         assert!(event.payload_json.contains("\"askId\":\"ask_123\""));
         assert!(event.payload_json.contains("\"answer\":\"ship_it\""));
+    }
+
+    #[tokio::test]
+    async fn resolve_permission_request_does_not_resume_non_waiting_run() {
+        let db = wisespace_core::db::create_test_pool().await.unwrap().conn;
+        let run = create_test_run(&db, "conv_perm_running", "running").await;
+
+        resolve_permission_request(&db, "conv_perm_running", "perm_123", "allow_once")
+            .await
+            .unwrap();
+
+        let updated = agent_run::get_run(&db, &run.id).await.unwrap().unwrap();
+        assert_eq!(updated.status, "running");
+    }
+
+    #[tokio::test]
+    async fn resolve_ask_request_does_not_resume_permission_wait() {
+        let db = wisespace_core::db::create_test_pool().await.unwrap().conn;
+        let run = create_test_run(&db, "conv_ask_wait", "waiting_approval").await;
+
+        resolve_ask_request(&db, "ask_123", "ship_it")
+            .await
+            .unwrap();
+
+        let updated = agent_run::get_run(&db, &run.id).await.unwrap().unwrap();
+        assert_eq!(updated.status, "waiting_approval");
     }
 
     #[tokio::test]

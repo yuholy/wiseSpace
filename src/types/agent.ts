@@ -1,7 +1,4 @@
 export type AgentPermissionMode = 'default' | 'accept_edits' | 'full_access';
-export type AgentRuntimeStatus = 'idle' | 'running' | 'waiting_approval' | 'completed' | 'error';
-export type ApprovalStatus = 'pending' | 'approved' | 'denied';
-export type ResumeCapability = 'none' | 'replay_only' | 'resumable';
 export type AgentRunStatus =
   | 'queued'
   | 'starting'
@@ -13,6 +10,9 @@ export type AgentRunStatus =
   | 'failed'
   | 'cancelled'
   | 'interrupted';
+export type AgentRuntimeStatus = 'idle' | AgentRunStatus;
+export type ApprovalStatus = 'pending' | 'approved' | 'denied';
+export type ResumeCapability = 'none' | 'replay_only' | 'resumable';
 
 export interface AgentProfile {
   id: string;

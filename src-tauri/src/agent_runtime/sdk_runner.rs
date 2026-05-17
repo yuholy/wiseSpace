@@ -906,8 +906,6 @@ pub async fn start_sdk_run(
                         Some("Agent emitted an error event"),
                     )
                     .await;
-                    let _ =
-                        agent_session::update_agent_session_status(&db, &session_id, "idle").await;
                     return;
                 }
                 SDKMessage::ThinkingDelta { thinking } => {
@@ -1009,8 +1007,6 @@ pub async fn start_sdk_run(
                         Some("Agent task crashed unexpectedly"),
                     )
                     .await;
-                    let _ =
-                        agent_session::update_agent_session_status(&db, &session_id, "idle").await;
                     return;
                 }
             }
@@ -1045,7 +1041,6 @@ pub async fn start_sdk_run(
                 Some("Agent ended unexpectedly without producing a result"),
             )
             .await;
-            let _ = agent_session::update_agent_session_status(&db, &session_id, "idle").await;
             return;
         }
 

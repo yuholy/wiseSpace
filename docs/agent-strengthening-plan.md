@@ -244,3 +244,12 @@ fix(task-center): 修复任务列表与详情状态不同步
 - Agent 相关提交必须补充验证方式，避免只改 UI 不验状态链路
 - 如遇计划外能力扩展，应先更新本文件再推进实现
 
+## 7. Related Issue Templates
+
+To turn this plan into directly executable work items, reuse:
+
+- [wiseSpace Local Agent Issue Templates](./local-agent-issue-templates.md)
+
+This companion document is the preferred place to keep implementation-ready
+issue breakdowns for the current local-agent track.
+

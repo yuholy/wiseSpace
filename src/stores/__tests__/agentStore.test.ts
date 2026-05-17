@@ -166,4 +166,44 @@ describe('agentStore message-keyed indexes', () => {
     expect(useAgentStore.getState().toolCalls['tool-1']?.approvalStatus).toBe('pending');
     expect(useAgentStore.getState().pendingPermissions['tool-1']?.toolName).toBe('bash');
   });
+
+  it('distinguishes resumable and replay-only interrupted runs', async () => {
+    const { useAgentStore } = await import('../agentStore');
+
+    useAgentStore.setState({
+      runsByConversation: {
+        'conv-1': [
+          {
+            id: 'run-1',
+            conversationId: 'conv-1',
+            profileId: 'profile-1',
+            runnerKind: 'sdk',
+            status: 'interrupted',
+            promptSnapshot: 'resume me',
+            startedAt: '2026-05-11T00:00:00Z',
+            costUsd: 0,
+            resumeCapability: 'resumable',
+          },
+        ],
+        'conv-2': [
+          {
+            id: 'run-2',
+            conversationId: 'conv-2',
+            profileId: 'profile-2',
+            runnerKind: 'sdk',
+            status: 'interrupted',
+            promptSnapshot: 'replay me',
+            startedAt: '2026-05-11T00:00:00Z',
+            costUsd: 0,
+            resumeCapability: 'replay_only',
+          },
+        ],
+      },
+    });
+
+    expect(useAgentStore.getState().canResumeRun('run-1')).toBe(true);
+    expect(useAgentStore.getState().canReplayRun('run-1')).toBe(false);
+    expect(useAgentStore.getState().canResumeRun('run-2')).toBe(false);
+    expect(useAgentStore.getState().canReplayRun('run-2')).toBe(true);
+  });
 });

@@ -1,5 +1,10 @@
 import { create } from 'zustand';
 import { invoke, listen, type UnlistenFn } from '@/lib/invoke';
+import {
+  AGENT_ACTIVE_RUN_STATUSES,
+  isAgentRunStatus,
+  toAgentSessionRuntimeStatus,
+} from '@/lib/agentRunStatus';
 import type {
   AgentDoneEvent,
   AgentLifecycleEvent,
@@ -80,15 +85,6 @@ interface AgentStore {
 
 type EventPayload = Record<string, unknown>;
 
-const ACTIVE_RUN_STATUSES = new Set([
-  'queued',
-  'starting',
-  'running',
-  'waiting_approval',
-  'waiting_input',
-  'cancelling',
-]);
-
 function getAgentMessageKey(conversationId: string, assistantMessageId: string): string {
   return `${conversationId}:${assistantMessageId}`;
 }
@@ -128,13 +124,7 @@ function parsePayload(payloadJson: string): EventPayload {
 }
 
 function toCompatSession(profile: AgentProfile, run?: AgentRun): AgentSession {
-  const runtimeStatus = run?.status && ACTIVE_RUN_STATUSES.has(run.status)
-    ? (run.status as AgentSession['runtime_status'])
-    : run?.status === 'completed'
-      ? 'completed'
-      : run?.status === 'failed' || run?.status === 'interrupted'
-        ? 'error'
-        : 'idle';
+  const runtimeStatus = toAgentSessionRuntimeStatus(run?.status);
 
   let totalTokens = 0;
   if (run?.tokenUsageJson) {
@@ -170,7 +160,7 @@ function projectConversationState(
   let statusMessage: string | undefined;
 
   for (const run of runs) {
-    if (!activeRunId && ACTIVE_RUN_STATUSES.has(run.status)) {
+    if (!activeRunId && isAgentRunStatus(run.status) && AGENT_ACTIVE_RUN_STATUSES.has(run.status)) {
       activeRunId = run.id;
     }
     const events = runEventsByRunId[run.id] ?? [];
@@ -397,7 +387,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
           runsByConversation: { ...s.runsByConversation, [conversationId]: runs },
           activeRunIdByConversation: {
             ...s.activeRunIdByConversation,
-            [conversationId]: runs.find((run) => ACTIVE_RUN_STATUSES.has(run.status))?.id ?? runs[0]?.id,
+            [conversationId]: runs.find((run) => isAgentRunStatus(run.status) && AGENT_ACTIVE_RUN_STATUSES.has(run.status))?.id ?? runs[0]?.id,
           },
           sessions: profile
             ? { ...s.sessions, [conversationId]: toCompatSession(profile, latestRun(runs)) }
@@ -430,7 +420,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     const activeRunId = get().activeRunIdByConversation[conversationId];
     const runs = get().runsByConversation[conversationId] ?? [];
     return runs.find((run) => run.id === activeRunId)
-      ?? runs.find((run) => ACTIVE_RUN_STATUSES.has(run.status));
+      ?? runs.find((run) => isAgentRunStatus(run.status) && AGENT_ACTIVE_RUN_STATUSES.has(run.status));
   },
 
   getRunTimeline: (runId) => get().runEventsByRunId[runId] ?? EMPTY_RUN_EVENTS,

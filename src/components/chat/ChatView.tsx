@@ -66,6 +66,7 @@ import AskUserCard from './AskUserCard';
 import { ChatImageNode } from './ChatImageNode';
 import { formatChatTime } from './chatTime';
 import { buildDisplayAttrAlternation } from '@/lib/legacyCompat';
+import { getAgentRunStatusLabel } from '@/lib/agentRunStatus';
 
 import { invoke } from '@/lib/invoke';
 import { registerHighlight } from 'stream-markdown';
@@ -1524,6 +1525,9 @@ const AgentAssistantContent = React.memo(function AgentAssistantContent({
     }
     if (currentRunStatus === 'cancelling') {
       return t('agent.cancelling', 'Stopping');
+    }
+    if (currentRunStatus) {
+      return getAgentRunStatusLabel(currentRunStatus);
     }
     return t('agent.processing', 'Working');
   }, [askUsers.length, currentRunStatus, permissions.length, statusMessage, t]);

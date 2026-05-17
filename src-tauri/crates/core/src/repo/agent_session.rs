@@ -238,3 +238,23 @@ pub async fn restore_sdk_context_from_backup_by_conversation_id(
     }
     Ok(())
 }
+
+pub async fn set_sdk_context_by_conversation_id(
+    db: &DatabaseConnection,
+    conversation_id: &str,
+    sdk_context_json: Option<&str>,
+) -> Result<()> {
+    let session = agent_sessions::Entity::find()
+        .filter(agent_sessions::Column::ConversationId.eq(conversation_id))
+        .one(db)
+        .await?;
+
+    if let Some(model) = session {
+        let mut am: agent_sessions::ActiveModel = model.into();
+        am.sdk_context_json = Set(sdk_context_json.map(ToString::to_string));
+        am.sdk_context_backup_json = Set(None);
+        am.updated_at = Set(chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string());
+        am.update(db).await?;
+    }
+    Ok(())
+}

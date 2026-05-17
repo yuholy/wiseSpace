@@ -33,13 +33,18 @@ import {
 } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { listen } from '@/lib/invoke';
+import {
+  AGENT_RUNNING_RUN_STATUSES,
+  AGENT_WAITING_RUN_STATUSES,
+  getAgentRunStatusColor,
+  getAgentRunStatusLabel,
+  groupTaskCenterItemsByStatus,
+  isAgentRunStatus,
+} from '@/lib/agentRunStatus';
 import { useAgentStore, useConversationStore, useProviderStore, useSettingsStore, useTaskCenterStore } from '@/stores';
 import { useUIStore } from '@/stores/uiStore';
 import type { AgentRunEvent, AskUserEvent, PermissionRequestEvent, TaskCenterItem } from '@/types/agent';
 
-const WAITING_STATUSES = new Set(['waiting_approval', 'waiting_input', 'interrupted']);
-const RUNNING_STATUSES = new Set(['queued', 'starting', 'running', 'cancelling']);
-const FAILED_STATUSES = new Set(['failed', 'cancelled']);
 const MAX_TIMELINE_EVENTS = 30;
 
 const EVENT_LABELS: Record<string, string> = {
@@ -63,14 +68,6 @@ type TaskFormValues = {
   workspaceRoot?: string;
   permissionMode?: string;
 };
-
-function statusColor(status: string) {
-  if (WAITING_STATUSES.has(status)) return 'gold';
-  if (RUNNING_STATUSES.has(status)) return 'blue';
-  if (FAILED_STATUSES.has(status)) return 'red';
-  if (status === 'completed') return 'green';
-  return 'default';
-}
 
 function parseProviderModel(value: string) {
   const [providerId, modelId] = value.split('::');
@@ -199,8 +196,8 @@ function TaskListSection({
                     <Typography.Text ellipsis style={{ maxWidth: 164, fontWeight: 600 }}>
                       {item.conversationTitle || item.promptPreview}
                     </Typography.Text>
-                    <Tag color={statusColor(item.status)} style={{ marginInlineEnd: 0, flexShrink: 0 }}>
-                      {item.status}
+                    <Tag color={getAgentRunStatusColor(item.status)} style={{ marginInlineEnd: 0, flexShrink: 0 }}>
+                      {getAgentRunStatusLabel(item.status)}
                     </Tag>
                   </Space>
                 )}
@@ -251,6 +248,8 @@ export function TasksPage() {
   const pendingAskUserById = useAgentStore((s) => s.pendingAskUser);
   const approveToolUse = useAgentStore((s) => s.approveToolUse);
   const respondAskUser = useAgentStore((s) => s.respondAskUser);
+  const canResumeRun = useAgentStore((s) => s.canResumeRun);
+  const canReplayRun = useAgentStore((s) => s.canReplayRun);
   const pendingPermissions = useMemo(() => Object.values(pendingPermissionsById), [pendingPermissionsById]);
   const pendingAskUser = useMemo(() => Object.values(pendingAskUserById), [pendingAskUserById]);
 
@@ -285,12 +284,7 @@ export function TasksPage() {
     };
   }, [fetchTasks, selectRun, selectedRunId]);
 
-  const grouped = useMemo(() => ({
-    waiting: items.filter((item) => WAITING_STATUSES.has(item.status)),
-    running: items.filter((item) => RUNNING_STATUSES.has(item.status)),
-    failed: items.filter((item) => FAILED_STATUSES.has(item.status)),
-    completed: items.filter((item) => item.status === 'completed'),
-  }), [items]);
+  const grouped = useMemo(() => groupTaskCenterItemsByStatus(items), [items]);
 
   const modelOptions = useMemo(() => providers
     .filter((provider) => provider.enabled)
@@ -405,10 +399,12 @@ export function TasksPage() {
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无 Agent 任务" />
         ) : (
           <>
-            <TaskListSection title="待处理" items={grouped.waiting} selectedRunId={selectedRunId} onSelect={selectRun} token={token} />
-            <TaskListSection title="运行中" items={grouped.running} selectedRunId={selectedRunId} onSelect={selectRun} token={token} />
-            <TaskListSection title="失败/中断" items={grouped.failed} selectedRunId={selectedRunId} onSelect={selectRun} token={token} />
-            <TaskListSection title="最近完成" items={grouped.completed} selectedRunId={selectedRunId} onSelect={selectRun} token={token} />
+            <TaskListSection title="Pending" items={grouped.waiting} selectedRunId={selectedRunId} onSelect={selectRun} token={token} />
+            <TaskListSection title="Running" items={grouped.running} selectedRunId={selectedRunId} onSelect={selectRun} token={token} />
+            <TaskListSection title="Interrupted" items={grouped.interrupted} selectedRunId={selectedRunId} onSelect={selectRun} token={token} />
+            <TaskListSection title="Failed" items={grouped.failed} selectedRunId={selectedRunId} onSelect={selectRun} token={token} />
+            <TaskListSection title="Cancelled" items={grouped.cancelled} selectedRunId={selectedRunId} onSelect={selectRun} token={token} />
+            <TaskListSection title="Completed" items={grouped.completed} selectedRunId={selectedRunId} onSelect={selectRun} token={token} />
           </>
         )}
       </aside>
@@ -429,7 +425,7 @@ export function TasksPage() {
                     </Typography.Title>
                     <Typography.Text type="secondary">{detail.item.promptPreview}</Typography.Text>
                   </div>
-                  <Tag color={statusColor(detail.item.status)}>{detail.item.status}</Tag>
+                  <Tag color={getAgentRunStatusColor(detail.item.status)}>{getAgentRunStatusLabel(detail.item.status)}</Tag>
                 </Space>
 
                 <Descriptions size="small" column={2}>
@@ -437,33 +433,38 @@ export function TasksPage() {
                   <Descriptions.Item label="来源">{detail.item.conversationSource}</Descriptions.Item>
                   <Descriptions.Item label="工作空间">{detail.item.workspaceRoot || '-'}</Descriptions.Item>
                   <Descriptions.Item label="模型">{detail.item.modelId || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="开始时间">{detail.item.startedAt}</Descriptions.Item>
-                  <Descriptions.Item label="结束时间">{detail.item.finishedAt || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="Started">{detail.item.startedAt}</Descriptions.Item>
+                  <Descriptions.Item label="Finished">{detail.item.finishedAt || '-'}</Descriptions.Item>
                 </Descriptions>
 
                 <Space wrap>
                   <Button icon={<MessageSquare size={14} />} onClick={() => openConversation(detail.item.conversationId)}>
                     打开会话
                   </Button>
-                  {RUNNING_STATUSES.has(detail.item.status) || WAITING_STATUSES.has(detail.item.status) ? (
+                  {(isAgentRunStatus(detail.item.status) && AGENT_RUNNING_RUN_STATUSES.has(detail.item.status))
+                    || (isAgentRunStatus(detail.item.status) && AGENT_WAITING_RUN_STATUSES.has(detail.item.status)) ? (
                     <Button danger icon={<Square size={14} />} onClick={() => cancelTask(detail.item.conversationId)}>
                       取消
                     </Button>
                   ) : null}
-                  {detail.item.status === 'interrupted' ? (
+                  {detail.item.status === 'interrupted' && canResumeRun(detail.item.runId) ? (
                     <Button icon={<RefreshCcw size={14} />} onClick={() => resumeTask(detail.item.runId)}>
                       恢复
                     </Button>
                   ) : null}
-                  {FAILED_STATUSES.has(detail.item.status) || detail.item.status === 'completed' ? (
+                  {detail.item.status === 'failed'
+                    || detail.item.status === 'completed'
+                    || detail.item.status === 'cancelled'
+                    || (detail.item.status === 'interrupted' && canReplayRun(detail.item.runId)) ? (
                     <Button icon={<RotateCcw size={14} />} onClick={() => rerunTask(detail)}>
                       重跑
                     </Button>
                   ) : null}
-                  {!RUNNING_STATUSES.has(detail.item.status) && !WAITING_STATUSES.has(detail.item.status) ? (
+                  {!(isAgentRunStatus(detail.item.status) && AGENT_RUNNING_RUN_STATUSES.has(detail.item.status))
+                    && !(isAgentRunStatus(detail.item.status) && AGENT_WAITING_RUN_STATUSES.has(detail.item.status)) ? (
                     <Popconfirm
-                      title="删除任务记录？"
-                      description="这会从任务中心移除本次运行记录，但不会删除原会话内容。"
+                      title="Delete task record?"
+                      description="This removes the run from Task Center but keeps the conversation history."
                       okText="删除"
                       cancelText="取消"
                       okButtonProps={{ danger: true }}
@@ -539,14 +540,14 @@ export function TasksPage() {
 
             <Card
               size="small"
-              title="任务时间线"
+              title="Timeline"
               style={{ borderRadius: 16 }}
               extra={detail.events.length > MAX_TIMELINE_EVENTS ? (
                 <Typography.Text type="secondary">
-                  显示最近 {MAX_TIMELINE_EVENTS} 条 / 共 {detail.events.length} 条
+                  Showing latest {MAX_TIMELINE_EVENTS} / {detail.events.length} events
                 </Typography.Text>
               ) : (
-                <Typography.Text type="secondary">共 {detail.events.length} 条</Typography.Text>
+                <Typography.Text type="secondary">Total {detail.events.length} events</Typography.Text>
               )}
             >
               {detail.events.length === 0 ? (
@@ -638,3 +639,4 @@ export function TasksPage() {
     </div>
   );
 }
+

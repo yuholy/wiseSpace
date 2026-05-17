@@ -27,6 +27,27 @@ pub struct RunnerResumeDecision {
     pub message: String,
 }
 
+pub fn derive_resume_capability(run: &AgentRun) -> &'static str {
+    match run.runner_kind.as_str() {
+        "sdk" => {
+            let has_context = run
+                .resume_token_json
+                .as_deref()
+                .is_some_and(|value| !value.trim().is_empty())
+                || run
+                    .sdk_context_json
+                    .as_deref()
+                    .is_some_and(|value| !value.trim().is_empty());
+            if has_context {
+                "resumable"
+            } else {
+                "replay_only"
+            }
+        }
+        _ => "none",
+    }
+}
+
 #[allow(dead_code)]
 pub trait AgentRunner {
     fn kind(&self) -> AgentRunnerKind;
@@ -74,18 +95,21 @@ impl AgentRunner for SdkRunner {
     }
 
     fn resume(&self, run: &AgentRun) -> RunnerResumeDecision {
-        let has_context = run.resume_token_json.is_some() || run.sdk_context_json.is_some();
+        let resume_capability = derive_resume_capability(run);
         RunnerResumeDecision {
-            accepted: has_context,
-            event_type: if has_context {
+            accepted: resume_capability == "resumable",
+            event_type: if resume_capability == "resumable" {
                 "run_resumed"
             } else {
                 "run_resume_rejected"
             },
-            message: if has_context {
-                "SDK run accepted for resume".to_string()
-            } else {
-                "Interrupted SDK run has no resumable context".to_string()
+            message: match resume_capability {
+                "resumable" => "SDK run accepted for resume".to_string(),
+                "replay_only" => {
+                    "Interrupted SDK run can only be replayed because no resumable context was saved"
+                        .to_string()
+                }
+                _ => "This run cannot be resumed".to_string(),
             },
         }
     }

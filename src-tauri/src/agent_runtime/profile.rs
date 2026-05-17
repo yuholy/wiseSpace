@@ -283,13 +283,17 @@ pub async fn get_compat_session(
     let runtime_status = latest_run
         .as_ref()
         .map(|run| match run.status.as_str() {
-            "queued" | "starting" | "running" => "running".to_string(),
-            "waiting_approval" => "waiting_approval".to_string(),
-            "waiting_input" => "waiting_approval".to_string(),
-            "failed" => "error".to_string(),
-            "completed" => "completed".to_string(),
-            "cancelled" => "idle".to_string(),
-            other => other.to_string(),
+            "queued"
+            | "starting"
+            | "running"
+            | "waiting_approval"
+            | "waiting_input"
+            | "cancelling"
+            | "completed"
+            | "failed"
+            | "cancelled"
+            | "interrupted" => run.status.clone(),
+            _ => "idle".to_string(),
         })
         .unwrap_or_else(|| "idle".to_string());
 
