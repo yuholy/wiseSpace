@@ -3,7 +3,7 @@ import { buildDisplayAttrAlternation } from './legacyCompat';
 
 export type ChatMarkdownNode = BaseNode;
 
-export const CHAT_CUSTOM_HTML_TAGS = ['think', 'web-search', 'knowledge-retrieval', 'memory-retrieval', 'tool-call', 'img'] as const;
+export const CHAT_CUSTOM_HTML_TAGS = ['think', 'web-search', 'knowledge-retrieval', 'memory-retrieval', 'vision-fallback', 'tool-call', 'img'] as const;
 const DISPLAY_ATTR_PATTERN = buildDisplayAttrAlternation('data-wisespace');
 
 /**
@@ -17,6 +17,7 @@ export function stripWiseSpaceTags(content: string): string {
     .replace(new RegExp(`<knowledge-retrieval [^>]*${DISPLAY_ATTR_PATTERN}=["']1["'][^>]*>[\\s\\S]*?<\\/knowledge-retrieval>\\s*`, 'g'), '')
     .replace(new RegExp(`<memory-retrieval [^>]*${DISPLAY_ATTR_PATTERN}=["']1["'][^>]*>[\\s\\S]*?<\\/memory-retrieval>\\s*`, 'g'), '')
     .replace(new RegExp(`<web-search [^>]*${DISPLAY_ATTR_PATTERN}=["']1["'][^>]*>[\\s\\S]*?<\\/web-search>\\s*`, 'g'), '')
+    .replace(new RegExp(`<vision-fallback [^>]*${DISPLAY_ATTR_PATTERN}=["']1["'][^>]*>[\\s\\S]*?<\\/vision-fallback>\\s*`, 'g'), '')
     .replace(new RegExp(`<tool-call [^>]*${DISPLAY_ATTR_PATTERN}=["']1["'][^>]*>[\\s\\S]*?<\\/tool-call>\\s*`, 'g'), '')
     .replace(/\n*:::mcp [^\n]*\n[\s\S]*?:::\n*/g, '\n')
     .trim();

@@ -21,6 +21,12 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0)} ${units[i]}`;
 }
 
+function displayBackupPath(path: string | null): string {
+  if (!path) return '-';
+  const segments = path.split(/[\\/]/);
+  return segments[segments.length - 1] || path;
+}
+
 export default function BackupCenter() {
   const { t } = useTranslation();
   const { message, modal } = App.useApp();
@@ -37,7 +43,8 @@ export default function BackupCenter() {
   const [form] = Form.useForm();
   const [settingsForm] = Form.useForm();
   const [activeView, setActiveView] = useState<'local' | 'webdav'>('local');
-  const effectiveBackupDir = backupSettings?.backupDir || t('backup.defaultDir');
+  const watchedBackupDir = Form.useWatch('backupDir', settingsForm);
+  const effectiveBackupDir = watchedBackupDir || backupSettings?.backupDir || t('backup.defaultDir');
 
   useEffect(() => {
     loadBackups();
@@ -170,7 +177,7 @@ export default function BackupCenter() {
       render: (val: string | null) => (
         <Tooltip title={val}>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            {val ? val.split('/').pop() : '-'}
+            {displayBackupPath(val)}
           </Text>
         </Tooltip>
       ),
@@ -385,11 +392,22 @@ export default function BackupCenter() {
               readOnly
               placeholder={effectiveBackupDir}
               addonAfter={
-                <FolderOpen
-                  size={14}
-                  style={{ cursor: 'pointer' }}
-                  onClick={handleChooseDir}
-                />
+                <Space size={8}>
+                  <Tooltip title={t('backup.openFolder')}>
+                    <FolderOpen
+                      size={14}
+                      style={{ cursor: 'pointer' }}
+                      onClick={handleChooseDir}
+                    />
+                  </Tooltip>
+                  <Tooltip title={t('backup.defaultDir')}>
+                    <Undo2
+                      size={14}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => settingsForm.setFieldValue('backupDir', '')}
+                    />
+                  </Tooltip>
+                </Space>
               }
             />
           </Form.Item>

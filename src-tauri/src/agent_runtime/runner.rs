@@ -4,18 +4,22 @@ use wisespace_core::types::AgentRun;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentRunnerKind {
     Sdk,
+    DeepseekTui,
 }
 
 impl AgentRunnerKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Sdk => "sdk",
+            Self::DeepseekTui => "deepseek_tui",
         }
     }
 
     pub fn from_str(value: &str) -> Self {
-        let _ = value;
-        Self::Sdk
+        match value {
+            "deepseek_tui" | "deepseek-tui" => Self::DeepseekTui,
+            _ => Self::Sdk,
+        }
     }
 }
 
@@ -29,7 +33,7 @@ pub struct RunnerResumeDecision {
 
 pub fn derive_resume_capability(run: &AgentRun) -> &'static str {
     match run.runner_kind.as_str() {
-        "sdk" => {
+        "sdk" | "deepseek_tui" => {
             let has_context = run
                 .resume_token_json
                 .as_deref()
@@ -89,6 +93,9 @@ pub struct SdkRunner;
 #[derive(Debug, Clone, Copy)]
 pub struct LegacyRunner;
 
+#[derive(Debug, Clone, Copy)]
+pub struct DeepseekTuiRunner;
+
 impl AgentRunner for SdkRunner {
     fn kind(&self) -> AgentRunnerKind {
         AgentRunnerKind::Sdk
@@ -131,15 +138,43 @@ impl AgentRunner for LegacyRunner {
     }
 }
 
+impl AgentRunner for DeepseekTuiRunner {
+    fn kind(&self) -> AgentRunnerKind {
+        AgentRunnerKind::DeepseekTui
+    }
+
+    fn resume(&self, run: &AgentRun) -> RunnerResumeDecision {
+        let resume_capability = derive_resume_capability(run);
+        RunnerResumeDecision {
+            accepted: resume_capability == "resumable",
+            event_type: if resume_capability == "resumable" {
+                "run_resumed"
+            } else {
+                "run_resume_rejected"
+            },
+            message: match resume_capability {
+                "resumable" => "DeepSeek-TUI run accepted for resume".to_string(),
+                "replay_only" => {
+                    "DeepSeek-TUI run can only be replayed because no resumable session context was saved"
+                        .to_string()
+                }
+                _ => "This run cannot be resumed".to_string(),
+            },
+        }
+    }
+}
+
 pub fn runner_for_kind(kind: AgentRunnerKind) -> Box<dyn AgentRunner + Send + Sync> {
-    let _ = kind;
-    Box::new(SdkRunner)
+    match kind {
+        AgentRunnerKind::Sdk => Box::new(SdkRunner),
+        AgentRunnerKind::DeepseekTui => Box::new(DeepseekTuiRunner),
+    }
 }
 
 pub fn runner_for_run(run: &AgentRun) -> Box<dyn AgentRunner + Send + Sync> {
-    if run.runner_kind == "sdk" {
-        Box::new(SdkRunner)
-    } else {
-        Box::new(LegacyRunner)
+    match run.runner_kind.as_str() {
+        "sdk" => Box::new(SdkRunner),
+        "deepseek_tui" => Box::new(DeepseekTuiRunner),
+        _ => Box::new(LegacyRunner),
     }
 }

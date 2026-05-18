@@ -990,13 +990,17 @@ impl ProviderAdapter for OpenAIResponsesAdapter {
                     ModelType::Voice => vec![ModelCapability::RealtimeVoice],
                 };
                 let id_lower = m.id.to_lowercase();
-                if id_lower.contains("gpt-4o")
-                    || id_lower.contains("gpt-4-turbo")
-                    || id_lower.contains("claude")
-                    || id_lower.contains("vision")
-                {
-                    caps.push(ModelCapability::Vision);
-                }
+                    if id_lower.contains("gpt-4o")
+                        || id_lower.contains("gpt-4-turbo")
+                        || id_lower.contains("claude")
+                        || id_lower.contains("vision")
+                        || id_lower.contains("-vl")
+                        || id_lower.contains("vl-")
+                        || id_lower.contains("multimodal")
+                        || id_lower.contains("omni")
+                    {
+                        caps.push(ModelCapability::Vision);
+                    }
                 if id_lower.starts_with("o1")
                     || id_lower.starts_with("o3")
                     || id_lower.starts_with("o4")

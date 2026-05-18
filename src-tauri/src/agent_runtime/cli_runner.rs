@@ -9,6 +9,9 @@ use tokio::time::{timeout, Duration};
 pub struct DeepSeekSessionContext {
     pub deepseek_session_id: Option<String>,
     pub deepseek_model: Option<String>,
+    pub runtime_thread_id: Option<String>,
+    pub latest_turn_id: Option<String>,
+    pub workspace_root: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -86,6 +89,10 @@ pub fn resolve_deepseek_tui_command_path() -> Option<PathBuf> {
 
     if let Some(path_os) = env::var_os("PATH") {
         for dir in env::split_paths(&path_os) {
+            candidates.push(dir.join("deepseek.cmd"));
+            candidates.push(dir.join("deepseek.exe"));
+            candidates.push(dir.join("deepseek"));
+            candidates.push(dir.join("deepseek.ps1"));
             candidates.push(dir.join("deepseek-tui.cmd"));
             candidates.push(dir.join("deepseek-tui.exe"));
             candidates.push(dir.join("deepseek-tui"));
@@ -98,9 +105,17 @@ pub fn resolve_deepseek_tui_command_path() -> Option<PathBuf> {
             home.join("AppData")
                 .join("Roaming")
                 .join("npm")
+                .join("deepseek.cmd"),
+        );
+        candidates.push(
+            home.join("AppData")
+                .join("Roaming")
+                .join("npm")
                 .join("deepseek-tui.cmd"),
         );
     }
+    candidates.push(PathBuf::from(r"C:\nvm4w\nodejs\deepseek.cmd"));
+    candidates.push(PathBuf::from(r"C:\nvm4w\nodejs\deepseek.ps1"));
     candidates.push(PathBuf::from(r"C:\nvm4w\nodejs\deepseek-tui.cmd"));
     candidates.push(PathBuf::from(r"C:\nvm4w\nodejs\deepseek-tui.ps1"));
 
@@ -325,22 +340,28 @@ pub async fn run_deepseek_tui_once(
 ) {
     if let Some(resolved_deepseek_path) = resolve_deepseek_tui_command_path() {
         let mut command = build_cli_command(&resolved_deepseek_path);
-        if let Some(existing_session_id) = saved_deepseek_session_id {
-            if !existing_session_id.trim().is_empty() {
-                command.arg("--resume").arg(existing_session_id.trim());
+        let trimmed_session_id = saved_deepseek_session_id
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let trimmed_model = model.map(str::trim).filter(|value| !value.is_empty());
+
+        if let Some(existing_session_id) = trimmed_session_id {
+            command.arg("--resume").arg(existing_session_id);
+            if let Some(selected_model) = trimmed_model {
+                command.arg("--model").arg(selected_model);
             }
-        }
-        command.arg("exec");
-        if auto_mode {
-            command.arg("--auto");
-        }
-        if let Some(selected_model) = model {
-            if !selected_model.trim().is_empty() {
-                command.arg("--model").arg(selected_model.trim());
+            command.arg("--prompt").arg(prompt);
+        } else {
+            command.arg("exec");
+            if auto_mode {
+                command.arg("--auto");
             }
+            if let Some(selected_model) = trimmed_model {
+                command.arg("--model").arg(selected_model);
+            }
+            command.arg("--json");
+            command.arg(prompt);
         }
-        command.arg("--json");
-        command.arg(prompt);
 
         let cwd_error = if let Some(cwd) = cwd {
             let cwd_path = Path::new(cwd);
@@ -366,7 +387,11 @@ pub async fn run_deepseek_tui_once(
                 let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
 
-                let parsed_exec = serde_json::from_str::<DeepSeekExecJson>(&stdout).ok();
+                let parsed_exec = if trimmed_session_id.is_some() {
+                    None
+                } else {
+                    serde_json::from_str::<DeepSeekExecJson>(&stdout).ok()
+                };
                 let resolved_session_path = saved_deepseek_session_id
                     .and_then(resolve_deepseek_session_file)
                     .or_else(latest_deepseek_session_file);
@@ -395,7 +420,14 @@ pub async fn run_deepseek_tui_once(
                     let api_output = parsed_exec
                         .as_ref()
                         .and_then(|json| json.output.clone())
-                        .filter(|value| !value.trim().is_empty());
+                        .filter(|value| !value.trim().is_empty())
+                        .or_else(|| {
+                            if trimmed_session_id.is_some() && !stdout.trim().is_empty() {
+                                Some(stdout.clone())
+                            } else {
+                                None
+                            }
+                        });
                     let saved_output = saved_reply
                         .1
                         .clone()
@@ -427,6 +459,9 @@ pub async fn run_deepseek_tui_once(
                     serialize_deepseek_session_context(&DeepSeekSessionContext {
                         deepseek_session_id: Some(session_id.clone()),
                         deepseek_model: resolved_model.clone(),
+                        runtime_thread_id: None,
+                        latest_turn_id: None,
+                        workspace_root: cwd.map(ToString::to_string),
                     })
                     .unwrap_or_default()
                 });
@@ -462,7 +497,7 @@ pub async fn run_deepseek_tui_once(
     let path_hint = env::var("PATH").unwrap_or_default();
     (
         format!(
-            "DeepSeek TUI failed: could not locate the `deepseek-tui` command.\n\nPATH: {}",
+            "DeepSeek TUI failed: could not locate the `deepseek` or `deepseek-tui` command.\n\nPATH: {}",
             path_hint
         ),
         None,

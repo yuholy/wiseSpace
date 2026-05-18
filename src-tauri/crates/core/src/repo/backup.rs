@@ -2,6 +2,8 @@ use sea_orm::*;
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+use tokio::sync::Mutex;
 
 use crate::entity::backup_manifests;
 use crate::error::{Result, WiseSpaceError};
@@ -43,6 +45,11 @@ fn resolve_stored_backup_path(path: &str) -> PathBuf {
     } else {
         storage_paths::resolve_documents_path(&path.to_string_lossy())
     }
+}
+
+fn backup_sync_mutex() -> &'static Mutex<()> {
+    static BACKUP_SYNC_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
+    BACKUP_SYNC_MUTEX.get_or_init(|| Mutex::new(()))
 }
 
 /// Get the backup directory, using the configured path or defaulting to the
@@ -326,10 +333,12 @@ fn imported_backup_metadata(path: &Path, format: &str) -> Option<(String, String
 }
 
 async fn sync_backup_manifests_with_disk(db: &DatabaseConnection, backup_dir: &Path) -> Result<()> {
+    let _guard = backup_sync_mutex().lock().await;
     ensure_backup_dir(backup_dir)?;
+    dedupe_backup_manifests(db).await?;
 
     let existing = backup_manifests::Entity::find().all(db).await?;
-    let known_paths: HashSet<String> = existing
+    let mut known_paths: HashSet<String> = existing
         .iter()
         .filter_map(|model| model.file_path.as_deref())
         .map(resolve_stored_backup_path)
@@ -379,7 +388,42 @@ async fn sync_backup_manifests_with_disk(db: &DatabaseConnection, backup_dir: &P
         };
 
         am.insert(db).await?;
+        known_paths.insert(path_string);
     }
+
+    Ok(())
+}
+
+async fn dedupe_backup_manifests(db: &DatabaseConnection) -> Result<()> {
+    let models = backup_manifests::Entity::find()
+        .order_by_desc(backup_manifests::Column::CreatedAt)
+        .order_by_desc(backup_manifests::Column::Id)
+        .all(db)
+        .await?;
+
+    let mut seen = HashSet::new();
+    let mut duplicate_ids = Vec::new();
+
+    for model in models {
+        let Some(file_path) = model.file_path.as_deref() else {
+            continue;
+        };
+        let normalized = resolve_stored_backup_path(file_path)
+            .to_string_lossy()
+            .to_string();
+        if !seen.insert(normalized) {
+            duplicate_ids.push(model.id);
+        }
+    }
+
+    if duplicate_ids.is_empty() {
+        return Ok(());
+    }
+
+    backup_manifests::Entity::delete_many()
+        .filter(backup_manifests::Column::Id.is_in(duplicate_ids))
+        .exec(db)
+        .await?;
 
     Ok(())
 }

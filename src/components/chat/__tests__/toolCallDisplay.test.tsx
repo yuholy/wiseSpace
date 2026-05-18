@@ -37,6 +37,34 @@ describe('buildAssistantDisplayContent', () => {
     expect(buildAssistantDisplayContent(msg, [])).toBe(content);
   });
 
+  it('closes dangling think blocks in completed assistant content', () => {
+    const content = '<think data-wisespace="1">draft\n\nfinal answer';
+    const msg = makeMessage({ content, status: 'complete' });
+
+    expect(buildAssistantDisplayContent(msg, [])).toBe('<think data-wisespace="1">draft\n\nfinal answer\n</think>');
+  });
+
+  it('keeps only the latest completed think block to reduce repeated think cards', () => {
+    const content = [
+      '<think data-wisespace="1">first</think>',
+      '',
+      'step 1',
+      '',
+      '<think data-wisespace="1">second</think>',
+      '',
+      'final answer',
+    ].join('\n');
+    const msg = makeMessage({ content, status: 'complete' });
+
+    expect(buildAssistantDisplayContent(msg, [])).toBe([
+      'step 1',
+      '',
+      '<think data-wisespace="1">second</think>',
+      '',
+      'final answer',
+    ].join('\n'));
+  });
+
   it('does not hide an empty normal assistant placeholder bubble while streaming', () => {
     const assistant = makeMessage({
       id: 'assistant-streaming',

@@ -1,10 +1,14 @@
 use serde::{Deserialize, Serialize};
 
+use wisespace_core::types::AttachmentInput;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalAgentRunRequest {
     pub conversation_id: String,
     pub prompt: String,
+    #[serde(default)]
+    pub attachments: Vec<AttachmentInput>,
     pub provider_id: String,
     pub model_id: String,
     pub cwd: Option<String>,
@@ -26,6 +30,7 @@ pub struct LocalAgentContextNeeds {
 pub struct LocalAgentRunPlan {
     pub conversation_id: String,
     pub prompt: String,
+    pub attachments: Vec<AttachmentInput>,
     pub provider_id: String,
     pub model_id: String,
     pub cwd: Option<String>,
@@ -47,6 +52,7 @@ pub fn build_local_agent_plan(
     Ok(LocalAgentRunPlan {
         conversation_id: request.conversation_id,
         prompt,
+        attachments: request.attachments,
         provider_id: request.provider_id,
         model_id: request.model_id,
         cwd: request.cwd,

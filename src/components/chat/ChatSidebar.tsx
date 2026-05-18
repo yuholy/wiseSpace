@@ -62,6 +62,8 @@ function getDateGroup(timestamp: number): string {
   return 'earlier'
 }
 
+const CATEGORY_PREVIEW_LIMIT = 5
+
 const CategoryIcon = memo(function CategoryIcon({ cat, size = 14 }: { cat: ConversationCategory; size?: number }) {
   const resolvedSrc = useResolvedAvatarSrc((cat.icon_type as AvatarType) ?? 'icon', cat.icon_value ?? '')
   if (cat.icon_type === 'emoji' && cat.icon_value) {
@@ -474,6 +476,7 @@ export function ChatSidebar() {
   const [showArchived, setShowArchived] = useState(false)
   const [archivedSelectedIds, setArchivedSelectedIds] = useState<Set<string>>(new Set())
   const [archivedMultiSelect, setArchivedMultiSelect] = useState(false)
+  const [showAllCategoryGroups, setShowAllCategoryGroups] = useState(false)
   const [rightClickedConvId, setRightClickedConvId] = useState<string | null>(null)
   const [categoryModalOpen, setCategoryModalOpen] = useState(false)
   const [editingCategory, setEditingCategory] = useState<ConversationCategory | null>(null)
@@ -608,6 +611,23 @@ export function ChatSidebar() {
     })
     return [...categorized, ...uncategorized]
   }, [conversations, searchText, categories])
+
+  const activeCategoryId = useMemo(
+    () => conversations.find((c) => c.id === activeConversationId)?.category_id ?? null,
+    [activeConversationId, conversations],
+  )
+
+  const visibleCategories = useMemo(() => {
+    if (showAllCategoryGroups || showArchived || searchText.trim() || multiSelectMode || archivedMultiSelect) {
+      return categories
+    }
+    if (!activeCategoryId) {
+      return []
+    }
+    return categories.filter((cat) => cat.id === activeCategoryId)
+  }, [activeCategoryId, archivedMultiSelect, categories, multiSelectMode, searchText, showAllCategoryGroups, showArchived])
+
+  const hiddenCategoryCount = Math.max(categories.length - visibleCategories.length, 0)
 
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -779,6 +799,7 @@ export function ChatSidebar() {
 
   const directDeleteShortcutLabel = useMemo(() => getDirectDeleteShortcutLabel(), [])
   const directDeleteHint = t('chat.directDeleteHint', { shortcut: directDeleteShortcutLabel })
+  const [expandedCategoryContentIds, setExpandedCategoryContentIds] = useState<Set<string>>(new Set())
 
   const handleDelete = useCallback(
     (
@@ -936,10 +957,27 @@ export function ChatSidebar() {
       }
 
       // Add category items in sort_order — ensures group rendering order matches drag order
-      categories.forEach((cat) => {
+      const buildCategoryToggleItem = (catId: string, hiddenCount: number, expanded: boolean): ConversationItemType => ({
+        key: expanded ? `__show_less_cat_${catId}` : `__show_more_cat_${catId}`,
+        label: (
+          <span className="wisespace-chat-category-toggle-label">
+            {expanded ? '收起' : `显示更多 ${hiddenCount} 条`}
+          </span>
+        ),
+        icon: null,
+        group: `cat:${catId}`,
+        className: 'wisespace-chat-category-toggle-item',
+      })
+
+      visibleCategories.forEach((cat) => {
         const catConvs = convsByCatId.get(cat.id)
         if (catConvs && catConvs.length > 0) {
-          catConvs.forEach((conv) => pushConvWithChildren(conv, `cat:${cat.id}`))
+          const expanded = expandedCategoryContentIds.has(cat.id)
+          const visibleConvs = expanded ? catConvs : catConvs.slice(0, CATEGORY_PREVIEW_LIMIT)
+          visibleConvs.forEach((conv) => pushConvWithChildren(conv, `cat:${cat.id}`))
+          if (catConvs.length > CATEGORY_PREVIEW_LIMIT) {
+            items.push(buildCategoryToggleItem(cat.id, catConvs.length - CATEGORY_PREVIEW_LIMIT, expanded))
+          }
         } else {
           items.push({
             key: `__empty_cat_${cat.id}`,
@@ -967,7 +1005,7 @@ export function ChatSidebar() {
 
       return items
     },
-    [filteredConversations, multiSelectMode, selectedIds, buildIcon, toggleSelect, token.colorTextQuaternary, categories, t, expandedParentIds],
+    [filteredConversations, multiSelectMode, selectedIds, buildIcon, toggleSelect, token.colorTextQuaternary, visibleCategories, t, expandedParentIds, expandedCategoryContentIds],
   )
 
   const groupLabels: Record<string, string> = useMemo(
@@ -1021,17 +1059,55 @@ export function ChatSidebar() {
     knownCatIdsRef.current = currentIds
   }, [categories])
 
-  // Auto-expand category of the active conversation on load
-  const initialExpandDoneRef = useRef(false)
-  useEffect(() => {
-    if (initialExpandDoneRef.current || !activeConversationId || categories.length === 0) return
-    const activeConv = conversations.find((c) => c.id === activeConversationId)
-    if (activeConv?.category_id) {
-      const key = `cat:${activeConv.category_id}`
-      setExpandedKeys((prev) => (prev.includes(key) ? prev : [...prev, key]))
+  const focusConversationGroup = useCallback((conversationId: string | null | undefined) => {
+    const nextKeys: string[] = []
+    if (!chatTaskCenterGroupCollapsed) {
+      nextKeys.push('taskCenter')
     }
-    initialExpandDoneRef.current = true
-  }, [activeConversationId, conversations, categories])
+
+    if (!conversationId) {
+      setExpandedKeys(nextKeys)
+      return
+    }
+
+    const activeConv = conversations.find((c) => c.id === conversationId)
+    if (activeConv?.category_id) {
+      nextKeys.push(`cat:${activeConv.category_id}`)
+    } else if (activeConv?.source === 'task_center' && !nextKeys.includes('taskCenter')) {
+      nextKeys.push('taskCenter')
+    }
+
+    setExpandedKeys(nextKeys)
+  }, [chatTaskCenterGroupCollapsed, conversations])
+
+  useEffect(() => {
+    if (showArchived || searchText.trim() || multiSelectMode || archivedMultiSelect) return
+    focusConversationGroup(activeConversationId)
+  }, [
+    activeConversationId,
+    archivedMultiSelect,
+    focusConversationGroup,
+    multiSelectMode,
+    searchText,
+    showArchived,
+  ])
+
+  useEffect(() => {
+    if (!activeConversationId) return
+    const activeConv = conversations.find((conv) => conv.id === activeConversationId)
+    if (!activeConv?.category_id) return
+    setExpandedCategoryContentIds((prev) => {
+      if (prev.has(activeConv.category_id!)) return prev
+      const next = new Set(prev)
+      next.add(activeConv.category_id!)
+      return next
+    })
+  }, [activeConversationId, conversations])
+
+  useEffect(() => {
+    if (showArchived || searchText.trim() || multiSelectMode || archivedMultiSelect) return
+    setShowAllCategoryGroups(false)
+  }, [activeConversationId, archivedMultiSelect, multiSelectMode, searchText, showArchived])
 
   // Guard to prevent menu clicks from triggering expand/collapse
   const menuActionRef = useRef(false)
@@ -1349,14 +1425,33 @@ export function ChatSidebar() {
   )
 
   const handleConversationClick = useCallback((key: string) => {
+    if (key.startsWith('__show_more_cat_')) {
+      const catId = key.slice('__show_more_cat_'.length)
+      setExpandedCategoryContentIds((prev) => {
+        const next = new Set(prev)
+        next.add(catId)
+        return next
+      })
+      return
+    }
+    if (key.startsWith('__show_less_cat_')) {
+      const catId = key.slice('__show_less_cat_'.length)
+      setExpandedCategoryContentIds((prev) => {
+        const next = new Set(prev)
+        next.delete(catId)
+        return next
+      })
+      return
+    }
     if (multiSelectMode) {
       toggleSelect(key)
     } else {
+      focusConversationGroup(key)
       startTransition(() => {
         setActiveConversation(key)
       })
     }
-  }, [multiSelectMode, toggleSelect, setActiveConversation])
+  }, [focusConversationGroup, multiSelectMode, toggleSelect, setActiveConversation])
 
   const rightClickMenuConfig = useMemo(() => {
     if (!rightClickedConvId) return { items: [] as any[] }
@@ -1444,6 +1539,59 @@ export function ChatSidebar() {
         .wisespace-chat-sidebar .chat-sidebar-search .ant-input-affix-wrapper-focused {
           background: var(--wisespace-sidebar-hover-bg);
           border-color: var(--wisespace-sidebar-primary-border);
+        }
+        .wisespace-chat-category-focus-bar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          margin: 0 10px 8px;
+          padding: 6px 8px;
+          border-radius: 10px;
+          background: color-mix(in srgb, var(--wisespace-sidebar-soft-bg) 78%, transparent);
+          border: 1px solid color-mix(in srgb, var(--wisespace-sidebar-border) 78%, transparent);
+        }
+        .wisespace-chat-category-focus-bar__main {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          min-width: 0;
+        }
+        .wisespace-chat-category-focus-bar__icon {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 18px;
+          height: 18px;
+          border-radius: 999px;
+          background: color-mix(in srgb, var(--wisespace-sidebar-primary-bg) 82%, transparent);
+          color: var(--wisespace-sidebar-primary-text);
+          flex-shrink: 0;
+        }
+        .wisespace-chat-category-focus-bar__text {
+          min-width: 0;
+          color: var(--wisespace-sidebar-text-tertiary);
+          font-size: 11px;
+          font-weight: 600;
+          line-height: 1;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .wisespace-chat-category-focus-bar .ant-btn {
+          height: 24px;
+          padding-inline: 8px;
+          border-radius: 999px;
+          color: var(--wisespace-sidebar-primary-text);
+          background: color-mix(in srgb, var(--wisespace-sidebar-primary-bg) 82%, transparent);
+          border: 0;
+          flex-shrink: 0;
+          font-size: 11px;
+          font-weight: 600;
+        }
+        .wisespace-chat-category-focus-bar .ant-btn:hover {
+          color: var(--wisespace-sidebar-primary-text) !important;
+          background: color-mix(in srgb, var(--wisespace-sidebar-primary-bg) 96%, transparent) !important;
         }
         .wisespace-chat-sidebar .wisespace-chat-conversations {
           scrollbar-gutter: stable;
@@ -1555,6 +1703,19 @@ export function ChatSidebar() {
           margin-top: -2px;
           margin-bottom: 6px;
         }
+        .wisespace-chat-sidebar .wisespace-chat-conversations .wisespace-chat-category-toggle-item {
+          margin-left: 18px;
+          width: calc(100% - 26px);
+          min-height: 30px;
+          color: var(--wisespace-sidebar-text-tertiary);
+        }
+        .wisespace-chat-sidebar .wisespace-chat-conversations .wisespace-chat-category-toggle-item:hover {
+          background: transparent;
+        }
+        .wisespace-chat-category-toggle-label {
+          font-size: 12px;
+          font-weight: 600;
+        }
         .wisespace-chat-conversation-menu-delete {
           width: 24px;
           height: 24px;
@@ -1628,6 +1789,45 @@ export function ChatSidebar() {
             size="small"
             autoFocus
           />
+        </div>
+      )}
+
+      {!showArchived && !searchText.trim() && !multiSelectMode && !archivedMultiSelect && categories.length > 1 && (
+        <div className="wisespace-chat-category-focus-bar">
+          <span className="wisespace-chat-category-focus-bar__main">
+            <span className="wisespace-chat-category-focus-bar__icon">
+              <Briefcase size={11} />
+            </span>
+            <span className="wisespace-chat-category-focus-bar__text">
+              {showAllCategoryGroups
+                ? `全部分组 ${categories.length}`
+                : `当前事务 · 已隐藏 ${hiddenCategoryCount} 个分组`}
+            </span>
+          </span>
+          <Button
+            type="text"
+            size="small"
+            onClick={() => setShowAllCategoryGroups((prev) => !prev)}
+          >
+            {showAllCategoryGroups ? '收起' : '展开'}
+          </Button>
+        </div>
+      )}
+
+      {false && !showArchived && !searchText.trim() && !multiSelectMode && !archivedMultiSelect && categories.length > 1 && (
+        <div className="wisespace-chat-category-focus-bar">
+          <span className="wisespace-chat-category-focus-bar__text">
+            {showAllCategoryGroups
+              ? `已显示全部 ${categories.length} 个分组`
+              : `已隐藏 ${hiddenCategoryCount} 个分组，聚焦当前事务`}
+          </span>
+          <Button
+            type="text"
+            size="small"
+            onClick={() => setShowAllCategoryGroups((prev) => !prev)}
+          >
+            {showAllCategoryGroups ? '只看当前分组' : '显示全部'}
+          </Button>
         </div>
       )}
 

@@ -6,7 +6,7 @@ use crate::AppState;
 use std::path::Path;
 use wisespace_core::repo::{conversation, message, provider, settings};
 use wisespace_core::types::{
-    AgentProfile, AgentRun, AgentSession, AppSettings, MessageRole, ProviderConfig,
+    AgentProfile, AgentRun, AgentSession, AppSettings, Attachment, MessageRole, ProviderConfig,
 };
 use wisespace_providers::{resolve_base_url_for_type, ProviderRequestContext};
 
@@ -24,6 +24,33 @@ pub struct LocalAgentExecutionContext {
     pub effective_cwd: String,
     pub is_first_message: bool,
     pub global_settings: AppSettings,
+    pub execution_prompt: String,
+}
+
+fn build_attachment_execution_prompt(prompt: &str, attachments: &[Attachment]) -> String {
+    if attachments.is_empty() {
+        return prompt.to_string();
+    }
+
+    let attachment_lines = attachments
+        .iter()
+        .map(|attachment| {
+            let absolute_path = wisespace_core::storage_paths::resolve_documents_path(
+                &attachment.file_path,
+            );
+            format!(
+                "- {} ({})\n  absolute_path: {}",
+                attachment.file_name,
+                attachment.file_type,
+                absolute_path.to_string_lossy()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        "{prompt}\n\nAttached files uploaded with this message:\n{attachment_lines}\n\nIf you need the file contents, read them from the absolute_path values above."
+    )
 }
 
 pub async fn prepare_local_agent_execution_context(
@@ -86,12 +113,20 @@ pub async fn prepare_local_agent_execution_context(
         Err(err) => return Err(err),
     };
 
+    let persisted_attachments = crate::commands::conversations::persist_attachments(
+        state,
+        &plan.conversation_id,
+        &plan.attachments,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
     let user_message = message::create_message(
         &state.sea_db,
         &plan.conversation_id,
         MessageRole::User,
         &plan.prompt,
-        &[],
+        &persisted_attachments,
         None,
         0,
     )
@@ -154,5 +189,6 @@ pub async fn prepare_local_agent_execution_context(
         effective_cwd,
         is_first_message,
         global_settings,
+        execution_prompt: build_attachment_execution_prompt(&plan.prompt, &persisted_attachments),
     })
 }

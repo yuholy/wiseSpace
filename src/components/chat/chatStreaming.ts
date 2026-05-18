@@ -32,11 +32,11 @@ export function hasModelVisibleContent(content: unknown, stripDisplayTags: (cont
 
 export function hasWiseSpaceDisplayContent(content: unknown): boolean {
   return typeof content === 'string'
-    && new RegExp(`<(?:knowledge-retrieval|memory-retrieval|web-search)\\b[^>]*${DISPLAY_ATTR_PATTERN}=["']1["'][^>]*>`, 'i').test(content);
+    && new RegExp(`<(?:knowledge-retrieval|memory-retrieval|web-search|vision-fallback)\\b[^>]*${DISPLAY_ATTR_PATTERN}=["']1["'][^>]*>`, 'i').test(content);
 }
 
 const LEADING_WISESPACE_DISPLAY_TAG_RE = new RegExp(
-  `^\\s*<(knowledge-retrieval|memory-retrieval|web-search)\\b[^>]*${DISPLAY_ATTR_PATTERN}=["']1["'][^>]*>[\\s\\S]*?<\\/\\1>\\s*`,
+  `^\\s*<(knowledge-retrieval|memory-retrieval|web-search|vision-fallback)\\b[^>]*${DISPLAY_ATTR_PATTERN}=["']1["'][^>]*>[\\s\\S]*?<\\/\\1>\\s*`,
   'i',
 );
 

@@ -347,88 +347,93 @@ async fn do_webdav_backup_once(
         .unwrap_or_default()
         .as_millis();
     let temp_db_path = backup_dir.join(format!("_webdav_temp_{}.db", temp_id));
-    let _ = std::fs::remove_file(&temp_db_path);
-
-    let db_str = temp_db_path.to_string_lossy().to_string();
-    db.execute(Statement::from_string(
-        sea_orm::DatabaseBackend::Sqlite,
-        format!("VACUUM INTO '{}'", db_str.replace('\'', "''")),
-    ))
-    .await
-    .map_err(|e| format!("VACUUM INTO failed: {}", e))?;
-
-    // 3. Object counts for metadata
-    let object_counts = count_objects_json(db).await;
-
-    let sync_mode = settings.webdav_sync_mode.as_str();
-    let is_full_sync = sync_mode == "full";
-
-    // 4. Documents directory (optional, full sync only)
-    let include_docs = is_full_sync && settings.webdav_include_documents;
-    let documents_dir = if include_docs {
-        let docs_root = webdav::documents_sync_root();
-        if docs_root.exists() {
-            Some(docs_root)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
-    // 4b. Workspace directory (optional, full sync only)
-    let include_workspace = is_full_sync && settings.webdav_include_workspace;
-    let workspace_dir = if include_workspace {
-        let workspace_root = wisespace_core::storage_paths::workspace_root();
-        if workspace_root.exists() {
-            Some(workspace_root)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
-    let wisespace_home_dir = if is_full_sync {
-        Some(app_data_dir)
-    } else {
-        None
-    };
-
-    // 5. Create ZIP (includes master.key for cross-device restore)
-    let master_key_path = app_data_dir.join("master.key");
     let zip_filename = webdav::generate_backup_filename();
     let zip_path = backup_dir.join(&zip_filename);
-    webdav::create_backup_zip(
-        &temp_db_path,
-        documents_dir.as_deref(),
-        workspace_dir.as_deref(),
-        Some(&master_key_path),
-        wisespace_home_dir,
-        &zip_path,
-        env!("CARGO_PKG_VERSION"),
-        &object_counts,
-    )
-    .map_err(|e| e.to_string())?;
-
-    // 6. Upload
-    let client = WebDavClient::new(config).map_err(|e| e.to_string())?;
-    client
-        .upload_file(&zip_filename, &zip_path)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    // 7. Cleanup temp files
     let _ = std::fs::remove_file(&temp_db_path);
     let _ = std::fs::remove_file(&zip_path);
 
-    // 8. Cleanup old remote backups
-    let max_backups = settings.webdav_max_remote_backups;
-    if max_backups > 0 {
-        cleanup_remote_backups(&client, max_backups).await;
-    }
+    let result = async {
+        let db_str = temp_db_path.to_string_lossy().to_string();
+        db.execute(Statement::from_string(
+            sea_orm::DatabaseBackend::Sqlite,
+            format!("VACUUM INTO '{}'", db_str.replace('\'', "''")),
+        ))
+        .await
+        .map_err(|e| format!("VACUUM INTO failed: {}", e))?;
 
-    Ok(zip_filename)
+        // 3. Object counts for metadata
+        let object_counts = count_objects_json(db).await;
+
+        let sync_mode = settings.webdav_sync_mode.as_str();
+        let is_full_sync = sync_mode == "full";
+
+        // 4. Documents directory (optional, full sync only)
+        let include_docs = is_full_sync && settings.webdav_include_documents;
+        let documents_dir = if include_docs {
+            let docs_root = webdav::documents_sync_root();
+            if docs_root.exists() {
+                Some(docs_root)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        // 4b. Workspace directory (optional, full sync only)
+        let include_workspace = is_full_sync && settings.webdav_include_workspace;
+        let workspace_dir = if include_workspace {
+            let workspace_root = wisespace_core::storage_paths::workspace_root();
+            if workspace_root.exists() {
+                Some(workspace_root)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let wisespace_home_dir = if is_full_sync {
+            Some(app_data_dir)
+        } else {
+            None
+        };
+
+        // 5. Create ZIP (includes master.key for cross-device restore)
+        let master_key_path = app_data_dir.join("master.key");
+        webdav::create_backup_zip(
+            &temp_db_path,
+            documents_dir.as_deref(),
+            workspace_dir.as_deref(),
+            Some(&master_key_path),
+            wisespace_home_dir,
+            &zip_path,
+            env!("CARGO_PKG_VERSION"),
+            &object_counts,
+        )
+        .map_err(|e| e.to_string())?;
+
+        // 6. Upload
+        let client = WebDavClient::new(config).map_err(|e| e.to_string())?;
+        client
+            .upload_file(&zip_filename, &zip_path)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        // 8. Cleanup old remote backups
+        let max_backups = settings.webdav_max_remote_backups;
+        if max_backups > 0 {
+            cleanup_remote_backups(&client, max_backups).await;
+        }
+
+        Ok(zip_filename)
+    }
+    .await;
+
+    let _ = std::fs::remove_file(&temp_db_path);
+    let _ = std::fs::remove_file(&zip_path);
+
+    result
 }
 
 async fn count_objects_json(db: &DatabaseConnection) -> String {

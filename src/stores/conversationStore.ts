@@ -2167,12 +2167,13 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         }).then(keepAgentUnlisten((fn) => { unlistenError = fn; }));
       });
 
-      const runnerKind = 'sdk';
+      const runnerKind = options?.executorId === 'deepseek-tui' ? 'deepseek_tui' : 'sdk';
 
       await invoke('agent_start_run', {
         input: {
           conversationId,
           prompt: content,
+          attachments,
           runnerKind,
           providerId,
           modelId: options?.executorModel || modelId,

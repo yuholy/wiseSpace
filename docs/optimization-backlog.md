@@ -102,6 +102,25 @@ but do not need to block the current mainline.
   - Audit expensive per-switch work in ChatView and defer non-critical work.
   - Avoid visible blank states when switching among recently opened chats.
 
+- Add S3-compatible remote backup and sync alongside WebDAV.
+  The current product already has a practical WebDAV backup/sync path, but S3
+  is a better long-term storage substrate for reliable object-style backup
+  retention, cross-device restore, and future lifecycle management.
+
+  Scope:
+  - Support S3-compatible providers such as AWS S3, Cloudflare R2, and MinIO.
+  - Add S3 connection configuration, test connection, backup now, list, restore,
+    delete, and auto-sync scheduling.
+  - Keep the local backup archive format compatible with the existing WebDAV
+    restore path wherever possible.
+  - Reuse the same product concepts as WebDAV:
+    - fast sync vs full sync
+    - optional documents include
+    - optional workspace include
+    - per-device retention cleanup
+  - Validate real object operations, not only bucket reachability.
+  - Keep S3 and WebDAV as parallel remote targets instead of replacing WebDAV.
+
 ## P2
 
 - Add a no-embedding fallback mode for knowledge and memory.
@@ -135,9 +154,12 @@ but do not need to block the current mainline.
   - empty vector-model dropdown feels broken
   - local embedding setup is unclear
   - custom provider support is partially implemented but not fully exposed
+  - remote backup currently supports WebDAV only; S3 is not yet available even
+    though some type-level placeholders exist
 
 - Recommended implementation order:
   1. Empty-state guidance for vector model selection
   2. Custom provider UI exposure
   3. Local embedding setup presets
   4. Optional no-embedding fallback
+  5. S3-compatible remote backup/sync MVP

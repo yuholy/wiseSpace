@@ -7,7 +7,6 @@ import {
   FolderOpen, RefreshCw, Download, Trash2, Sparkles, Store, Star, Github,
   ChevronRight, Layers, Radio,
 } from 'lucide-react';
-import { Claude } from '@lobehub/icons';
 import appLogo from '@/assets/image/logo.png?url';
 import { useTranslation } from 'react-i18next';
 import { useSkillStore } from '@/stores';
@@ -16,7 +15,6 @@ import { CopyButton } from '@/components/common/CopyButton';
 
 const INSTALL_TARGETS = [
   { key: 'wisespace', label: '~/.wisespace/skills/', desc: 'wiseSpace', icon: <Sparkles size={14} /> },
-  { key: 'claude', label: '~/.claude/skills/', desc: 'Claude', icon: <FolderOpen size={14} /> },
   { key: 'agents', label: '~/.agents/skills/', desc: 'Agents', icon: <FolderOpen size={14} /> },
 ] as const;
 
@@ -32,7 +30,6 @@ const { Text, Paragraph } = Typography;
 
 const SOURCE_ICONS: Record<string, React.ReactNode> = {
   wisespace: <img src={appLogo} alt="" style={{ width: 14, height: 14, verticalAlign: 'middle' }} />,
-  claude: <Claude.Color size={14} />,
   agents: <Radio size={14} />,
 };
 
@@ -236,7 +233,7 @@ export function SkillsPage() {
   const [marketplaceDetailOpen, setMarketplaceDetailOpen] = useState(false);
   const [marketplaceDetailContent, setMarketplaceDetailContent] = useState<{ name: string; repo: string; content: string } | null>(null);
   const [marketplaceDetailLoading, setMarketplaceDetailLoading] = useState(false);
-  const [sourceFilter, setSourceFilter] = useState<'all' | 'wisespace' | 'claude' | 'agents'>('all');
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'wisespace' | 'agents'>('all');
 
   useEffect(() => {
     loadSkills();
@@ -451,11 +448,10 @@ export function SkillsPage() {
         <Tabs
           size="small"
           activeKey={sourceFilter}
-          onChange={(k) => setSourceFilter(k as 'all' | 'wisespace' | 'claude' | 'agents')}
+          onChange={(k) => setSourceFilter(k as 'all' | 'wisespace' | 'agents')}
           items={[
             { key: 'all', label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>{ALL_SOURCE_ICON}{t('skills.sourceAll')}</span> },
             { key: 'wisespace', label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>{SOURCE_ICONS.wisespace}wiseSpace</span> },
-            { key: 'claude', label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>{SOURCE_ICONS.claude}Claude</span> },
             { key: 'agents', label: <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>{SOURCE_ICONS.agents}Agents</span> },
           ]}
           style={{ marginBottom: 8 }}

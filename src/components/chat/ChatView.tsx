@@ -32,6 +32,7 @@ import {
 } from '@/lib/chatMultiModel';
 import { WebSearchNode } from './WebSearchNode';
 import { MemoryRetrievalNode } from './MemoryRetrievalNode';
+import { VisionFallbackNode } from './VisionFallbackNode';
 import { KnowledgeRetrievalNode } from './KnowledgeRetrievalNode';
 import { McpContainerNode } from './McpContainerNode';
 import {
@@ -165,6 +166,7 @@ function getLightweightStreamingPreview(content: string): string {
     .replace(new RegExp(`<knowledge-retrieval [^>]*${DISPLAY_ATTR_PATTERN}=["']1["'][^>]*>[\\s\\S]*?<\\/knowledge-retrieval>\\s*`, 'g'), '')
     .replace(new RegExp(`<memory-retrieval [^>]*${DISPLAY_ATTR_PATTERN}=["']1["'][^>]*>[\\s\\S]*?<\\/memory-retrieval>\\s*`, 'g'), '')
     .replace(new RegExp(`<web-search [^>]*${DISPLAY_ATTR_PATTERN}=["']1["'][^>]*>[\\s\\S]*?<\\/web-search>\\s*`, 'g'), '')
+    .replace(new RegExp(`<vision-fallback [^>]*${DISPLAY_ATTR_PATTERN}=["']1["'][^>]*>[\\s\\S]*?<\\/vision-fallback>\\s*`, 'g'), '')
     .replace(new RegExp(`<tool-call [^>]*${DISPLAY_ATTR_PATTERN}=["']1["'][^>]*>`, 'g'), '')
     .replace(/<\/tool-call>\s*/g, '\n')
     .replace(/\n*:::mcp [^\n]*\n[\s\S]*?:::\n*/g, '\n')
@@ -1119,7 +1121,7 @@ function ToolCallNode(props: NodeComponentProps<{
   );
 }
 
-setCustomComponents('chat', { think: ThinkNode, 'web-search': WebSearchNode, 'knowledge-retrieval': KnowledgeRetrievalNode, 'memory-retrieval': MemoryRetrievalNode, 'tool-call': ToolCallNode, d2: ChatD2Node, vmr_container: McpContainerNode, image: ChatImageNode, img: ChatImageNode });
+setCustomComponents('chat', { think: ThinkNode, 'web-search': WebSearchNode, 'knowledge-retrieval': KnowledgeRetrievalNode, 'memory-retrieval': MemoryRetrievalNode, 'vision-fallback': VisionFallbackNode, 'tool-call': ToolCallNode, d2: ChatD2Node, vmr_container: McpContainerNode, image: ChatImageNode, img: ChatImageNode });
 
 function AgentPermissionCardState({ request }: { request: PermissionRequestEvent }) {
   const approvalStatus = useAgentStore((s) => s.toolCalls[request.toolUseId]?.approvalStatus);
@@ -1195,7 +1197,7 @@ const AssistantMarkdown = React.memo(function AssistantMarkdown({
   const rendererKey = `${isDarkMode ? 'dark' : 'light'}:${codeBlockDarkTheme}:${codeBlockLightTheme}`;
   const contentWithoutExplicitDisplay = useMemo(() => (
     displayPrefix
-      ? stripLeadingWiseSpaceDisplayTags(content, ['knowledge-retrieval', 'memory-retrieval'])
+      ? stripLeadingWiseSpaceDisplayTags(content, ['knowledge-retrieval', 'memory-retrieval', 'vision-fallback'])
       : content
   ), [content, displayPrefix]);
   const displaySplit = useMemo(() => {
@@ -2477,7 +2479,7 @@ export function ChatView() {
   const [editingTitle, setEditingTitle] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [stickToBottom, setStickToBottom] = useState(true);
-  const [richRenderReady, setRichRenderReady] = useState(true);
+  const [richRenderReady, setRichRenderReady] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingMessageRole, setEditingMessageRole] = useState<'user' | 'assistant' | null>(null);
   const [editingContent, setEditingContent] = useState('');
@@ -2631,6 +2633,7 @@ export function ChatView() {
     setStickToBottomState(true);
     scrollLayoutMetricsRef.current = { scrollHeight: 0, clientHeight: 0 };
     contentRendererMessageIdsRef.current.clear();
+    setRichRenderReady(false);
 
     let idleId: number | null = null;
     const win = window as Window & {
@@ -2638,9 +2641,6 @@ export function ChatView() {
       cancelIdleCallback?: (handle: number) => void;
     };
     const timeoutId = window.setTimeout(() => {
-      if (richRenderReady) {
-        return;
-      }
       if (typeof win.requestIdleCallback === 'function') {
         idleId = win.requestIdleCallback(() => setRichRenderReady(true), { timeout: 500 });
       } else {
@@ -2654,7 +2654,7 @@ export function ChatView() {
         win.cancelIdleCallback?.(idleId);
       }
     };
-  }, [activeConversationId, richRenderReady, setStickToBottomState]);
+  }, [activeConversationId, setStickToBottomState]);
 
   useEffect(() => {
     if (!streaming || !streamingMessageId) {

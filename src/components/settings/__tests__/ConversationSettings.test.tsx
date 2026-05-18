@@ -1,5 +1,5 @@
 import type React from 'react';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppSettings } from '@/types';
 import { ConversationSettings } from '../ConversationSettings';
@@ -14,9 +14,9 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, fallback?: string) => {
       const labels: Record<string, string> = {
-        'settings.additionalFeatures': '附加功能',
-        'settings.chatMinimap': '对话导航',
-        'settings.showImageModelsInModelSelector': '模型选择器中显示绘画模型',
+        'settings.additionalFeatures': 'Additional Features',
+        'settings.chatMinimap': 'Chat Navigation',
+        'settings.showImageModelsInModelSelector': 'Show image models in model selector',
       };
       return labels[key] ?? fallback ?? key;
     },
@@ -33,13 +33,7 @@ vi.mock('antd', () => {
     value?: string;
     onChange?: React.ChangeEventHandler<HTMLTextAreaElement>;
     placeholder?: string;
-  }) => (
-    <textarea
-      placeholder={placeholder}
-      value={value}
-      onChange={onChange}
-    />
-  );
+  }) => <textarea placeholder={placeholder} value={value} onChange={onChange} />;
 
   return {
     Divider: () => <hr />,
@@ -58,33 +52,59 @@ vi.mock('antd', () => {
         onClick={() => onChange?.(!checked)}
       />
     ),
-    Card: ({ children }: { children?: React.ReactNode }) => <section>{children}</section>,
-    Dropdown: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
     theme: {
       useToken: () => ({
         token: {
-          colorBgBase: '#ffffff',
-          colorBgContainer: '#ffffff',
-          colorBorderSecondary: '#eeeeee',
-          colorFillSecondary: '#f5f5f5',
-          colorFillTertiary: '#fafafa',
-          colorText: '#111111',
           colorTextDescription: '#666666',
-          colorTextSecondary: '#444444',
         },
       }),
     },
   };
 });
 
+vi.mock('../SettingsGroup', () => ({
+  SettingsGroup: ({
+    title,
+    children,
+  }: {
+    title?: React.ReactNode;
+    children?: React.ReactNode;
+  }) => (
+    <section>
+      {title ? <h3>{title}</h3> : null}
+      {children}
+    </section>
+  ),
+}));
+
+vi.mock('../SettingsSelect', () => ({
+  SettingsSelect: ({
+    value,
+    onChange,
+    options,
+  }: {
+    value?: string;
+    onChange?: (value: string) => void;
+    options: Array<{ label: React.ReactNode; value: string }>;
+  }) => (
+    <select value={value} onChange={(e) => onChange?.(e.target.value)}>
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {String(option.label)}
+        </option>
+      ))}
+    </select>
+  ),
+}));
+
 vi.mock('@/stores', () => ({
-  useSettingsStore: (selector: (state: {
-    settings: Partial<AppSettings>;
-    saveSettings: typeof mocks.saveSettings;
-  }) => unknown) => selector({
-    settings,
-    saveSettings: mocks.saveSettings,
-  }),
+  useSettingsStore: (
+    selector: (state: { settings: Partial<AppSettings>; saveSettings: typeof mocks.saveSettings }) => unknown,
+  ) =>
+    selector({
+      settings,
+      saveSettings: mocks.saveSettings,
+    }),
 }));
 
 describe('ConversationSettings', () => {
@@ -105,17 +125,16 @@ describe('ConversationSettings', () => {
     render(<ConversationSettings />);
 
     const text = document.body.textContent ?? '';
-    expect(text.indexOf('对话导航')).toBeGreaterThanOrEqual(0);
-    expect(text.indexOf('附加功能')).toBeGreaterThan(text.indexOf('对话导航'));
-    expect(screen.getByText('模型选择器中显示绘画模型')).toBeInTheDocument();
+    expect(text.indexOf('Chat Navigation')).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf('Additional Features')).toBeGreaterThan(text.indexOf('Chat Navigation'));
+    expect(screen.getByText('Show image models in model selector')).toBeInTheDocument();
   });
 
   it('saves the image-model selector setting when toggled', () => {
     render(<ConversationSettings />);
 
-    const additionalGroup = screen.getByText('附加功能').parentElement?.parentElement;
-    expect(additionalGroup).not.toBeNull();
-    const toggle = within(additionalGroup as HTMLElement).getByRole('switch');
+    const toggles = screen.getAllByRole('switch');
+    const toggle = toggles[toggles.length - 1];
 
     fireEvent.click(toggle);
 
@@ -132,9 +151,8 @@ describe('ConversationSettings', () => {
 
     render(<ConversationSettings />);
 
-    const additionalGroup = screen.getByText('附加功能').parentElement?.parentElement;
-    expect(additionalGroup).not.toBeNull();
-    const toggle = within(additionalGroup as HTMLElement).getByRole('switch');
+    const toggles = screen.getAllByRole('switch');
+    const toggle = toggles[toggles.length - 1];
 
     fireEvent.click(toggle);
 

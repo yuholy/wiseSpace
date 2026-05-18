@@ -3,7 +3,9 @@ use crate::AppState;
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, State};
 use wisespace_core::repo::{agent_profile, agent_run, agent_session, conversation};
-use wisespace_core::types::{AgentProfile, AgentRun, AgentRunEvent, AgentSession, Conversation};
+use wisespace_core::types::{
+    AgentProfile, AgentRun, AgentRunEvent, AgentSession, AttachmentInput, Conversation,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,6 +23,8 @@ pub struct AgentProfileUpdateInput {
 pub struct AgentStartRunInput {
     pub conversation_id: String,
     pub prompt: String,
+    #[serde(default)]
+    pub attachments: Vec<AttachmentInput>,
     pub runner_kind: Option<String>,
     pub provider_id: Option<String>,
     pub model_id: Option<String>,
@@ -192,27 +196,47 @@ pub async fn agent_start_run(
     state: State<'_, AppState>,
     input: AgentStartRunInput,
 ) -> Result<(), String> {
-    let _runner_kind = runner_kind_from_legacy(input.runner_kind.as_deref().unwrap_or("sdk"));
-    let provider_id = input
-        .provider_id
-        .ok_or("providerId is required for sdk runner".to_string())?;
-    let model_id = input
-        .model_id
-        .ok_or("modelId is required for sdk runner".to_string())?;
+    match runner_kind_from_legacy(input.runner_kind.as_deref().unwrap_or("sdk")) {
+        crate::agent_runtime::runner::AgentRunnerKind::Sdk => {
+            let provider_id = input
+                .provider_id
+                .ok_or("providerId is required for sdk runner".to_string())?;
+            let model_id = input
+                .model_id
+                .ok_or("modelId is required for sdk runner".to_string())?;
 
-    crate::agent_runtime::sdk_runner::start_sdk_run(
-        app,
-        &state,
-        crate::agent_runtime::sdk_runner::StartSdkRunInput {
-            conversation_id: input.conversation_id,
-            prompt: input.prompt,
-            provider_id,
-            model_id,
-            cwd: input.cwd,
-            permission_mode: input.permission_mode,
-        },
-    )
-    .await
+            crate::agent_runtime::sdk_runner::start_sdk_run(
+                app,
+                &state,
+                crate::agent_runtime::sdk_runner::StartSdkRunInput {
+                    conversation_id: input.conversation_id,
+                    prompt: input.prompt,
+                    attachments: input.attachments,
+                    provider_id,
+                    model_id,
+                    cwd: input.cwd,
+                    permission_mode: input.permission_mode,
+                },
+            )
+            .await
+        }
+        crate::agent_runtime::runner::AgentRunnerKind::DeepseekTui => {
+            crate::agent_runtime::deepseek_tui_runner::start_deepseek_tui_run(
+                app,
+                &state,
+                crate::agent_runtime::deepseek_tui_runner::StartDeepseekTuiRunInput {
+                    conversation_id: input.conversation_id,
+                    prompt: input.prompt,
+                    attachments: input.attachments,
+                    model_id: input.model_id,
+                    cwd: input.cwd,
+                    permission_mode: input.permission_mode,
+                    resume_context_json: None,
+                },
+            )
+            .await
+        }
+    }
 }
 
 #[tauri::command]
@@ -357,6 +381,7 @@ pub async fn create_agent_task_from_center(
         crate::agent_runtime::sdk_runner::StartSdkRunInput {
             conversation_id: conversation.id.clone(),
             prompt,
+            attachments: Vec::new(),
             provider_id: real_provider_id,
             model_id: input.model_id,
             cwd: input.workspace_root,
@@ -484,10 +509,38 @@ pub async fn agent_resume_run(
                 crate::agent_runtime::sdk_runner::StartSdkRunInput {
                     conversation_id: run.conversation_id,
                     prompt: run.prompt_snapshot,
+                    attachments: Vec::new(),
                     provider_id,
                     model_id,
                     cwd: run.workspace_root.clone(),
                     permission_mode: None,
+                },
+            )
+            .await
+        }
+        "deepseek_tui" => {
+            let resume_context = run
+                .resume_token_json
+                .clone()
+                .or(run.sdk_context_json.clone());
+            agent_session::set_sdk_context_by_conversation_id(
+                &state.sea_db,
+                &run.conversation_id,
+                resume_context.as_deref(),
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+            crate::agent_runtime::deepseek_tui_runner::start_deepseek_tui_run(
+                app,
+                &state,
+                crate::agent_runtime::deepseek_tui_runner::StartDeepseekTuiRunInput {
+                    conversation_id: run.conversation_id,
+                    prompt: run.prompt_snapshot,
+                    attachments: Vec::new(),
+                    model_id: run.model_id.clone(),
+                    cwd: run.workspace_root.clone(),
+                    permission_mode: None,
+                    resume_context_json: resume_context,
                 },
             )
             .await
@@ -514,18 +567,28 @@ pub async fn agent_query_claude_code(
 
 #[tauri::command]
 pub async fn agent_query_deepseek_tui(
-    _app: tauri::AppHandle,
-    _state: State<'_, AppState>,
-    _conversation_id: String,
-    _prompt: String,
-    _cwd: Option<String>,
-    _permission_mode: Option<String>,
-    _model: Option<String>,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    conversation_id: String,
+    prompt: String,
+    cwd: Option<String>,
+    permission_mode: Option<String>,
+    model: Option<String>,
 ) -> Result<(), String> {
-    Err(
-        "DeepSeek TUI local executor has been removed. Use wiseSpace Local (SDK) instead."
-            .to_string(),
+    crate::agent_runtime::deepseek_tui_runner::start_deepseek_tui_run(
+        app,
+        &state,
+        crate::agent_runtime::deepseek_tui_runner::StartDeepseekTuiRunInput {
+            conversation_id,
+            prompt,
+            attachments: Vec::new(),
+            model_id: model,
+            cwd,
+            permission_mode,
+            resume_context_json: None,
+        },
     )
+    .await
 }
 
 #[tauri::command]
@@ -543,6 +606,7 @@ pub async fn agent_query(
         crate::agent_runtime::sdk_runner::StartSdkRunInput {
             conversation_id,
             prompt,
+            attachments: Vec::new(),
             provider_id,
             model_id,
             cwd: None,
@@ -616,10 +680,11 @@ pub async fn agent_cancel(
     state: State<'_, AppState>,
     conversation_id: String,
 ) -> Result<(), String> {
-    if let Some(run) = agent_run::get_latest_run_for_conversation(&state.sea_db, &conversation_id)
+    let latest_run = agent_run::get_latest_run_for_conversation(&state.sea_db, &conversation_id)
         .await
-        .map_err(|e| e.to_string())?
-    {
+        .map_err(|e| e.to_string())?;
+
+    if let Some(run) = latest_run.as_ref() {
         let _ = crate::agent_runtime::runtime::mark_run_cancelling(&state.sea_db, &run).await;
     }
 
@@ -635,6 +700,18 @@ pub async fn agent_cancel(
     // Remove from in-memory running set
     if let Ok(mut running) = RUNNING_AGENTS.lock() {
         running.remove(&conversation_id);
+    }
+
+    if let Some(run) = latest_run.as_ref() {
+        if run.runner_kind == "deepseek_tui" {
+            let interrupt_context = run
+                .resume_token_json
+                .as_deref()
+                .or(run.sdk_context_json.as_deref());
+            let _ =
+                crate::agent_runtime::deepseek_tui_runner::interrupt_turn_from_context(interrupt_context)
+                    .await;
+        }
     }
 
     crate::agent_runtime::runtime::finish_run_cancelled(&app, &state.sea_db, &conversation_id)

@@ -72,6 +72,13 @@ pub async fn create_run(
     let now = now_string();
     let resume_capability = match runner_kind {
         "sdk" => "resumable",
+        "deepseek_tui" => {
+            if sdk_context_json.is_some_and(|value| !value.trim().is_empty()) {
+                "resumable"
+            } else {
+                "replay_only"
+            }
+        }
         _ => "none",
     };
     let model = agent_runs::ActiveModel {
@@ -299,7 +306,7 @@ pub async fn mark_incomplete_runs_interrupted(db: &DatabaseConnection) -> Result
     let mut affected = 0u64;
     for run in runs {
         let resume_capability = match run.runner_kind.as_str() {
-            "sdk" => {
+            "sdk" | "deepseek_tui" => {
                 if run
                     .sdk_context_json
                     .as_deref()
@@ -318,7 +325,7 @@ pub async fn mark_incomplete_runs_interrupted(db: &DatabaseConnection) -> Result
         am.interrupted_reason = Set(Some("app_restart".to_string()));
         am.resume_capability = Set(resume_capability.to_string());
         am.resume_token_json = Set(match run.runner_kind.as_str() {
-            "sdk" => run.sdk_context_json.clone(),
+            "sdk" | "deepseek_tui" => run.sdk_context_json.clone(),
             _ => None,
         });
         am.update(db).await?;
@@ -456,6 +463,42 @@ mod tests {
         get_run(db, &run.id).await.unwrap().unwrap()
     }
 
+    async fn create_test_run_with_kind_and_context(
+        db: &DatabaseConnection,
+        conversation_id: &str,
+        runner_kind: &str,
+        sdk_context_json: Option<&str>,
+    ) -> AgentRun {
+        let profile = agent_profile::upsert_profile(
+            db,
+            conversation_id,
+            Some("workspace/test"),
+            Some("default"),
+            Some(runner_kind),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let run = create_run(
+            db,
+            conversation_id,
+            &profile.id,
+            runner_kind,
+            None,
+            Some("model-test"),
+            "hello",
+            sdk_context_json,
+            profile.workspace_root.as_deref(),
+        )
+        .await
+        .unwrap();
+
+        update_run_status(db, &run.id, "running", None).await.unwrap();
+        get_run(db, &run.id).await.unwrap().unwrap()
+    }
+
     #[tokio::test]
     async fn mark_incomplete_runs_interrupted_marks_sdk_runs_resumable_when_context_exists() {
         let db = crate::db::create_test_pool().await.unwrap().conn;
@@ -486,5 +529,42 @@ mod tests {
         assert_eq!(updated.resume_capability, "replay_only");
         assert_eq!(updated.interrupted_reason.as_deref(), Some("app_restart"));
         assert_eq!(updated.resume_token_json, None);
+    }
+
+    #[tokio::test]
+    async fn mark_incomplete_runs_interrupted_marks_deepseek_runs_replay_only_without_context() {
+        let db = crate::db::create_test_pool().await.unwrap().conn;
+        let run =
+            create_test_run_with_kind_and_context(&db, "conv_deepseek_replay", "deepseek_tui", None)
+                .await;
+
+        mark_incomplete_runs_interrupted(&db).await.unwrap();
+
+        let updated = get_run(&db, &run.id).await.unwrap().unwrap();
+        assert_eq!(updated.status, "interrupted");
+        assert_eq!(updated.resume_capability, "replay_only");
+        assert_eq!(updated.resume_token_json, None);
+    }
+
+    #[tokio::test]
+    async fn mark_incomplete_runs_interrupted_marks_deepseek_runs_resumable_with_context() {
+        let db = crate::db::create_test_pool().await.unwrap().conn;
+        let run = create_test_run_with_kind_and_context(
+            &db,
+            "conv_deepseek_resume",
+            "deepseek_tui",
+            Some("{\"deepseekSessionId\":\"abc\"}"),
+        )
+        .await;
+
+        mark_incomplete_runs_interrupted(&db).await.unwrap();
+
+        let updated = get_run(&db, &run.id).await.unwrap().unwrap();
+        assert_eq!(updated.status, "interrupted");
+        assert_eq!(updated.resume_capability, "resumable");
+        assert_eq!(
+            updated.resume_token_json.as_deref(),
+            Some("{\"deepseekSessionId\":\"abc\"}")
+        );
     }
 }

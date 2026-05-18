@@ -27,6 +27,19 @@ export const AGENT_EXECUTORS: AgentExecutorMeta[] = [
     supportsPermissionMode: true,
     supportsAutoMode: false,
   },
+  {
+    id: 'deepseek-tui',
+    name: 'DeepSeek-TUI',
+    shortName: 'DeepSeek',
+    description: 'Call the local DeepSeek-TUI coding agent inside the current workspace',
+    kind: 'local',
+    supportsCwd: true,
+    supportsPermissionMode: true,
+    supportsAutoMode: true,
+    supportsModelSelection: true,
+    modelOptions: ['auto', 'deepseek-v4-pro', 'deepseek-v4-flash'],
+    modelHint: 'Uses your local DeepSeek-TUI config and API credentials',
+  },
 ];
 
 const AGENT_EXECUTOR_MAP = new Map(AGENT_EXECUTORS.map((executor) => [executor.id, executor]));
@@ -36,7 +49,9 @@ export function getAgentExecutorMeta(id?: string | null): AgentExecutorMeta {
 }
 
 export function normalizeAgentExecutorId(id?: string | null): AgentExecutorId {
-  void id;
+  if (id === 'deepseek-tui') {
+    return 'deepseek-tui';
+  }
   return DEFAULT_AGENT_EXECUTOR_ID;
 }
 

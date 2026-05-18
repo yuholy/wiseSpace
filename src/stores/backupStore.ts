@@ -30,7 +30,13 @@ export const useBackupStore = create<BackupState>((set, get) => ({
     set({ loading: true });
     try {
       const backups = await invoke<BackupManifest[]>('list_backups');
-      set({ backups, loading: false, error: null });
+      const backupIds = new Set(backups.map((backup) => backup.id));
+      set((state) => ({
+        backups,
+        loading: false,
+        error: null,
+        selectedIds: state.selectedIds.filter((id) => backupIds.has(id)),
+      }));
     } catch (e) {
       set({ error: String(e), loading: false });
     }

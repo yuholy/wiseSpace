@@ -157,8 +157,8 @@ export const useTaskCenterStore = create<TaskCenterState>((set, get) => ({
       input: {
         conversationId: item.conversationId,
         prompt: rawRun.promptSnapshot ?? rawRun.prompt_snapshot ?? item.promptPreview,
-        runnerKind: 'sdk',
-        providerId: item.providerId,
+        runnerKind: rawRun.runnerKind ?? 'sdk',
+        providerId: rawRun.runnerKind === 'deepseek_tui' ? undefined : item.providerId,
         modelId: item.modelId,
         cwd: item.workspaceRoot || undefined,
         permissionMode: undefined as AgentPermissionMode | undefined,

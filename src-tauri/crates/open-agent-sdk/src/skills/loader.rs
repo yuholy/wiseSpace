@@ -111,7 +111,6 @@ pub fn load_all_global(home_dir: &Path) -> Vec<LoadedSkill> {
             home_dir.join(".wisespace").join("skills"),
             SkillSource::WiseSpace,
         ),
-        (home_dir.join(".claude").join("skills"), SkillSource::Claude),
         (home_dir.join(".agents").join("skills"), SkillSource::Agents),
     ];
 

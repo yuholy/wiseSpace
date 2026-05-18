@@ -25,7 +25,12 @@ import { ModelIcon } from '@lobehub/icons';
 import type { AttachmentInput, ProviderType, RealtimeConfig } from '@/types';
 import { invoke } from '@/lib/invoke';
 import { open } from '@tauri-apps/plugin-dialog';
-import { getAgentExecutorStorageKey } from '@/lib/agentExecutors';
+import {
+  AGENT_EXECUTORS,
+  getAgentExecutorMeta,
+  getAgentExecutorStorageKey,
+  type AgentExecutorId,
+} from '@/lib/agentExecutors';
 
 async function fileToAttachmentInput(file: File): Promise<AttachmentInput> {
   return new Promise((resolve) => {
@@ -88,6 +93,7 @@ export function InputArea() {
   const activeConversationId = useConversationStore((s) => s.activeConversationId);
   const sendMessage = useConversationStore((s) => s.sendMessage);
   const sendAgentMessage = useConversationStore((s) => s.sendAgentMessage);
+  const activeAgentExecutorId = useConversationStore((s) => s.activeAgentExecutorId);
   const setAgentExecutorId = useConversationStore((s) => s.setActiveAgentExecutorId);
   const setActiveAgentExecutorModel = useConversationStore((s) => s.setActiveAgentExecutorModel);
   const agentProfiles = useAgentStore((s) => s.profilesByConversation);
@@ -151,11 +157,18 @@ export function InputArea() {
   const currentAgentProfile = activeConversationId ? agentProfiles[activeConversationId] : undefined;
   const resolvedAgentCwd = currentAgentProfile?.workspaceRoot ?? agentCwd;
   const resolvedAgentPermissionMode = currentAgentProfile?.permissionMode ?? agentPermissionMode;
-  const localAgentExecutorId = 'wisespace-local';
+  const activeAgentExecutor = getAgentExecutorMeta(activeAgentExecutorId);
+  const workspaceTooltipText = resolvedAgentCwd
+    ? `当前工作空间：${resolvedAgentCwd}\n点击可切换目录`
+    : '选择 Agent 工作空间。未设置时会自动创建默认工作空间。';
+  const workspaceLabelText = resolvedAgentCwd ? '工作空间' : '选择工作空间';
   const agentWorkspaceTooltip = resolvedAgentCwd
     ? `当前工作空间：${resolvedAgentCwd}\n点击可切换目录`
     : '选择 Agent 工作空间。未设置时会自动创建默认工作空间。';
   const agentWorkspaceLabel = resolvedAgentCwd ? '工作空间' : '选择工作空间';
+
+  void agentWorkspaceTooltip;
+  void agentWorkspaceLabel;
 
   // Knowledge base state
   const knowledgeBases = useKnowledgeStore((s) => s.bases);
@@ -223,13 +236,20 @@ export function InputArea() {
     setAgentPermissionMode(currentAgentProfile?.permissionMode || 'default');
   }, [currentMode, currentAgentProfile?.workspaceRoot, currentAgentProfile?.permissionMode]);
 
-  useEffect(() => {
-    setAgentExecutorId(localAgentExecutorId);
+  const handleAgentExecutorChange = useCallback((executorId: AgentExecutorId) => {
+    setAgentExecutorId(executorId);
     setActiveAgentExecutorModel(null);
     if (activeConversationId) {
-      localStorage.setItem(getAgentExecutorStorageKey(activeConversationId), localAgentExecutorId);
+      localStorage.setItem(getAgentExecutorStorageKey(activeConversationId), executorId);
     }
   }, [activeConversationId, setActiveAgentExecutorModel, setAgentExecutorId]);
+
+  const agentExecutorItems = useMemo<MenuProps['items']>(() => (
+    AGENT_EXECUTORS.map((executor) => ({
+      key: executor.id,
+      label: executor.name,
+    }))
+  ), []);
 
   // Draft persistence: save old draft & restore new when conversation changes
   useEffect(() => {
@@ -462,6 +482,12 @@ export function InputArea() {
     if (segments.length <= 2) return path;
     return '…/' + segments.slice(-2).join('/');
   }, []);
+
+  const formatWorkspacePath = useCallback((path: string): string => {
+    const segments = path.replace(/\\/g, '/').split('/').filter(Boolean);
+    return segments.length > 0 ? segments[segments.length - 1] : path;
+  }, []);
+  void abbreviatePath;
 
   const handleSelectCwd = useCallback(async () => {
     if (!activeConversationId) return;
@@ -830,9 +856,9 @@ export function InputArea() {
       });
       if (currentMode === 'agent') {
         await sendAgentMessage(trimmed, attachments, {
-          executorId: localAgentExecutorId,
+          executorId: activeAgentExecutor.id,
           cwd: resolvedAgentCwd,
-          permissionMode: resolvedAgentPermissionMode,
+          permissionMode: activeAgentExecutor.supportsPermissionMode ? resolvedAgentPermissionMode : null,
           executorModel: null,
         });
       } else if (companionModels.length > 0) {
@@ -857,7 +883,7 @@ export function InputArea() {
         }
       });
     }
-  }, [value, attachedFiles, sendMessage, sendAgentMessage, sendMultiModelMessage, companionModels, activeConversationId, providers, settings, createConversation, messageApi, t, searchEnabled, searchProviderId, currentMode, localAgentExecutorId, resolvedAgentCwd, resolvedAgentPermissionMode]);
+  }, [value, attachedFiles, sendMessage, sendAgentMessage, sendMultiModelMessage, companionModels, activeConversationId, providers, settings, createConversation, messageApi, t, searchEnabled, searchProviderId, currentMode, activeAgentExecutor.id, activeAgentExecutor.supportsPermissionMode, resolvedAgentCwd, resolvedAgentPermissionMode]);
 
   const handleFillLastMessage = useCallback(() => {
     if (streaming) return;
@@ -1516,7 +1542,7 @@ export function InputArea() {
                 {
                   key: 'agent',
                   icon: <Bot size={14} />,
-                  label: <>{t('common.agentMode')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', marginLeft: 2 }}>Beta</Tag></>,
+                  label: t('common.agentMode'),
                 },
               ],
               selectedKeys: [currentMode],
@@ -1530,16 +1556,25 @@ export function InputArea() {
               icon={currentMode === 'agent' ? <Bot size={14} /> : <MessageSquare size={14} />}
               style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}
             >
-              {currentMode === 'agent' ? <>{t('common.agentMode')} <Tag color="blue" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px', marginLeft: 2, marginRight: 0 }}>Beta</Tag></> : t('common.chatMode')}
+              {currentMode === 'agent' ? t('common.agentMode') : t('common.chatMode')}
             </Button>
           </Dropdown>
           {currentMode === 'agent' && (
-            <Tag color="blue" bordered={false} style={{ marginInlineEnd: 0 }}>
-              {t('agent.localRuntimeLabel', 'wiseSpace Local')}
-            </Tag>
+            <Dropdown
+              menu={{
+                items: agentExecutorItems,
+                selectedKeys: [activeAgentExecutor.id],
+                onClick: ({ key }) => handleAgentExecutorChange(key as AgentExecutorId),
+              }}
+              trigger={['click']}
+            >
+              <Tag color="blue" bordered={false} style={{ marginInlineEnd: 0, cursor: 'pointer' }}>
+                {activeAgentExecutor.name}
+              </Tag>
+            </Dropdown>
           )}
           {currentMode === 'agent' && (
-            <Tooltip title={agentWorkspaceTooltip}>
+            <Tooltip title={workspaceTooltipText}>
               <Button
                 type="text"
                 size="small"
@@ -1548,7 +1583,7 @@ export function InputArea() {
                 style={{ display: 'flex', alignItems: 'center', gap: 4, maxWidth: 200, fontSize: 12 }}
               >
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {resolvedAgentCwd ? `${agentWorkspaceLabel}: ${abbreviatePath(resolvedAgentCwd)}` : agentWorkspaceLabel}
+                  {resolvedAgentCwd ? `${workspaceLabelText}: ${formatWorkspacePath(resolvedAgentCwd)}` : workspaceLabelText}
                 </span>
               </Button>
             </Tooltip>

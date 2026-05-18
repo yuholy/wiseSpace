@@ -1,6 +1,7 @@
 use crate::AppState;
 use base64::Engine;
 use sea_orm::*;
+use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tauri::{Emitter, State};
@@ -107,7 +108,7 @@ fn resolve_chat_model_params(
     }
 }
 
-async fn persist_attachments(
+pub(crate) async fn persist_attachments(
     state: &AppState,
     conversation_id: &str,
     attachments: &[AttachmentInput],
@@ -467,6 +468,360 @@ fn model_supports_vision(model: Option<&wisespace_core::types::Model>) -> bool {
     model
         .map(|m| m.capabilities.contains(&ModelCapability::Vision))
         .unwrap_or(false)
+}
+
+fn model_probably_supports_vision(model: &wisespace_core::types::Model) -> bool {
+    if model.capabilities.contains(&ModelCapability::Vision) {
+        return true;
+    }
+
+    let id_lower = model.model_id.to_lowercase();
+    id_lower.contains("vision")
+        || id_lower.contains("-vl")
+        || id_lower.contains("vl-")
+        || id_lower.contains("multimodal")
+        || id_lower.contains("omni")
+}
+
+fn image_attachments_for_message<'a>(message: &'a Message) -> Vec<&'a Attachment> {
+    message
+        .attachments
+        .iter()
+        .filter(|attachment| attachment.file_type.starts_with("image/"))
+        .collect()
+}
+
+fn build_multimodal_fallback_augmented_text(original: &str, analysis: &str) -> String {
+    let header = "[Attached image analysis]";
+    if original.trim().is_empty() {
+        format!("{header}\n{analysis}")
+    } else {
+        format!("{original}\n\n{header}\n{analysis}")
+    }
+}
+
+#[derive(Clone)]
+struct MultimodalFallbackTarget {
+    provider: ProviderConfig,
+    model: wisespace_core::types::Model,
+    key_id: String,
+    decrypted_key: String,
+}
+
+fn build_multimodal_fallback_display_tag(
+    provider_name: &str,
+    model_name: &str,
+    image_count: usize,
+) -> String {
+    let escape_attr = |value: &str| {
+        value
+            .replace('&', "&amp;")
+            .replace('"', "&quot;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+    };
+    format!(
+        "<vision-fallback data-wisespace=\"1\" provider=\"{}\" model=\"{}\" images=\"{}\"></vision-fallback>\n\n",
+        escape_attr(provider_name),
+        escape_attr(model_name),
+        image_count,
+    )
+}
+
+async fn resolve_multimodal_fallback_target(
+    state: &AppState,
+    settings: &AppSettings,
+) -> Result<Option<MultimodalFallbackTarget>, String> {
+    if !settings.multimodal_fallback_enabled {
+        return Ok(None);
+    }
+
+    let select_target = |provider: ProviderConfig, model: wisespace_core::types::Model| async move {
+        let key_row =
+            wisespace_core::repo::provider::get_active_key(&state.sea_db, &provider.id)
+                .await
+                .map_err(|e| e.to_string())?;
+        let decrypted_key =
+            wisespace_core::crypto::decrypt_key(&key_row.key_encrypted, &state.master_key)
+                .map_err(|e| e.to_string())?;
+        Ok::<MultimodalFallbackTarget, String>(MultimodalFallbackTarget {
+            provider,
+            model,
+            key_id: key_row.id,
+            decrypted_key,
+        })
+    };
+
+    if let (Some(provider_id), Some(model_id)) = (
+        settings.multimodal_fallback_provider_id.as_deref(),
+        settings.multimodal_fallback_model_id.as_deref(),
+    ) {
+        let real_provider_id = resolve_command_provider_id(&state.sea_db, provider_id).await?;
+        let provider = wisespace_core::repo::provider::get_provider(&state.sea_db, &real_provider_id)
+            .await
+            .map_err(|e| e.to_string())?;
+        let model = provider
+            .models
+            .iter()
+            .find(|candidate| candidate.model_id == model_id)
+            .cloned()
+            .ok_or_else(|| {
+                format!(
+                    "Configured multimodal fallback model {} was not found under provider {}",
+                    model_id, provider.name
+                )
+            })?;
+        return select_target(provider, model).await.map(Some);
+    }
+
+    let providers = wisespace_core::repo::provider::list_providers_merged(&state.sea_db)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    for provider in providers.into_iter().filter(|provider| provider.enabled) {
+        let Some(model) = provider
+            .models
+            .iter()
+            .find(|model| model.enabled && model.model_type == ModelType::Chat && model_probably_supports_vision(model))
+            .cloned()
+        else {
+            continue;
+        };
+
+        if let Ok(target) = select_target(provider, model).await {
+            return Ok(Some(target));
+        }
+    }
+
+    Ok(None)
+}
+
+fn read_attachment_data_url(
+    file_store: &wisespace_core::file_store::FileStore,
+    attachment: &Attachment,
+) -> Result<Option<String>, String> {
+    if attachment.file_path.is_empty() {
+        return Ok(attachment
+            .data
+            .as_ref()
+            .map(|data| format!("data:{};base64,{}", attachment.file_type, data)));
+    }
+
+    let data = file_store
+        .read_file(&attachment.file_path)
+        .map_err(|e| format!("Failed to read attachment {}: {}", attachment.file_name, e))?;
+    Ok(Some(format!(
+        "data:{};base64,{}",
+        attachment.file_type,
+        base64::engine::general_purpose::STANDARD.encode(data)
+    )))
+}
+
+async fn analyze_message_images_with_fallback(
+    state: &AppState,
+    settings: &AppSettings,
+    file_store: &wisespace_core::file_store::FileStore,
+    prompt: &str,
+    message: &Message,
+    cache: &mut HashMap<String, String>,
+) -> Result<Option<String>, String> {
+    let image_attachments = image_attachments_for_message(message);
+    if image_attachments.is_empty() {
+        return Ok(None);
+    }
+
+    let cache_key = image_attachments
+        .iter()
+        .map(|attachment| {
+            if attachment.id.is_empty() {
+                format!("{}:{}", attachment.file_name, attachment.file_path)
+            } else {
+                attachment.id.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("|");
+    if let Some(cached) = cache.get(&cache_key) {
+        return Ok(Some(cached.clone()));
+    }
+
+    let Some(target) = resolve_multimodal_fallback_target(state, settings).await? else {
+        return Err(
+            "Current model does not support image understanding, and no multimodal fallback model is configured or available."
+                .to_string(),
+        );
+    };
+
+    let mut parts = vec![ContentPart {
+        r#type: "text".to_string(),
+        text: Some(format!(
+            "User request: {}\n\nAnalyze the attached image(s) for a downstream text-only model. Return concise Markdown with sections: Summary, OCR, Key details, and Notes. If there are multiple images, separate them clearly.",
+            if prompt.trim().is_empty() {
+                "Please inspect the attached image(s)."
+            } else {
+                prompt.trim()
+            }
+        )),
+        image_url: None,
+    }];
+
+    for attachment in image_attachments {
+        if let Some(data_url) = read_attachment_data_url(file_store, attachment)? {
+            parts.push(ContentPart {
+                r#type: "image_url".to_string(),
+                text: None,
+                image_url: Some(ImageUrl { url: data_url }),
+            });
+        }
+    }
+
+    let request = ChatRequest {
+        model: target.model.model_id.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: ChatContent::Text(
+                    "You are a vision analysis helper inside wiseSpace. Do not answer the user's request directly. Describe the attached image(s) so that a text-only model can continue the conversation accurately."
+                        .to_string(),
+                ),
+                reasoning_content: None,
+                tool_calls: None,
+                tool_call_id: None,
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: ChatContent::Multipart(parts),
+                reasoning_content: None,
+                tool_calls: None,
+                tool_call_id: None,
+            },
+        ],
+        stream: false,
+        temperature: Some(0.1),
+        top_p: None,
+        max_tokens: Some(1200),
+        tools: None,
+        thinking_budget: None,
+        thinking_level: None,
+        reasoning_profile: target
+            .model
+            .param_overrides
+            .as_ref()
+            .and_then(|overrides| overrides.reasoning_profile.clone()),
+        use_max_completion_tokens: target
+            .model
+            .param_overrides
+            .as_ref()
+            .and_then(|overrides| overrides.use_max_completion_tokens),
+        thinking_param_style: target
+            .model
+            .param_overrides
+            .as_ref()
+            .and_then(|overrides| overrides.thinking_param_style.clone()),
+    };
+
+    let ctx = ProviderRequestContext {
+        api_key: target.decrypted_key.clone(),
+        key_id: target.key_id.clone(),
+        provider_id: target.provider.id.clone(),
+        base_url: Some(resolve_base_url_for_type(
+            &target.provider.api_host,
+            &target.provider.provider_type,
+        )),
+        api_path: target.provider.api_path.clone(),
+        proxy_config: ProviderProxyConfig::resolve(&target.provider.proxy_config, settings),
+        custom_headers: target
+            .provider
+            .custom_headers
+            .as_ref()
+            .and_then(|value| serde_json::from_str(value).ok()),
+    };
+
+    let registry = ProviderRegistry::create_default();
+    let adapter = registry
+        .get(provider_type_to_registry_key(&target.provider.provider_type))
+        .ok_or_else(|| "Provider adapter not found for multimodal fallback model".to_string())?;
+
+    let response = adapter
+        .chat(&ctx, request)
+        .await
+        .map_err(|e| format!("Multimodal fallback request failed: {}", e))?;
+
+    let analysis = response.content.trim().to_string();
+    if analysis.is_empty() {
+        return Err("Multimodal fallback model returned an empty image analysis.".to_string());
+    }
+
+    cache.insert(cache_key, analysis.clone());
+    Ok(Some(analysis))
+}
+
+async fn build_multimodal_fallback_display_prefix(
+    state: &AppState,
+    settings: &AppSettings,
+    message: &Message,
+    include_images: bool,
+) -> Result<String, String> {
+    if include_images || message.role != MessageRole::User {
+        return Ok(String::new());
+    }
+
+    let image_count = image_attachments_for_message(message).len();
+    if image_count == 0 {
+        return Ok(String::new());
+    }
+
+    let Some(target) = resolve_multimodal_fallback_target(state, settings).await? else {
+        return Err(
+            "Current model does not support image understanding, and no multimodal fallback model is configured or available."
+                .to_string(),
+        );
+    };
+
+    Ok(build_multimodal_fallback_display_tag(
+        &target.provider.name,
+        &target.model.name,
+        image_count,
+    ))
+}
+
+async fn chat_message_from_message_with_fallback(
+    state: &AppState,
+    settings: &AppSettings,
+    file_store: &wisespace_core::file_store::FileStore,
+    message: &Message,
+    include_images: bool,
+    analysis_cache: &mut HashMap<String, String>,
+) -> Result<ChatMessage, String> {
+    let mut chat_message =
+        chat_message_from_message(file_store, message, include_images).map_err(|e| e.to_string())?;
+
+    if include_images || message.role != MessageRole::User {
+        return Ok(chat_message);
+    }
+
+    let Some(analysis) = analyze_message_images_with_fallback(
+        state,
+        settings,
+        file_store,
+        &message.content,
+        message,
+        analysis_cache,
+    )
+    .await?
+    else {
+        return Ok(chat_message);
+    };
+
+    let base_text = match &chat_message.content {
+        ChatContent::Text(text) => text.clone(),
+        ChatContent::Multipart(_) => message.content.clone(),
+    };
+    chat_message.content = ChatContent::Text(build_multimodal_fallback_augmented_text(
+        &base_text,
+        &analysis,
+    ));
+    Ok(chat_message)
 }
 
 #[tauri::command]
@@ -2145,7 +2500,21 @@ pub async fn send_message(
         None => &db_messages[..],
     };
 
+    let global_settings = wisespace_core::repo::settings::get_settings(&state.sea_db)
+        .await
+        .unwrap_or_default();
+    let resolved_proxy = ProviderProxyConfig::resolve(&provider.proxy_config, &global_settings);
+    let multimodal_display_prefix = build_multimodal_fallback_display_prefix(
+        &state,
+        &global_settings,
+        &user_message,
+        include_images,
+    )
+    .await?;
+    let response_display_prefix = format!("{}{}", multimodal_display_prefix, memory_tag);
+
     let mut history_messages: Vec<ChatMessage> = Vec::new();
+    let mut multimodal_analysis_cache = HashMap::new();
     for m in effective_messages {
         if m.role == MessageRole::System
             && (m.content == "<!-- context-clear -->"
@@ -2164,15 +2533,17 @@ pub async fn send_message(
             continue;
         }
         history_messages.push(
-            chat_message_from_message(&file_store, m, include_images).map_err(|e| e.to_string())?,
+            chat_message_from_message_with_fallback(
+                &state,
+                &global_settings,
+                &file_store,
+                m,
+                include_images,
+                &mut multimodal_analysis_cache,
+            )
+            .await?,
         );
     }
-
-    // Resolve proxy config early (needed for both summary generation and main request)
-    let global_settings = wisespace_core::repo::settings::get_settings(&state.sea_db)
-        .await
-        .unwrap_or_default();
-    let resolved_proxy = ProviderProxyConfig::resolve(&provider.proxy_config, &global_settings);
 
     // Get model info for token budget and param overrides
     // Get model context window for token budget (resolved_model fetched earlier)
@@ -2350,7 +2721,7 @@ pub async fn send_message(
         state.master_key,
         cancel_flag,
         state.stream_cancel_flags.clone(),
-        memory_tag,
+        response_display_prefix,
         false,
         false,
     );
@@ -2540,6 +2911,18 @@ pub async fn regenerate_message(
         Some(idx) => &remaining_messages[idx + 1..],
         None => &remaining_messages[..],
     };
+    let global_settings = wisespace_core::repo::settings::get_settings(&state.sea_db)
+        .await
+        .unwrap_or_default();
+    let multimodal_display_prefix = build_multimodal_fallback_display_prefix(
+        &state,
+        &global_settings,
+        &last_user_msg,
+        include_images,
+    )
+    .await?;
+    let response_display_prefix = format!("{}{}", multimodal_display_prefix, memory_tag);
+    let mut multimodal_analysis_cache = HashMap::new();
 
     for m in effective_messages {
         if m.role == MessageRole::System
@@ -2554,7 +2937,15 @@ pub async fn regenerate_message(
         }
         // Include messages up to and including the last user message
         chat_messages.push(
-            chat_message_from_message(&file_store, m, include_images).map_err(|e| e.to_string())?,
+            chat_message_from_message_with_fallback(
+                &state,
+                &global_settings,
+                &file_store,
+                m,
+                include_images,
+                &mut multimodal_analysis_cache,
+            )
+            .await?,
         );
         // Stop after the user message we're regenerating from
         if m.id == last_user_msg.id {
@@ -2562,9 +2953,6 @@ pub async fn regenerate_message(
         }
     }
 
-    let global_settings = wisespace_core::repo::settings::get_settings(&state.sea_db)
-        .await
-        .unwrap_or_default();
     let resolved_proxy = ProviderProxyConfig::resolve(&provider.proxy_config, &global_settings);
 
     let ctx = ProviderRequestContext {
@@ -2677,7 +3065,7 @@ pub async fn regenerate_message(
         state.master_key,
         cancel_flag,
         state.stream_cancel_flags.clone(),
-        memory_tag,
+        response_display_prefix,
         false,
         false,
     );
@@ -2856,6 +3244,18 @@ pub async fn regenerate_with_model(
         Some(idx) => &remaining_messages[idx + 1..],
         None => &remaining_messages[..],
     };
+    let global_settings = wisespace_core::repo::settings::get_settings(&state.sea_db)
+        .await
+        .unwrap_or_default();
+    let multimodal_display_prefix = build_multimodal_fallback_display_prefix(
+        &state,
+        &global_settings,
+        &user_msg,
+        include_images,
+    )
+    .await?;
+    let response_display_prefix = format!("{}{}", multimodal_display_prefix, memory_tag);
+    let mut multimodal_analysis_cache = HashMap::new();
     for m in effective_messages {
         if m.role == MessageRole::System
             && (m.content == "<!-- context-clear -->"
@@ -2868,16 +3268,20 @@ pub async fn regenerate_with_model(
             continue;
         }
         chat_messages.push(
-            chat_message_from_message(&file_store, m, include_images).map_err(|e| e.to_string())?,
+            chat_message_from_message_with_fallback(
+                &state,
+                &global_settings,
+                &file_store,
+                m,
+                include_images,
+                &mut multimodal_analysis_cache,
+            )
+            .await?,
         );
         if m.id == user_msg.id {
             break;
         }
     }
-
-    let global_settings = wisespace_core::repo::settings::get_settings(&state.sea_db)
-        .await
-        .unwrap_or_default();
     let resolved_proxy = ProviderProxyConfig::resolve(&provider.proxy_config, &global_settings);
 
     let ctx = ProviderRequestContext {
@@ -3031,7 +3435,7 @@ pub async fn regenerate_with_model(
         state.master_key,
         cancel_flag,
         state.stream_cancel_flags.clone(),
-        memory_tag,
+        response_display_prefix,
         companion,
         true,
     );

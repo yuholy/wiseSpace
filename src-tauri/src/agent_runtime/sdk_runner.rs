@@ -27,11 +27,13 @@ use wisespace_agent::permission::{
 use wisespace_core::repo::{
     agent_run, agent_session, conversation, message, provider, skill, tool_execution,
 };
+use wisespace_core::types::AttachmentInput;
 
 #[derive(Debug, Clone)]
 pub struct StartSdkRunInput {
     pub conversation_id: String,
     pub prompt: String,
+    pub attachments: Vec<AttachmentInput>,
     pub provider_id: String,
     pub model_id: String,
     pub cwd: Option<String>,
@@ -46,6 +48,7 @@ pub async fn start_sdk_run(
     let plan = build_local_agent_plan(LocalAgentRunRequest {
         conversation_id: input.conversation_id,
         prompt: input.prompt,
+        attachments: input.attachments,
         provider_id: input.provider_id,
         model_id: input.model_id,
         cwd: input.cwd,
@@ -64,7 +67,8 @@ pub async fn start_sdk_run(
 
     let exec_ctx = prepare_local_agent_execution_context(state, &plan).await?;
     let conversation_id = plan.conversation_id.clone();
-    let prompt = plan.prompt.clone();
+    let prompt = exec_ctx.execution_prompt.clone();
+    let raw_prompt = plan.prompt.clone();
     let provider_id = plan.provider_id.clone();
     let model_id = plan.model_id.clone();
     let session = exec_ctx.session.clone();
@@ -80,10 +84,10 @@ pub async fn start_sdk_run(
     let global_settings = exec_ctx.global_settings.clone();
 
     if is_first_message {
-        let fallback_title = if prompt.chars().count() > 30 {
-            format!("{}...", prompt.chars().take(30).collect::<String>())
+        let fallback_title = if raw_prompt.chars().count() > 30 {
+            format!("{}...", raw_prompt.chars().take(30).collect::<String>())
         } else {
-            prompt.clone()
+            raw_prompt.clone()
         };
         if let Err(e) = conversation::update_conversation_title(
             &state.sea_db,
@@ -444,7 +448,7 @@ pub async fn start_sdk_run(
     let title_prov = prov.clone();
     let title_model_id = model_id.clone();
     let title_settings = global_settings.clone();
-    let title_prompt = prompt.clone();
+    let title_prompt = raw_prompt.clone();
     let cancel_tokens = state.agent_cancel_tokens.clone();
 
     tokio::spawn(async move {

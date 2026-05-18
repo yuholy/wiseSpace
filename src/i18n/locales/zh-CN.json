@@ -164,6 +164,10 @@
       "resultsCount": "{{count}}个搜索结果",
       "error": "搜索失败"
     },
+    "visionFallback": {
+      "used": "已使用图片识别补位模型处理 {{count}} 张图片",
+      "helper": "{{model}} · {{provider}}"
+    },
     "tool": {
       "running": "执行中",
       "success": "成功",
@@ -409,6 +413,11 @@
     "chatMinimapSticky": "浮动指示器",
     "additionalFeatures": "附加功能",
     "showImageModelsInModelSelector": "模型选择器中显示绘画模型",
+    "multimodalFallbackEnabled": "启用图片识别补位模型",
+    "multimodalFallbackEnabledDesc": "当当前模型不支持看图时，先使用支持视觉的辅助模型进行分析。",
+    "multimodalFallbackModel": "补位视觉模型",
+    "multimodalFallbackPlaceholder": "选择一个支持看图的模型",
+    "multimodalFallbackDesc": "系统会先分析附件图片，再把摘要与 OCR 结果交给当前文本模型。",
     "multiModelDisplayMode": "多模型显示模式",
     "multiModelDisplayModeDesc": "设置多模型同时回答时的布局方式",
     "multiModelDisplayModeTabs": "标签切换",

@@ -35,6 +35,7 @@ describe('chat streaming helpers', () => {
   it('ignores display-only tags when deciding whether model text exists', () => {
     const stripDisplayTags = (content: string) => content
       .replace(/<knowledge-retrieval [^>]*data-wisespace="1"[^>]*>[\s\S]*?<\/knowledge-retrieval>\s*/g, '')
+      .replace(/<vision-fallback [^>]*data-wisespace="1"[^>]*>[\s\S]*?<\/vision-fallback>\s*/g, '')
       .replace(/<think[^>]*>[\s\S]*?<\/think>\s*/g, '')
       .trim();
 
@@ -51,6 +52,9 @@ describe('chat streaming helpers', () => {
   it('detects wiseSpace display tags independently from model text', () => {
     expect(hasWiseSpaceDisplayContent(
       '<knowledge-retrieval status="done" data-wisespace="1">[]</knowledge-retrieval>',
+    )).toBe(true);
+    expect(hasWiseSpaceDisplayContent(
+      '<vision-fallback data-wisespace="1" provider="Vision" model="MiniMax-VL-01"></vision-fallback>',
     )).toBe(true);
     expect(hasWiseSpaceDisplayContent('answer')).toBe(false);
   });
@@ -72,10 +76,11 @@ describe('chat streaming helpers', () => {
   it('strips selected leading display tags while preserving other display prefixes', () => {
     const web = '<web-search status="done" data-wisespace="1">[]</web-search>\n\n';
     const knowledge = '<knowledge-retrieval status="done" data-wisespace="1">[]</knowledge-retrieval>\n\n';
+    const vision = '<vision-fallback data-wisespace="1" model="MiniMax-VL-01"></vision-fallback>\n\n';
 
     expect(stripLeadingWiseSpaceDisplayTags(
-      `${web}${knowledge}answer`,
-      ['knowledge-retrieval', 'memory-retrieval'],
+      `${vision}${web}${knowledge}answer`,
+      ['knowledge-retrieval', 'memory-retrieval', 'vision-fallback'],
     )).toBe(`${web}answer`);
   });
 });

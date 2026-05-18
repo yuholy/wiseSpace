@@ -28,6 +28,7 @@ libsqlite3-sys = { workspace = true }
 pdf-extract = "0.7"
 zip = "2"
 dirs = "5"
+ignore = "0.4"
 wisespace-migration = { path = "../migration" }
 
 [dev-dependencies]

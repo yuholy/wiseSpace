@@ -1,5 +1,31 @@
 # Change Log
 
+## 2026-05-18
+
+### feat(agent): ship DeepSeek-TUI, multimodal fallback, backup cleanup, and chat rendering fixes
+- Scope: integrated DeepSeek-TUI as a local coding executor, added multimodal fallback routing for non-vision chat models, reduced backup bloat, and tightened chat/task rendering behavior.
+- Agent runtime:
+  - Added a dedicated `deepseek_tui` runner with runtime HTTP API support, thread continuity, resume/replay capability mapping, and workspace-aware execution.
+  - Wired DeepSeek runtime approval and interrupt events back into wiseSpace permission and interrupted-run flows.
+  - Completed local agent attachment passthrough so uploaded files reach runtime context instead of stopping at optimistic UI state.
+- Chat and settings:
+  - Added multimodal fallback settings under Default Models and surfaced a lightweight “vision fallback used” display tag in chat output.
+  - Normalized malformed/repeated `<think>` content in assistant rendering and delayed heavy markdown re-rendering when returning to chat, reducing visible stalls and repeated “thinking complete” blocks.
+  - Simplified chat sidebar and input labels, removed stale Claude skill and Beta surface copy, and cleaned up workspace display to show concise folder names with full-path tooltips.
+- Backup and storage:
+  - Fixed ZIP backups to avoid double-packing `documents/workspace` and standalone `workspace` content.
+  - Made workspace backup respect project `.gitignore` rules and added default excludes for heavy directories such as `node_modules`, `venv`, `dist`, `build`, and `.git`.
+  - Added cleanup for leaked `_webdav_temp_*.db` files and serialized backup manifest sync with duplicate-manifest pruning so Backup Center stays responsive.
+- Docs:
+  - Added `docs/deepseek-tui-integration-plan.md` and `docs/s3-backup-sync-plan.md`.
+  - Extended `docs/optimization-backlog.md` with S3-compatible backup/sync planning.
+- Verification:
+  - `pnpm typecheck`
+  - `pnpm test:run src/components/chat/__tests__/toolCallDisplay.test.tsx src/components/chat/__tests__/chatStreaming.test.ts src/lib/__tests__/chatMarkdown.test.ts`
+  - `pnpm test:run src/components/settings/__tests__/ConversationSettings.test.tsx src/components/settings/__tests__/DefaultModelSettings.test.tsx`
+  - `cargo check --manifest-path src-tauri/Cargo.toml`
+  - `cargo test --manifest-path src-tauri/Cargo.toml -p wisespace-core --lib create_backup_zip_ -- --nocapture`
+
 ## 2026-05-17
 
 ### feat(workspace): improve task-center workspace actions and agent workspace visibility

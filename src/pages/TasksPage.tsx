@@ -17,6 +17,7 @@ import {
   Space,
   Spin,
   Tag,
+  Tooltip,
   Typography,
   theme,
 } from 'antd';
@@ -109,6 +110,13 @@ function compactText(value: unknown, max = 140) {
   if (value === null || value === undefined) return '';
   const text = String(value).replace(/\s+/g, ' ').trim();
   return text.length > max ? `${text.slice(0, max)}...` : text;
+}
+
+function workspaceLeaf(value?: string | null) {
+  if (!value) return '';
+  const normalized = value.replace(/[\\/]+$/, '');
+  const parts = normalized.split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] || value;
 }
 
 function eventLabel(eventType: string) {
@@ -206,8 +214,8 @@ function TaskListSection({
               style={{
                 cursor: 'pointer',
                 borderRadius: 10,
-                padding: '11px 12px',
-                marginBottom: 6,
+                padding: '9px 10px',
+                marginBottom: 4,
                 background: active ? token.colorFillSecondary : 'transparent',
                 border: `1px solid ${active ? token.colorPrimaryBorder : 'transparent'}`,
                 borderLeft: `3px solid ${active ? token.colorPrimary : 'transparent'}`,
@@ -219,7 +227,7 @@ function TaskListSection({
               <List.Item.Meta
                 title={(
                   <Space size={6} style={{ width: '100%', justifyContent: 'space-between' }}>
-                    <Typography.Text ellipsis style={{ maxWidth: 164, fontWeight: 600 }}>
+                    <Typography.Text ellipsis style={{ maxWidth: 188, fontWeight: 600 }}>
                       {item.conversationTitle || item.promptPreview}
                     </Typography.Text>
                     <Space size={4}>
@@ -227,10 +235,9 @@ function TaskListSection({
                         <Tag color="orange" style={{ marginInlineEnd: 0, flexShrink: 0 }}>
                           {getResumeCapabilityLabel(item.resumeCapability)}
                         </Tag>
-                      ) : null}
-                      <Tag color={getAgentRunStatusColor(item.status)} style={{ marginInlineEnd: 0, flexShrink: 0 }}>
-                        {getAgentRunStatusLabel(item.status)}
-                      </Tag>
+                      ) : (
+                        <Badge color={getAgentRunStatusColor(item.status)} />
+                      )}
                     </Space>
                   </Space>
                 )}
@@ -240,9 +247,11 @@ function TaskListSection({
                       {item.promptPreview}
                     </Typography.Text>
                     {item.workspaceRoot ? (
-                      <Typography.Text type="secondary" ellipsis style={{ fontSize: 12 }}>
-                        {item.workspaceRoot}
-                      </Typography.Text>
+                      <Tooltip title={item.workspaceRoot}>
+                        <Typography.Text type="secondary" ellipsis style={{ fontSize: 12 }}>
+                          {workspaceLeaf(item.workspaceRoot)}
+                        </Typography.Text>
+                      </Tooltip>
                     ) : null}
                   </Space>
                 )}
@@ -445,10 +454,10 @@ export function TasksPage() {
     >
       <aside
         style={{
-          width: 356,
-          minWidth: 356,
+          width: 288,
+          minWidth: 288,
           borderRight: `1px solid ${token.colorBorderSecondary}`,
-          padding: '16px 14px',
+          padding: '14px 12px',
           overflow: 'auto',
           background: token.colorBgContainer,
         }}
@@ -466,7 +475,7 @@ export function TasksPage() {
             <Typography.Title level={4} style={{ margin: 0 }}>任务中心</Typography.Title>
             <Badge count={grouped.waiting.length} size="small" />
           </Space>
-          <Button type="primary" icon={<Play size={14} />} onClick={() => setCreateOpen(true)}>
+          <Button size="small" type="primary" icon={<Play size={14} />} onClick={() => setCreateOpen(true)}>
             新建
           </Button>
         </Space>
@@ -521,7 +530,7 @@ export function TasksPage() {
         )}
       </aside>
 
-      <main style={{ flex: 1, minWidth: 0, padding: 20, overflow: 'auto' }}>
+      <main style={{ flex: 1, minWidth: 0, padding: 16, overflow: 'auto' }}>
         {!detail && detailLoading ? <Spin /> : null}
         {!detail && !detailLoading ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="选择一个任务查看详情" />
@@ -529,7 +538,7 @@ export function TasksPage() {
 
         {detail ? (
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
-            <Card size="small" style={{ borderRadius: 16 }}>
+            <Card size="small" style={{ borderRadius: 16, boxShadow: 'none' }} styles={{ body: { padding: 16 } }}>
               <Space direction="vertical" size={12} style={{ width: '100%' }}>
                 <Space style={{ width: '100%', justifyContent: 'space-between' }} align="start">
                   <div>
@@ -561,6 +570,57 @@ export function TasksPage() {
                   />
                 ) : null}
 
+                {detail.item.workspaceRoot ? (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                      padding: '10px 12px',
+                      borderRadius: 12,
+                      background: token.colorFillAlter,
+                      border: `1px solid ${token.colorBorderSecondary}`,
+                    }}
+                  >
+                    <Space size={10} style={{ minWidth: 0 }}>
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: 28,
+                          height: 28,
+                          borderRadius: 999,
+                          background: token.colorBgElevated,
+                          color: token.colorPrimary,
+                          flexShrink: 0,
+                        }}
+                      >
+                        <FolderOpen size={14} />
+                      </span>
+                      <div style={{ minWidth: 0 }}>
+                        <Typography.Text strong style={{ display: 'block', lineHeight: 1.2 }}>
+                          {workspaceLeaf(detail.item.workspaceRoot)}
+                        </Typography.Text>
+                        <Tooltip title={detail.item.workspaceRoot}>
+                          <Typography.Text type="secondary" ellipsis style={{ display: 'block', maxWidth: 520 }}>
+                            {detail.item.workspaceRoot}
+                          </Typography.Text>
+                        </Tooltip>
+                      </div>
+                    </Space>
+                    <Space size={8}>
+                      <Button size="small" icon={<FolderOpen size={14} />} onClick={() => void openWorkspace(detail.item.workspaceRoot)}>
+                        鎵撳紑
+                      </Button>
+                      <Button size="small" icon={<Copy size={14} />} onClick={() => void copyWorkspacePath(detail.item.workspaceRoot)}>
+                        澶嶅埗
+                      </Button>
+                    </Space>
+                  </div>
+                ) : null}
+
                 <Descriptions size="small" column={2}>
                   <Descriptions.Item label="来源会话">{detail.item.conversationId}</Descriptions.Item>
                   <Descriptions.Item label="来源">{detail.item.conversationSource}</Descriptions.Item>
@@ -570,18 +630,18 @@ export function TasksPage() {
                   <Descriptions.Item label="结束时间">{detail.item.finishedAt || '-'}</Descriptions.Item>
                 </Descriptions>
 
-                {detail.item.workspaceRoot ? (
+                {false && (detail?.item.workspaceRoot ? (
                   <Alert
                     type="info"
                     showIcon
                     message="当前任务工作空间"
-                    description={detail.item.workspaceRoot}
+                    description={detail?.item.workspaceRoot}
                     action={(
                       <Space>
-                        <Button size="small" icon={<FolderOpen size={14} />} onClick={() => void openWorkspace(detail.item.workspaceRoot)}>
+                        <Button size="small" icon={<FolderOpen size={14} />} onClick={() => void openWorkspace(detail?.item.workspaceRoot)}>
                           打开
                         </Button>
-                        <Button size="small" icon={<Copy size={14} />} onClick={() => void copyWorkspacePath(detail.item.workspaceRoot)}>
+                        <Button size="small" icon={<Copy size={14} />} onClick={() => void copyWorkspacePath(detail?.item.workspaceRoot)}>
                           复制路径
                         </Button>
                       </Space>
@@ -594,30 +654,30 @@ export function TasksPage() {
                     message="当前未设置自定义工作空间"
                     description="Agent 会在首次执行时自动创建默认工作空间。"
                   />
-                )}
+                ))}
 
                 <Space wrap>
-                  <Button icon={<MessageSquare size={14} />} onClick={() => openConversation(detail.item.conversationId)}>
+                  <Button size="small" icon={<MessageSquare size={14} />} onClick={() => openConversation(detail.item.conversationId)}>
                     打开会话
                   </Button>
-                  {detail.item.workspaceRoot ? (
+                  {false && detail?.item.workspaceRoot ? (
                     <>
-                      <Button icon={<ExternalLink size={14} />} onClick={() => void openWorkspace(detail.item.workspaceRoot)}>
+                      <Button icon={<ExternalLink size={14} />} onClick={() => void openWorkspace(detail?.item.workspaceRoot)}>
                         打开工作空间
                       </Button>
-                      <Button icon={<Copy size={14} />} onClick={() => void copyWorkspacePath(detail.item.workspaceRoot)}>
+                      <Button icon={<Copy size={14} />} onClick={() => void copyWorkspacePath(detail?.item.workspaceRoot)}>
                         复制路径
                       </Button>
                     </>
                   ) : null}
                   {(isAgentRunStatus(detail.item.status) && AGENT_RUNNING_RUN_STATUSES.has(detail.item.status))
                     || (isAgentRunStatus(detail.item.status) && AGENT_WAITING_RUN_STATUSES.has(detail.item.status)) ? (
-                    <Button danger icon={<Square size={14} />} onClick={() => void cancelTask(detail.item.conversationId)}>
+                    <Button size="small" danger icon={<Square size={14} />} onClick={() => void cancelTask(detail.item.conversationId)}>
                       取消
                     </Button>
                   ) : null}
                   {canResumeDetail ? (
-                    <Button icon={<RefreshCcw size={14} />} onClick={() => void resumeTask(detail.item.runId)}>
+                    <Button size="small" icon={<RefreshCcw size={14} />} onClick={() => void resumeTask(detail.item.runId)}>
                       恢复
                     </Button>
                   ) : null}
@@ -625,7 +685,7 @@ export function TasksPage() {
                     || detail.item.status === 'completed'
                     || detail.item.status === 'cancelled'
                     || canReplayDetail ? (
-                    <Button icon={<RotateCcw size={14} />} onClick={() => void rerunTask(detail)}>
+                    <Button size="small" icon={<RotateCcw size={14} />} onClick={() => void rerunTask(detail)}>
                       重跑
                     </Button>
                   ) : null}
@@ -642,7 +702,7 @@ export function TasksPage() {
                         message.success('任务记录已删除');
                       }}
                     >
-                      <Button danger icon={<Trash2 size={14} />}>
+                      <Button size="small" danger icon={<Trash2 size={14} />}>
                         删除
                       </Button>
                     </Popconfirm>
@@ -652,10 +712,10 @@ export function TasksPage() {
             </Card>
 
             {(detailPermissions.length > 0 || detailAsks.length > 0) && (
-              <Card size="small" title="待处理" style={{ borderRadius: 16 }}>
+              <Card size="small" title="待处理" style={{ borderRadius: 16, boxShadow: 'none' }} styles={{ body: { padding: 14 } }}>
                 <Space direction="vertical" size={12} style={{ width: '100%' }}>
                   {detailPermissions.map((request: PermissionRequestEvent) => (
-                    <Card key={request.toolUseId} size="small" style={{ borderRadius: 12 }}>
+                    <Card key={request.toolUseId} size="small" style={{ borderRadius: 12, boxShadow: 'none' }} styles={{ body: { padding: 12 } }}>
                       <Space direction="vertical" size={8} style={{ width: '100%' }}>
                         <Space>
                           <CircleAlert size={15} />
@@ -681,7 +741,7 @@ export function TasksPage() {
                   ))}
 
                   {detailAsks.map((ask: AskUserEvent) => (
-                    <Card key={ask.askId} size="small" style={{ borderRadius: 12 }}>
+                    <Card key={ask.askId} size="small" style={{ borderRadius: 12, boxShadow: 'none' }} styles={{ body: { padding: 12 } }}>
                       <Space direction="vertical" size={8} style={{ width: '100%' }}>
                         <Typography.Text strong>{ask.question}</Typography.Text>
                         <Input.TextArea
@@ -703,7 +763,7 @@ export function TasksPage() {
             )}
 
             {detail.item.errorSummary && (
-              <Card size="small" title="错误摘要" style={{ borderRadius: 16 }}>
+              <Card size="small" title="错误摘要" style={{ borderRadius: 16, boxShadow: 'none' }} styles={{ body: { padding: 14 } }}>
                 <Typography.Text type="danger">{detail.item.errorSummary}</Typography.Text>
               </Card>
             )}
@@ -711,7 +771,8 @@ export function TasksPage() {
             <Card
               size="small"
               title="时间线"
-              style={{ borderRadius: 16 }}
+              style={{ borderRadius: 16, boxShadow: 'none' }}
+              styles={{ body: { padding: 12 } }}
               extra={detail.events.length > MAX_TIMELINE_EVENTS ? (
                 <Typography.Text type="secondary">
                   显示最近 {MAX_TIMELINE_EVENTS} / 共 {detail.events.length} 条事件
@@ -730,11 +791,11 @@ export function TasksPage() {
                     const eventType = eventField(event, 'eventType', 'event_type') ?? '';
                     const rawPayload = rawEventPayload(event);
                     return (
-                      <List.Item>
+                      <List.Item style={{ paddingBlock: 10 }}>
                         <List.Item.Meta
                           title={(
                             <Space size={8} wrap>
-                              <Tag>{eventLabel(eventType)}</Tag>
+                              <Tag style={{ marginInlineEnd: 0 }}>{eventLabel(eventType)}</Tag>
                               <Typography.Text type="secondary">
                                 {eventField(event, 'createdAt', 'created_at')}
                               </Typography.Text>

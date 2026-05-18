@@ -1434,6 +1434,10 @@ impl ProviderAdapter for OpenAICompatAdapter {
                         || id_lower.contains("gpt-4-turbo")
                         || id_lower.contains("claude")
                         || id_lower.contains("vision")
+                        || id_lower.contains("-vl")
+                        || id_lower.contains("vl-")
+                        || id_lower.contains("multimodal")
+                        || id_lower.contains("omni")
                     {
                         caps.push(ModelCapability::Vision);
                     }

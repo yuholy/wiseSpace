@@ -1,5 +1,7 @@
+pub mod cli_runner;
 pub mod compat;
 pub mod context;
+pub mod deepseek_tui_runner;
 pub mod event;
 pub mod planner;
 pub mod payloads;

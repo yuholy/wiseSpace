@@ -164,6 +164,10 @@
       "resultsCount": "{{count}} search results",
       "error": "Search failed"
     },
+    "visionFallback": {
+      "used": "Used image fallback helper for {{count}} image(s)",
+      "helper": "{{model}} · {{provider}}"
+    },
     "tool": {
       "running": "Running",
       "success": "Success",
@@ -409,6 +413,11 @@
     "chatMinimapSticky": "Sticky Indicator",
     "additionalFeatures": "Additional Features",
     "showImageModelsInModelSelector": "Show image models in model selector",
+    "multimodalFallbackEnabled": "Enable image fallback helper",
+    "multimodalFallbackEnabledDesc": "When the current model cannot inspect images, use a vision-capable helper model first.",
+    "multimodalFallbackModel": "Fallback vision model",
+    "multimodalFallbackPlaceholder": "Select a vision-capable model",
+    "multimodalFallbackDesc": "The helper model analyzes attached images first, then passes a summary and OCR back to the current text model.",
     "multiModelDisplayMode": "Multi-Model Display",
     "multiModelDisplayModeDesc": "Choose how multi-model responses are displayed",
     "multiModelDisplayModeTabs": "Tabs",

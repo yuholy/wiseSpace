@@ -295,6 +295,45 @@ function ModelCard({
 
 // ── Main Component ─────────────────────────────────────────
 
+function MultimodalFallbackCard() {
+  const { t } = useTranslation();
+  const { token } = theme.useToken();
+  const settings = useSettingsStore((s) => s.settings);
+  const saveSettings = useSettingsStore((s) => s.saveSettings);
+
+  const currentValue = settings.multimodal_fallback_provider_id && settings.multimodal_fallback_model_id
+    ? `${settings.multimodal_fallback_provider_id}::${settings.multimodal_fallback_model_id}`
+    : undefined;
+
+  return (
+    <SettingsGroup title={t('settings.multimodalFallbackModel')}>
+      <div style={{ fontSize: 12, color: token.colorTextDescription, marginBottom: 12 }}>
+        {t('settings.multimodalFallbackEnabledDesc')}
+      </div>
+      <div style={{ display: 'grid', gap: 12 }}>
+        <ModelSelect
+          style={{ flex: 1 }}
+          value={currentValue}
+          onChange={(value) => {
+            const parsed = parseModelValue(value);
+            saveSettings({
+              multimodal_fallback_provider_id: parsed?.providerId ?? null,
+              multimodal_fallback_model_id: parsed?.modelId ?? null,
+              multimodal_fallback_enabled: Boolean(parsed),
+            });
+          }}
+          placeholder={t('settings.multimodalFallbackPlaceholder')}
+          modelType="Chat"
+          allowClear
+        />
+        <div style={{ fontSize: 12, color: token.colorTextDescription }}>
+          {t('settings.multimodalFallbackDesc')}
+        </div>
+      </div>
+    </SettingsGroup>
+  );
+}
+
 export function DefaultModelSettings() {
   const { t } = useTranslation();
   const fetchProviders = useProviderStore((s) => s.fetchProviders);
@@ -365,6 +404,7 @@ export function DefaultModelSettings() {
         promptPlaceholder={t('settings.compressionPromptPlaceholder')}
         modelType="Chat"
       />
+      <MultimodalFallbackCard />
     </div>
   );
 }

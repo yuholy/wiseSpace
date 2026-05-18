@@ -48,6 +48,7 @@ UI -> App: 携带token访问
     const cleaned = stripWiseSpaceTags(`Final answer
 <think>Hidden reasoning</think>
 <knowledge-retrieval data-wisespace="1">retrieved</knowledge-retrieval>
+<vision-fallback data-wisespace="1" provider="Vision" model="MiniMax-VL-01"></vision-fallback>
 :::mcp tool
 payload
 :::

@@ -168,7 +168,6 @@ pub async fn toggle_skill(
 #[tauri::command]
 pub async fn install_skill(source: String, target: Option<String>) -> Result<String, String> {
     let target_dir = match target.as_deref() {
-        Some("claude") => home_dir().join(".claude").join("skills"),
         Some("agents") => home_dir().join(".agents").join("skills"),
         _ => skills_dir(),
     };
@@ -360,7 +359,6 @@ pub async fn uninstall_skill_group(group: String) -> Result<(), String> {
     let home = home_dir();
     let search_dirs = [
         home.join(".wisespace").join("skills"),
-        home.join(".claude").join("skills"),
         home.join(".agents").join("skills"),
     ];
 
@@ -400,13 +398,12 @@ pub async fn open_skill_dir(path: String) -> Result<(), String> {
 }
 
 /// Collect `source_ref` values from `skill-manifest.json` files across all
-/// three global skill directories so marketplace results can be marked as
+/// supported global skill directories so marketplace results can be marked as
 /// installed regardless of the directory name.
 fn installed_source_refs() -> std::collections::HashSet<String> {
     let home = home_dir();
     let dirs = [
         home.join(".wisespace").join("skills"),
-        home.join(".claude").join("skills"),
         home.join(".agents").join("skills"),
     ];
 

@@ -461,6 +461,10 @@ export interface AppSettings {
   chat_minimap_style?: 'faq' | 'sticky';
   /** Include Image models in the conversation model selector. Default: false */
   show_image_models_in_model_selector?: boolean;
+  /** Use a vision-capable helper model when the current chat model cannot inspect images */
+  multimodal_fallback_enabled?: boolean;
+  multimodal_fallback_provider_id?: string | null;
+  multimodal_fallback_model_id?: string | null;
   /** Multi-model response display mode */
   multi_model_display_mode?: 'tabs' | 'side-by-side' | 'stacked';
   /** Render user messages as Markdown (like AI messages). Default: false */

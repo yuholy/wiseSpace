@@ -1,6 +1,7 @@
 use reqwest::{Client, Method, StatusCode};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 use std::future::Future;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -9,6 +10,28 @@ use zip::write::SimpleFileOptions;
 use crate::error::{Result, WiseSpaceError};
 
 // === Types ===
+
+const DEFAULT_WORKSPACE_EXCLUDE_DIRS: &[&str] = &[
+    ".git",
+    ".hg",
+    ".svn",
+    "node_modules",
+    "venv",
+    ".venv",
+    "env",
+    "__pycache__",
+    "dist",
+    "build",
+    "target",
+    ".next",
+    ".nuxt",
+    ".turbo",
+    ".cache",
+];
+
+const DEFAULT_WORKSPACE_EXCLUDE_FILES: &[&str] = &[
+    ".DS_Store",
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -348,6 +371,11 @@ pub fn create_backup_zip(
         if docs_dir.exists() {
             let mut docs_excludes = common_excludes.clone();
             docs_excludes.push(docs_dir.join("backups"));
+            if let Some(ws_dir) = workspace_dir {
+                if ws_dir.starts_with(docs_dir) {
+                    docs_excludes.push(ws_dir.to_path_buf());
+                }
+            }
             add_directory_to_zip(&mut zip, docs_dir, "documents", options, &docs_excludes)?;
         }
     }
@@ -355,7 +383,9 @@ pub fn create_backup_zip(
     // Optional: workspace/ directory
     if let Some(ws_dir) = workspace_dir {
         if ws_dir.exists() {
-            add_directory_to_zip(&mut zip, ws_dir, "workspace", options, &common_excludes)?;
+            let mut workspace_excludes = common_excludes.clone();
+            workspace_excludes.extend(collect_workspace_gitignore_excludes(ws_dir));
+            add_directory_to_zip(&mut zip, ws_dir, "workspace", options, &workspace_excludes)?;
         }
     }
 
@@ -608,6 +638,115 @@ fn add_directory_to_zip<W: Write + std::io::Seek>(
             .map_err(|e| WiseSpaceError::Gateway(format!("ZIP write error: {}", e)))?;
     }
     Ok(())
+}
+
+fn collect_workspace_gitignore_excludes(dir: &Path) -> HashSet<PathBuf> {
+    use ignore::gitignore::GitignoreBuilder;
+    let mut excluded = HashSet::new();
+
+    let mut builder = GitignoreBuilder::new(dir);
+    collect_gitignore_files(dir, &mut |path| {
+        let _ = builder.add(path);
+    });
+    let matcher = match builder.build() {
+        Ok(value) => value,
+        Err(_) => return excluded,
+    };
+
+    collect_workspace_matches(dir, &matcher, &mut excluded);
+    collect_default_workspace_excludes(dir, &mut excluded);
+
+    let git_dir = dir.join(".git");
+    if git_dir.exists() {
+        excluded.insert(git_dir);
+    }
+
+    excluded
+}
+
+fn collect_gitignore_files(dir: &Path, visitor: &mut dyn FnMut(&Path)) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(value) => value,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_gitignore_files(&path, visitor);
+            continue;
+        }
+        if path.file_name().and_then(|value| value.to_str()) == Some(".gitignore") {
+            visitor(&path);
+        }
+    }
+}
+
+fn collect_workspace_matches(
+    dir: &Path,
+    matcher: &ignore::gitignore::Gitignore,
+    excluded: &mut HashSet<PathBuf>,
+) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(value) => value,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_dir = path.is_dir();
+        if matcher.matched(&path, is_dir).is_ignore() {
+            excluded.insert(path.clone());
+            continue;
+        }
+        if is_dir {
+            collect_workspace_matches(&path, matcher, excluded);
+        }
+    }
+}
+
+fn collect_default_workspace_excludes(dir: &Path, excluded: &mut HashSet<PathBuf>) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(value) => value,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
+            continue;
+        };
+
+        if path.is_dir() {
+            if DEFAULT_WORKSPACE_EXCLUDE_DIRS
+                .iter()
+                .any(|candidate| name.eq_ignore_ascii_case(candidate))
+            {
+                excluded.insert(path);
+                continue;
+            }
+            collect_default_workspace_excludes(&path, excluded);
+            continue;
+        }
+
+        if DEFAULT_WORKSPACE_EXCLUDE_FILES
+            .iter()
+            .any(|candidate| name.eq_ignore_ascii_case(candidate))
+        {
+            excluded.insert(path);
+            continue;
+        }
+
+        let lower = name.to_ascii_lowercase();
+        if lower.ends_with(".pyc")
+            || lower.ends_with(".pyo")
+            || lower.ends_with(".pyd")
+            || lower.ends_with(".so")
+            || lower.ends_with(".dll")
+        {
+            excluded.insert(path);
+        }
+    }
 }
 
 fn collect_files(
@@ -868,5 +1007,121 @@ mod tests {
                 .all(|name| !name.starts_with("documents/backups/")),
             "backup archives should not include nested backups: {names:?}"
         );
+    }
+
+    #[test]
+    fn create_backup_zip_does_not_duplicate_workspace_inside_documents() {
+        let temp = tempfile::tempdir().unwrap();
+        let docs_dir = temp.path().join("documents");
+        let workspace_dir = docs_dir.join("workspace");
+        std::fs::create_dir_all(&workspace_dir).unwrap();
+        std::fs::write(workspace_dir.join("keep.txt"), b"keep").unwrap();
+
+        let db_path = temp.path().join("wisespace.db");
+        std::fs::write(&db_path, b"db").unwrap();
+
+        let dest_zip = temp.path().join("backup.zip");
+        create_backup_zip(
+            &db_path,
+            Some(&docs_dir),
+            Some(&workspace_dir),
+            None,
+            None,
+            &dest_zip,
+            "test",
+            "{}",
+        )
+        .unwrap();
+
+        let file = std::fs::File::open(&dest_zip).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        let mut names = Vec::new();
+        for i in 0..archive.len() {
+            names.push(archive.by_index(i).unwrap().name().to_string());
+        }
+
+        assert!(names.iter().any(|name| name == "workspace/keep.txt"));
+        assert!(
+            names.iter().all(|name| name != "documents/workspace/keep.txt"),
+            "workspace files should only be backed up once: {names:?}"
+        );
+    }
+
+    #[test]
+    fn create_backup_zip_respects_workspace_gitignore() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace_dir = temp.path().join("workspace");
+        std::fs::create_dir_all(workspace_dir.join("venv")).unwrap();
+        std::fs::write(workspace_dir.join(".gitignore"), "venv/\n*.log\n").unwrap();
+        std::fs::write(workspace_dir.join("keep.txt"), b"keep").unwrap();
+        std::fs::write(workspace_dir.join("skip.log"), b"skip").unwrap();
+        std::fs::write(workspace_dir.join("venv").join("tool.bin"), b"skip").unwrap();
+
+        let db_path = temp.path().join("wisespace.db");
+        std::fs::write(&db_path, b"db").unwrap();
+
+        let dest_zip = temp.path().join("backup.zip");
+        create_backup_zip(
+            &db_path,
+            None,
+            Some(&workspace_dir),
+            None,
+            None,
+            &dest_zip,
+            "test",
+            "{}",
+        )
+        .unwrap();
+
+        let file = std::fs::File::open(&dest_zip).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        let mut names = Vec::new();
+        for i in 0..archive.len() {
+            names.push(archive.by_index(i).unwrap().name().to_string());
+        }
+
+        assert!(names.iter().any(|name| name == "workspace/keep.txt"));
+        assert!(names.iter().all(|name| name != "workspace/skip.log"));
+        assert!(names.iter().all(|name| !name.starts_with("workspace/venv/")));
+    }
+
+    #[test]
+    fn create_backup_zip_applies_default_workspace_excludes_without_gitignore() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace_dir = temp.path().join("workspace");
+        std::fs::create_dir_all(workspace_dir.join("node_modules").join("pkg")).unwrap();
+        std::fs::create_dir_all(workspace_dir.join("dist")).unwrap();
+        std::fs::write(workspace_dir.join("keep.txt"), b"keep").unwrap();
+        std::fs::write(workspace_dir.join("node_modules").join("pkg").join("index.js"), b"skip").unwrap();
+        std::fs::write(workspace_dir.join("dist").join("bundle.js"), b"skip").unwrap();
+        std::fs::write(workspace_dir.join("native.pyd"), b"skip").unwrap();
+
+        let db_path = temp.path().join("wisespace.db");
+        std::fs::write(&db_path, b"db").unwrap();
+
+        let dest_zip = temp.path().join("backup.zip");
+        create_backup_zip(
+            &db_path,
+            None,
+            Some(&workspace_dir),
+            None,
+            None,
+            &dest_zip,
+            "test",
+            "{}",
+        )
+        .unwrap();
+
+        let file = std::fs::File::open(&dest_zip).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        let mut names = Vec::new();
+        for i in 0..archive.len() {
+            names.push(archive.by_index(i).unwrap().name().to_string());
+        }
+
+        assert!(names.iter().any(|name| name == "workspace/keep.txt"));
+        assert!(names.iter().all(|name| !name.starts_with("workspace/node_modules/")));
+        assert!(names.iter().all(|name| !name.starts_with("workspace/dist/")));
+        assert!(names.iter().all(|name| name != "workspace/native.pyd"));
     }
 }

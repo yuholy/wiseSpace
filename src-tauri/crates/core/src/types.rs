@@ -708,6 +708,11 @@ pub struct AppSettings {
     pub chat_minimap_style: String,
     /// Include image models in the conversation model selector.
     pub show_image_models_in_model_selector: bool,
+    /// When enabled, use a vision-capable helper model to analyze attached
+    /// images before sending the request to a text-only chat model.
+    pub multimodal_fallback_enabled: bool,
+    pub multimodal_fallback_provider_id: Option<String>,
+    pub multimodal_fallback_model_id: Option<String>,
     /// Multi-model response display mode: "tabs" | "side-by-side" | "stacked".
     pub multi_model_display_mode: String,
     /// Render user messages as Markdown (like AI messages). Default: false.
@@ -814,6 +819,9 @@ impl Default for AppSettings {
             chat_minimap_enabled: false,
             chat_minimap_style: "faq".to_string(),
             show_image_models_in_model_selector: false,
+            multimodal_fallback_enabled: false,
+            multimodal_fallback_provider_id: None,
+            multimodal_fallback_model_id: None,
             multi_model_display_mode: "tabs".to_string(),
             render_user_markdown: false,
         }
