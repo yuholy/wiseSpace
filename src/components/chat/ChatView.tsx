@@ -17,7 +17,7 @@ import { MermaidBlockHeaderActions } from './MermaidBlockHeaderActions';
 import { InfographicBlockHeaderActions } from './InfographicBlockHeaderActions';
 import { DiagramModeToggle } from './DiagramModeToggle';
 import { MermaidZoomControls } from './MermaidZoomControls';
-import { useConversationStore, useProviderStore, useSettingsStore, useAgentStore } from '@/stores';
+import { useConversationStore, useProviderStore, useSettingsStore, useAgentStore, useRolePresetStore } from '@/stores';
 import { setupAgentEventListeners } from '@/stores/agentStore';
 import { useUserProfileStore } from '@/stores/userProfileStore';
 import { useResolvedDarkMode } from '@/hooks/useResolvedDarkMode';
@@ -72,9 +72,10 @@ import { getAgentRunStatusLabel } from '@/lib/agentRunStatus';
 import { invoke } from '@/lib/invoke';
 import { registerHighlight } from 'stream-markdown';
 import { useResolvedAvatarSrc } from '@/hooks/useResolvedAvatarSrc';
-import type { Message, Attachment, ConversationStats } from '@/types';
+import type { Message, Attachment, ConversationStats, ConversationSummaryDraft, SavedConversationSummaryFile } from '@/types';
 import type { AskUserEvent, PermissionRequestEvent } from '@/types/agent';
 import { getAgentExecutorMeta } from '@/lib/agentExecutors';
+import { composeSystemPromptWithRole, getRolePresetById, parseRolePromptSections } from '@/lib/rolePresets';
 
 // ── markstream-react custom thinking component ──────────────────────────
 
@@ -153,10 +154,27 @@ function shouldForcePlainAssistantContent(content: string): boolean {
   return content.length > CHAT_FORCE_PLAIN_CONTENT_LIMIT;
 }
 
-function getLightweightMessagePreview(content: string, limit = 4000): string {
-  const text = stripWiseSpaceTags(content);
+function truncatePlainText(text: string, limit = 4000): string {
   if (text.length <= limit) return text;
   return `${text.slice(0, limit)}\n\n...`;
+}
+
+function getLightweightMessagePreview(content: string, limit = 4000): string {
+  return truncatePlainText(stripWiseSpaceTags(content), limit);
+}
+
+function getPlainAssistantText(content: string): string {
+  return content
+    .replace(/<think[^>]*>/g, '')
+    .replace(/<\/think>\s*/g, '\n')
+    .replace(new RegExp(`<knowledge-retrieval [^>]*${DISPLAY_ATTR_PATTERN}=["']1["'][^>]*>[\\s\\S]*?<\\/knowledge-retrieval>\\s*`, 'g'), '')
+    .replace(new RegExp(`<memory-retrieval [^>]*${DISPLAY_ATTR_PATTERN}=["']1["'][^>]*>[\\s\\S]*?<\\/memory-retrieval>\\s*`, 'g'), '')
+    .replace(new RegExp(`<web-search [^>]*${DISPLAY_ATTR_PATTERN}=["']1["'][^>]*>[\\s\\S]*?<\\/web-search>\\s*`, 'g'), '')
+    .replace(new RegExp(`<vision-fallback [^>]*${DISPLAY_ATTR_PATTERN}=["']1["'][^>]*>[\\s\\S]*?<\\/vision-fallback>\\s*`, 'g'), '')
+    .replace(new RegExp(`<tool-call [^>]*${DISPLAY_ATTR_PATTERN}=["']1["'][^>]*>`, 'g'), '')
+    .replace(/<\/tool-call>\s*/g, '\n')
+    .replace(/\n*:::mcp [^\n]*\n[\s\S]*?:::\n*/g, '\n')
+    .trim();
 }
 
 function getLightweightStreamingPreview(content: string): string {
@@ -1283,10 +1301,10 @@ const AssistantMarkdown = React.memo(function AssistantMarkdown({
   }, [deferredRenderCacheKey, hasDeferredHeavyNodes, readyToRenderHeavyNodes]);
 
   if (forcePlainContent) {
-    const plainText = stripWiseSpaceTags(content);
+    const plainText = getPlainAssistantText(content);
     const displayText = showFullPlainText
       ? plainText
-      : getLightweightMessagePreview(content, CHAT_PLAIN_PREVIEW_LIMIT);
+      : truncatePlainText(plainText, CHAT_PLAIN_PREVIEW_LIMIT);
 
     return (
       <div className="wisespace-chat-markdown">
@@ -1510,7 +1528,8 @@ const AgentAssistantContent = React.memo(function AgentAssistantContent({
     ).values());
   }, [exactAskUsers, fallbackAskUsers]);
   const hasArtifacts = permissions.length > 0 || askUsers.length > 0;
-  const currentRunStatus = useAgentStore((s) => s.runsByConversation[conversationId]?.[0]?.status);
+  const latestConversationRun = useAgentStore((s) => s.runsByConversation[conversationId]?.[0]);
+  const currentRunStatus = latestConversationRun?.status;
   const statusMessage = useAgentStore((s) => s.agentStatus[conversationId]);
   const streamingStatusLabel = useMemo(() => {
     if (permissions.length > 0 || currentRunStatus === 'waiting_approval') {
@@ -1522,6 +1541,18 @@ const AgentAssistantContent = React.memo(function AgentAssistantContent({
     if (statusMessage?.trim()) {
       return statusMessage.trim();
     }
+    if (currentRunStatus === 'failed' && latestConversationRun?.errorSummary?.trim()) {
+      return latestConversationRun.errorSummary.trim();
+    }
+    if (currentRunStatus === 'interrupted') {
+      const reason = latestConversationRun?.interruptedReason?.trim();
+      if (reason === 'app_restart') {
+        return t('agent.interruptedByRestart', 'Interrupted by app restart');
+      }
+      if (reason === 'manual_cancel') {
+        return t('agent.cancelled', 'Stopped');
+      }
+    }
     if (currentRunStatus === 'starting' || currentRunStatus === 'queued') {
       return t('agent.starting', 'Starting');
     }
@@ -1532,7 +1563,7 @@ const AgentAssistantContent = React.memo(function AgentAssistantContent({
       return getAgentRunStatusLabel(currentRunStatus);
     }
     return t('agent.processing', 'Working');
-  }, [askUsers.length, currentRunStatus, permissions.length, statusMessage, t]);
+  }, [askUsers.length, currentRunStatus, latestConversationRun?.errorSummary, latestConversationRun?.interruptedReason, permissions.length, statusMessage, t]);
   const msgMarker = <span data-wisespace-msg={messageId} style={{ height: 0, overflow: 'hidden', lineHeight: 0 }} />;
 
   if (shouldShowInitialDots && !hasArtifacts) {
@@ -2344,6 +2375,11 @@ export function ChatView() {
   const deleteCompression = useConversationStore((s) => s.deleteCompression);
   const [summaryModalOpen, setSummaryModalOpen] = useState(false);
   const [summaryModalText, setSummaryModalText] = useState('');
+  const [conversationSummaryOpen, setConversationSummaryOpen] = useState(false);
+  const [conversationSummaryGenerating, setConversationSummaryGenerating] = useState(false);
+  const [conversationSummarySaving, setConversationSummarySaving] = useState(false);
+  const [conversationSummaryTitle, setConversationSummaryTitle] = useState('');
+  const [conversationSummaryContent, setConversationSummaryContent] = useState('');
   const [previewPayload, setPreviewPayload] = useState<CodeBlockPreviewPayload | null>(null);
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [mermaidPreviewSvg, setMermaidPreviewSvg] = useState<string | null>(null);
@@ -2391,9 +2427,119 @@ export function ChatView() {
   }, []);
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId);
+  const visibleRoleIds = useRolePresetStore((s) => s.visibleRoleIds);
   const activeAgentExecutor = getAgentExecutorMeta(activeAgentExecutorId);
   const showHeaderModelSelector = activeConversation?.mode !== 'agent' || activeAgentExecutor.id === 'wisespace-local';
   const isTitleGenerating = activeConversationId != null && titleGeneratingConversationId === activeConversationId;
+  const canSummarizeConversation = Boolean(activeConversationId && messages.length > 0 && !loading);
+  const visibleRolePresets = useMemo(
+    () => visibleRoleIds.map((roleId) => getRolePresetById(roleId)).filter((role) => role !== null),
+    [visibleRoleIds],
+  );
+  const activeConversationRole = useMemo(() => {
+    const roleId = parseRolePromptSections(activeConversation?.system_prompt).roleId;
+    return getRolePresetById(roleId);
+  }, [activeConversation?.system_prompt]);
+
+  const handleSelectConversationRole = useCallback(async (roleId: string | null) => {
+    if (!activeConversation) return;
+    try {
+      const { extraPrompt } = parseRolePromptSections(activeConversation.system_prompt);
+      await updateConversation(activeConversation.id, {
+        system_prompt: composeSystemPromptWithRole(roleId, extraPrompt),
+      });
+      messageApi.success(
+        roleId
+          ? t('chat.roleApplied', { role: getRolePresetById(roleId)?.name ?? roleId })
+          : t('chat.roleCleared'),
+      );
+    } catch (e) {
+      messageApi.error(String(e));
+    }
+  }, [activeConversation, messageApi, t, updateConversation]);
+
+  const roleMenuItems = useMemo(
+    () => [
+      {
+        key: '__clear__',
+        label: <span style={{ fontSize: 11, fontWeight: 400 }}>{t('chat.clearRole')}</span>,
+      },
+      ...visibleRolePresets.map((role) => ({
+        key: role.id,
+        label: (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 1, lineHeight: 1.35 }}>
+            <span style={{ fontSize: 13, fontWeight: 500 }}>
+              {role.name}
+            </span>
+            <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--ant-color-text-secondary)' }}>
+              {role.description}
+            </span>
+          </div>
+        ),
+      })),
+    ],
+    [t, visibleRolePresets],
+  );
+
+  const handleOpenConversationSummary = useCallback(async () => {
+    if (!activeConversationId) return;
+    setConversationSummaryGenerating(true);
+    try {
+      const draft = await invoke<ConversationSummaryDraft>('summarize_conversation_for_user', {
+        conversationId: activeConversationId,
+      });
+      setConversationSummaryTitle(draft.title);
+      setConversationSummaryContent(draft.content);
+      setConversationSummaryOpen(true);
+    } catch (e) {
+      messageApi.error(`${t('chat.summaryGenerationFailed')}: ${String(e)}`);
+    } finally {
+      setConversationSummaryGenerating(false);
+    }
+  }, [activeConversationId, messageApi, t]);
+
+  const handleSaveConversationSummaryToFile = useCallback(async () => {
+    if (!activeConversationId) return;
+    if (!conversationSummaryContent.trim()) {
+      messageApi.warning(t('chat.summaryNoContent'));
+      return;
+    }
+    setConversationSummarySaving(true);
+    try {
+      const saved = await invoke<SavedConversationSummaryFile>('save_conversation_summary_to_file', {
+        conversationId: activeConversationId,
+        title: conversationSummaryTitle.trim() || activeConversation?.title || t('chat.summaryFallbackTitle'),
+        content: conversationSummaryContent,
+      });
+      messageApi.success(`${t('chat.summarySavedToFile')}: ${saved.originalName}`);
+      setConversationSummaryOpen(false);
+    } catch (e) {
+      messageApi.error(`${t('chat.summarySaveFailed')}: ${String(e)}`);
+    } finally {
+      setConversationSummarySaving(false);
+    }
+  }, [
+    activeConversation?.title,
+    activeConversationId,
+    conversationSummaryContent,
+    conversationSummaryTitle,
+    messageApi,
+    t,
+  ]);
+
+  const handleCopyConversationSummary = useCallback(async () => {
+    if (!conversationSummaryContent.trim()) {
+      messageApi.warning(t('chat.summaryNoContent'));
+      return;
+    }
+    const copyOk = await copyMessage(conversationSummaryContent);
+    if (copyOk) {
+      messageApi.success(t('chat.summaryCopied'));
+    } else {
+      messageApi.error(t('chat.summaryCopyFailed'));
+    }
+  }, [conversationSummaryContent, copyMessage, messageApi, t]);
+
   const renderAgentExecutorAvatar = useCallback((size: number) => {
     const iconSize = Math.max(14, Math.round(size * 0.55));
     const icon = activeAgentExecutor.id === 'claude-code'
@@ -4107,7 +4253,41 @@ export function ChatView() {
 
               <div className="flex-1" />
 
+              {activeConversation && (
+                <Dropdown
+                  menu={{
+                    items: roleMenuItems,
+                    onClick: ({ key }) => {
+                      void handleSelectConversationRole(key === '__clear__' ? null : String(key));
+                    },
+                  }}
+                  trigger={['click']}
+                >
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<Bot size={11} />}
+                    style={{ height: 24, paddingInline: 4, fontSize: 11, fontWeight: 500 }}
+                  >
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, lineHeight: 1 }}>
+                      {activeConversationRole?.name ?? t('chat.selectRole')}
+                      <ChevronDown size={11} />
+                    </span>
+                  </Button>
+                </Dropdown>
+              )}
               {showHeaderModelSelector && <ModelSelector />}
+              {activeConversation && (
+                <Tooltip title={t('chat.summarizeConversation')}>
+                  <Button
+                    type="text"
+                    icon={conversationSummaryGenerating ? <SyncOutlined spin /> : <FileText size={14} />}
+                    size="small"
+                    disabled={!canSummarizeConversation || conversationSummarySaving}
+                    onClick={() => void handleOpenConversationSummary()}
+                  />
+                </Tooltip>
+              )}
               <Popover
                 content={<StatsPopoverContent stats={stats} t={t} token={token} />}
                 trigger="click"
@@ -4127,6 +4307,29 @@ export function ChatView() {
             <>
               <Typography.Text type="secondary">{t('chat.welcome')}</Typography.Text>
               <div className="flex-1" />
+              {activeConversation && (
+                <Dropdown
+                  menu={{
+                    items: roleMenuItems,
+                    onClick: ({ key }) => {
+                      void handleSelectConversationRole(key === '__clear__' ? null : String(key));
+                    },
+                  }}
+                  trigger={['click']}
+                >
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<Bot size={11} />}
+                    style={{ height: 24, paddingInline: 4, fontSize: 11, fontWeight: 500 }}
+                  >
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, lineHeight: 1 }}>
+                      {activeConversationRole?.name ?? t('chat.selectRole')}
+                      <ChevronDown size={11} />
+                    </span>
+                  </Button>
+                </Dropdown>
+              )}
               {showHeaderModelSelector && <ModelSelector />}
             </>
           )}
@@ -4202,6 +4405,57 @@ export function ChatView() {
           <InputArea />
         </div>
       </div>
+      <Modal
+        title={t('chat.summarizeConversation')}
+        open={conversationSummaryOpen}
+        onCancel={() => {
+          if (conversationSummarySaving) return;
+          setConversationSummaryOpen(false);
+        }}
+        width={760}
+        footer={[
+          <Button
+            key="cancel-summary"
+            onClick={() => setConversationSummaryOpen(false)}
+            disabled={conversationSummarySaving}
+          >
+            {t('common.cancel')}
+          </Button>,
+          <Button
+            key="copy-summary"
+            onClick={() => void handleCopyConversationSummary()}
+            disabled={conversationSummarySaving}
+          >
+            {t('chat.copySummary')}
+          </Button>,
+          <Button
+            key="save-summary-file"
+            type="primary"
+            loading={conversationSummarySaving}
+            onClick={() => void handleSaveConversationSummaryToFile()}
+          >
+            {t('chat.saveSummaryToFile')}
+          </Button>,
+        ]}
+      >
+        <div className="flex flex-col gap-3">
+          <Input
+            value={conversationSummaryTitle}
+            onChange={(e) => setConversationSummaryTitle(e.target.value)}
+            placeholder={t('chat.summaryTitle')}
+            maxLength={120}
+          />
+          <Input.TextArea
+            value={conversationSummaryContent}
+            onChange={(e) => setConversationSummaryContent(e.target.value)}
+            placeholder={t('chat.summaryContentPlaceholder')}
+            autoSize={{ minRows: 14, maxRows: 22 }}
+          />
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            {t('chat.summaryLocalOnlyHint')}
+          </Typography.Text>
+        </div>
+      </Modal>
       <Modal
         title={t('chat.compressionSummary')}
         open={summaryModalOpen}

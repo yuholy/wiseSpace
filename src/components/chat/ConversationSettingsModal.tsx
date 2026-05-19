@@ -9,6 +9,7 @@ import { IconEditor } from '@/components/shared/IconEditor';
 import { ModelParamSliders } from '@/components/common/ModelParamSliders';
 import { findModelByIds } from '@/lib/modelCapabilities';
 import { resolveModelParamDefaults } from '@/lib/modelParams';
+import { composeSystemPromptWithRole, parseRolePromptSections } from '@/lib/rolePresets';
 import type { MenuProps } from 'antd';
 
 interface ConversationSettingsModalProps {
@@ -51,8 +52,9 @@ export function ConversationSettingsModal({ open, onClose }: ConversationSetting
   // Initialize form when modal opens
   useEffect(() => {
     if (open && conversation) {
+      const parsedPrompt = parseRolePromptSections(conversation.system_prompt);
       setTitle(conversation.title);
-      setSystemPrompt(conversation.system_prompt ?? '');
+      setSystemPrompt(parsedPrompt.extraPrompt);
       setTemperature(conversation.temperature ?? null);
       setTopP(conversation.top_p ?? null);
       setMaxTokens(conversation.max_tokens ?? null);
@@ -92,9 +94,10 @@ export function ConversationSettingsModal({ open, onClose }: ConversationSetting
   const handleSave = async () => {
     setSaving(true);
     try {
+      const { roleId } = parseRolePromptSections(conversation.system_prompt);
       await updateConversation(conversation.id, {
         title,
-        system_prompt: systemPrompt,
+        system_prompt: composeSystemPromptWithRole(roleId, systemPrompt),
         temperature,
         max_tokens: maxTokens,
         top_p: topP,

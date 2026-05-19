@@ -1,7 +1,10 @@
 use crate::AppState;
 use base64::Engine;
 use sea_orm::*;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tauri::{Emitter, State};
@@ -11,6 +14,42 @@ use wisespace_providers::{
 };
 
 const LEGACY_DISPLAY_ATTR_NAME: &str = concat!("data-", "aq", "bot");
+const DEFAULT_CONVERSATION_SUMMARY_PROMPT: &str = r#"You are a conversation summarization assistant for wiseSpace.
+
+Create a detailed but readable markdown summary of the conversation.
+
+Requirements:
+- Keep the output in Chinese unless the conversation is clearly in another language.
+- Use exactly these sections:
+  1. # 主题
+  2. ## 核心结论
+  3. ## 关键上下文
+  4. ## 待办事项
+  5. ## 风险与未决问题
+- Under each section, prefer 3-6 useful bullet points when content exists; do not collapse everything into one short sentence.
+- Preserve conclusions, decisions, pending work, important constraints, changed assumptions, and explicit user requirements.
+- If code, files, commands, configs, APIs, or important output were discussed, summarize the important ones in `关键上下文` instead of omitting them.
+- If the conversation contains revisions or iterative decisions, keep the final decision and briefly mention the key change.
+- Do not include raw tool-call logs or low-level execution noise unless they materially affect the outcome.
+- Make the summary practical for someone who needs to continue the work later, not just skim the topic.
+- If some section has no meaningful content, write “- 无”.
+"#;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationSummaryDraftPayload {
+    pub title: String,
+    pub content: String,
+    pub generated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedConversationSummaryFilePayload {
+    pub file_id: String,
+    pub relative_path: String,
+    pub original_name: String,
+}
 
 fn provider_type_to_registry_key(pt: &ProviderType) -> &'static str {
     match pt {
@@ -43,33 +82,7 @@ async fn resolve_system_prompt(
     db: &DatabaseConnection,
     conversation: &Conversation,
 ) -> Option<String> {
-    // 1. Conversation-level system prompt (highest priority)
-    if let Some(s) = &conversation.system_prompt {
-        if !s.is_empty() {
-            return Some(s.clone());
-        }
-    }
-
-    // 2. Category-level system prompt (middle priority)
-    if let Some(ref cat_id) = conversation.category_id {
-        if let Ok(categories) =
-            wisespace_core::repo::conversation_category::list_conversation_categories(db).await
-        {
-            if let Some(cat) = categories.iter().find(|c| &c.id == cat_id) {
-                if let Some(ref s) = cat.system_prompt {
-                    if !s.is_empty() {
-                        return Some(s.clone());
-                    }
-                }
-            }
-        }
-    }
-
-    // 3. Global default system prompt (lowest priority)
-    let settings = wisespace_core::repo::settings::get_settings(db)
-        .await
-        .unwrap_or_default();
-    settings.default_system_prompt.filter(|s| !s.is_empty())
+    crate::role_prompts::resolve_effective_system_prompt(db, conversation).await
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -208,6 +221,164 @@ fn extract_think_tags(content: &str) -> Option<String> {
     } else {
         Some(blocks.join("\n\n"))
     }
+}
+
+fn sanitize_summary_file_name(name: &str) -> String {
+    let path = Path::new(name);
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("summary");
+    let sanitized_stem: String = stem
+        .chars()
+        .filter_map(|c| {
+            if c.is_alphanumeric() || c == '_' || c == '-' {
+                Some(c)
+            } else if c == ' ' {
+                Some('_')
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if sanitized_stem.is_empty() {
+        "summary".to_string()
+    } else {
+        sanitized_stem
+    }
+}
+
+fn render_summary_role(role: &MessageRole) -> Option<&'static str> {
+    match role {
+        MessageRole::User => Some("用户"),
+        MessageRole::Assistant => Some("助手"),
+        _ => None,
+    }
+}
+
+fn normalize_summary_message_content(content: &str) -> String {
+    strip_think_tags(content)
+        .replace(crate::context_manager::COMPRESSION_MARKER, "")
+        .replace("<!-- context-clear -->", "")
+        .trim()
+        .to_string()
+}
+
+fn build_conversation_summary_transcript(messages: &[Message]) -> String {
+    let mut transcript = Vec::new();
+    for message in messages {
+        let Some(role_label) = render_summary_role(&message.role) else {
+            continue;
+        };
+        let content = normalize_summary_message_content(&message.content);
+        if content.is_empty() {
+            continue;
+        }
+        transcript.push(format!("{role_label}: {content}"));
+    }
+    transcript.join("\n\n")
+}
+
+async fn generate_user_facing_conversation_summary(
+    state: &AppState,
+    conversation: &Conversation,
+    transcript: &str,
+    existing_summary: Option<&str>,
+    settings: &AppSettings,
+) -> Result<String, String> {
+    let provider =
+        wisespace_core::repo::provider::get_provider(&state.sea_db, &conversation.provider_id)
+            .await
+            .map_err(|e| e.to_string())?;
+    let key_row =
+        wisespace_core::repo::provider::get_active_key(&state.sea_db, &conversation.provider_id)
+            .await
+            .map_err(|e| e.to_string())?;
+    let decrypted_key =
+        wisespace_core::crypto::decrypt_key(&key_row.key_encrypted, &state.master_key)
+            .map_err(|e| e.to_string())?;
+    let proxy = ProviderProxyConfig::resolve(&provider.proxy_config, settings);
+    let ctx = ProviderRequestContext {
+        api_key: decrypted_key,
+        key_id: key_row.id.clone(),
+        provider_id: provider.id.clone(),
+        base_url: Some(resolve_base_url_for_type(
+            &provider.api_host,
+            &provider.provider_type,
+        )),
+        api_path: provider.api_path.clone(),
+        proxy_config: proxy,
+        custom_headers: provider
+            .custom_headers
+            .as_ref()
+            .and_then(|s| serde_json::from_str(s).ok()),
+    };
+
+    let resolved_model = wisespace_core::repo::provider::get_model(
+        &state.sea_db,
+        &conversation.provider_id,
+        &conversation.model_id,
+    )
+    .await
+    .ok();
+    let use_max_completion_tokens = resolved_model
+        .as_ref()
+        .and_then(|m| m.param_overrides.clone())
+        .and_then(|po| po.use_max_completion_tokens);
+
+    let mut user_prompt = format!("会话标题：{}\n\n", conversation.title);
+    if let Some(summary) = existing_summary.filter(|value| !value.trim().is_empty()) {
+        user_prompt.push_str("已有上下文压缩摘要：\n");
+        user_prompt.push_str(summary.trim());
+        user_prompt.push_str("\n\n");
+    }
+    user_prompt.push_str("会话内容：\n");
+    user_prompt.push_str(transcript.trim());
+
+    let request = ChatRequest {
+        model: conversation.model_id.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: ChatContent::Text(DEFAULT_CONVERSATION_SUMMARY_PROMPT.to_string()),
+                reasoning_content: None,
+                tool_calls: None,
+                tool_call_id: None,
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: ChatContent::Text(user_prompt),
+                reasoning_content: None,
+                tool_calls: None,
+                tool_call_id: None,
+            },
+        ],
+        stream: false,
+        temperature: Some(0.2),
+        top_p: Some(0.9),
+        max_tokens: Some(2200),
+        tools: None,
+        thinking_budget: None,
+        thinking_level: None,
+        reasoning_profile: None,
+        use_max_completion_tokens,
+        thinking_param_style: None,
+    };
+
+    let registry = ProviderRegistry::create_default();
+    let registry_key = provider_type_to_registry_key(&provider.provider_type);
+    let adapter = registry
+        .get(registry_key)
+        .ok_or_else(|| format!("Provider adapter not found: {registry_key}"))?;
+
+    let response = adapter
+        .chat(&ctx, request)
+        .await
+        .map_err(|e| format!("Conversation summary generation failed: {e}"))?;
+
+    let content = response.content.trim().to_string();
+    if content.is_empty() {
+        return Err("Conversation summary is empty".to_string());
+    }
+    Ok(content)
 }
 
 #[derive(Default)]
@@ -1368,7 +1539,8 @@ async fn execute_tool_call(
     }
 }
 
-const DEFAULT_TITLE_PROMPT: &str = "You are a title generator. Based on the conversation below, generate a concise and descriptive title (maximum 30 characters). Reply with the title only, no quotes or extra text.";
+const MAX_GENERATED_TITLE_CHARS: usize = 10;
+const DEFAULT_TITLE_PROMPT: &str = "You are a title generator. Based on the conversation below, generate a concise and descriptive title in no more than 10 characters. Reply with the title only, no quotes or extra text.";
 const DEFAULT_TITLE_SUMMARY_MAX_TOKENS: u32 = 1024;
 const RETRY_TITLE_SUMMARY_MAX_TOKENS: u32 = 4096;
 
@@ -1379,14 +1551,19 @@ fn title_summary_max_tokens(settings: &AppSettings) -> u32 {
 }
 
 fn clean_generated_title(content: &str) -> String {
-    content
+    let cleaned = content
         .trim()
+        .lines()
+        .next()
+        .unwrap_or("")
         .trim_matches('"')
         .trim_matches('「')
         .trim_matches('」')
         .trim_matches('《')
         .trim_matches('》')
-        .to_string()
+        .trim();
+
+    cleaned.chars().take(MAX_GENERATED_TITLE_CHARS).collect()
 }
 
 async fn call_title_chat(
@@ -3829,6 +4006,111 @@ pub async fn delete_compression(
 }
 
 #[tauri::command]
+pub async fn summarize_conversation_for_user(
+    state: State<'_, AppState>,
+    conversation_id: String,
+) -> Result<ConversationSummaryDraftPayload, String> {
+    let conversation =
+        wisespace_core::repo::conversation::get_conversation(&state.sea_db, &conversation_id)
+            .await
+            .map_err(|e| e.to_string())?;
+    let settings = wisespace_core::repo::settings::get_settings(&state.sea_db)
+        .await
+        .unwrap_or_default();
+    let db_messages = wisespace_core::repo::message::list_messages(&state.sea_db, &conversation_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let transcript = build_conversation_summary_transcript(&db_messages);
+    let existing_summary =
+        wisespace_core::repo::conversation::get_summary(&state.sea_db, &conversation_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    if transcript.trim().is_empty()
+        && existing_summary
+            .as_ref()
+            .map(|value| value.summary_text.trim().is_empty())
+            .unwrap_or(true)
+    {
+        return Err("No conversation content available to summarize".to_string());
+    }
+
+    let content = generate_user_facing_conversation_summary(
+        &state,
+        &conversation,
+        &transcript,
+        existing_summary.as_ref().map(|value| value.summary_text.as_str()),
+        &settings,
+    )
+    .await?;
+
+    Ok(ConversationSummaryDraftPayload {
+        title: if conversation.title.trim().is_empty() {
+            "会话总结".to_string()
+        } else {
+            conversation.title.clone()
+        },
+        content,
+        generated_at: chrono::Utc::now().timestamp(),
+    })
+}
+
+#[tauri::command]
+pub async fn save_conversation_summary_to_file(
+    state: State<'_, AppState>,
+    conversation_id: String,
+    title: String,
+    content: String,
+) -> Result<SavedConversationSummaryFilePayload, String> {
+    if content.trim().is_empty() {
+        return Err("Summary content must not be empty".to_string());
+    }
+
+    wisespace_core::storage_paths::ensure_documents_dirs()
+        .map_err(|e| format!("Failed to ensure documents dirs: {e}"))?;
+
+    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M").to_string();
+    let safe_title = sanitize_summary_file_name(title.trim());
+    let original_name = format!("{timestamp}_{safe_title}.md");
+    let bytes = content.as_bytes();
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    let hash = format!("{:x}", hasher.finalize());
+    let hash_prefix = &hash[..hash.len().min(12)];
+    let relative_path = format!("files/summaries/{}_{}", hash_prefix, original_name);
+    let absolute_path = wisespace_core::storage_paths::resolve_documents_path(&relative_path);
+
+    if let Some(parent) = absolute_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create summaries directory: {e}"))?;
+    }
+    if !absolute_path.exists() {
+        std::fs::write(&absolute_path, bytes)
+            .map_err(|e| format!("Failed to write summary file: {e}"))?;
+    }
+
+    let file_id = wisespace_core::utils::gen_id();
+    wisespace_core::repo::stored_file::create_stored_file(
+        &state.sea_db,
+        &file_id,
+        &hash,
+        &original_name,
+        "text/markdown",
+        bytes.len() as i64,
+        &relative_path,
+        Some(&conversation_id),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(SavedConversationSummaryFilePayload {
+        file_id,
+        relative_path,
+        original_name,
+    })
+}
+
+#[tauri::command]
 pub async fn send_system_message(
     state: State<'_, AppState>,
     conversation_id: String,
@@ -3947,6 +4229,18 @@ mod tests {
             "项目排期讨论"
         );
         assert_eq!(clean_generated_title("\"API 调试记录\""), "API 调试记录");
+    }
+
+    #[test]
+    fn clean_generated_title_truncates_to_ten_chars() {
+        assert_eq!(
+            clean_generated_title("这是一个超过十个字的会话标题示例"),
+            "这是一个超过十个字"
+        );
+        assert_eq!(
+            clean_generated_title("第一行标题\n第二行不应保留"),
+            "第一行标题"
+        );
     }
 
     #[test]

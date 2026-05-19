@@ -39,6 +39,7 @@ mod context_manager;
 mod external_agents;
 mod indexing;
 mod paths;
+mod role_prompts;
 mod tray;
 mod window_state;
 
@@ -130,6 +131,8 @@ pub fn run() {
             commands::conversations::compress_context,
             commands::conversations::get_compression_summary,
             commands::conversations::delete_compression,
+            commands::conversations::summarize_conversation_for_user,
+            commands::conversations::save_conversation_summary_to_file,
             commands::conversations::regenerate_conversation_title,
             // conversation categories
             commands::conversation_categories::list_conversation_categories,

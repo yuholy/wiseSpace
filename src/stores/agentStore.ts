@@ -481,10 +481,15 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         ...s.activeRunIdByConversation,
         [conversationId]: projection.activeRunId,
       },
-      agentStatus: {
-        ...s.agentStatus,
-        ...(projection.statusMessage ? { [conversationId]: projection.statusMessage } : {}),
-      },
+      agentStatus: (() => {
+        const next = { ...s.agentStatus };
+        if (projection.statusMessage?.trim()) {
+          next[conversationId] = projection.statusMessage.trim();
+        } else {
+          delete next[conversationId];
+        }
+        return next;
+      })(),
       sessions:
         profile != null
           ? { ...s.sessions, [conversationId]: toCompatSession(profile, latestRun(runs)) }

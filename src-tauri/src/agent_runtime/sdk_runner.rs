@@ -83,6 +83,14 @@ pub async fn start_sdk_run(
     let is_first_message = exec_ctx.is_first_message;
     let global_settings = exec_ctx.global_settings.clone();
 
+    let _ = app.emit(
+        "agent-user-message-id",
+        serde_json::json!({
+            "conversationId": conversation_id.clone(),
+            "userMessageId": user_message_id.clone(),
+        }),
+    );
+
     if is_first_message {
         let fallback_title = if raw_prompt.chars().count() > 30 {
             format!("{}...", raw_prompt.chars().take(30).collect::<String>())
@@ -388,11 +396,14 @@ pub async fn start_sdk_run(
         },
     );
 
+    let effective_system_prompt =
+        crate::role_prompts::resolve_effective_system_prompt(&state.sea_db, &conv).await;
+
     let agent_options = AgentOptions {
         model: Some(model_id.clone()),
         provider: Some(Arc::new(bridge)),
         cwd: Some(effective_cwd.clone()),
-        system_prompt: conv.system_prompt.clone(),
+        system_prompt: effective_system_prompt,
         skills_summary,
         append_system_prompt: Some(
             "Windows execution guidance: prefer PowerShell or cmd-compatible commands. Do not assume bash, grep, sed, awk, or Unix-style root paths exist. Keep file search and command execution inside the current workspace unless the user explicitly asks otherwise."

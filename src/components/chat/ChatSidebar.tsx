@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef, memo, startTransition } from 'react'
 import { Button, Input, App, theme, Tooltip, Avatar, Checkbox, Dropdown, Empty } from 'antd'
-import { MessageSquarePlus, Search, Archive, ListTodo, Trash2, Pencil, Share, Pin, PinOff, Loader, X, Undo2, ArrowLeft, FileImage, FileCode, FileType, FileText, FolderPlus, FolderOpen, GripVertical, ChevronRight, MessageSquareText, PanelLeftClose, Bot, Brain, Code, Briefcase } from 'lucide-react'
+import { MessageSquarePlus, Search, Archive, ListTodo, Trash2, Pencil, Share, Pin, PinOff, Loader, X, Undo2, ArrowLeft, FileImage, FileCode, FileType, FileText, FolderPlus, FolderOpen, GripVertical, ChevronRight, MessageSquareText, PanelLeftClose, Bot, Brain, Code } from 'lucide-react'
 import { ModelIcon } from '@lobehub/icons'
 import { getConvIcon } from '@/lib/convIcon'
 import { getAgentExecutorMeta, getAgentExecutorStorageKey } from '@/lib/agentExecutors'
@@ -398,8 +398,6 @@ export function ChatSidebar() {
   const settings = useSettingsStore((s) => s.settings)
   const settingsLoading = useSettingsStore((s) => s.loading)
   const toggleSidebar = useUIStore((s) => s.toggleSidebar)
-  const chatTaskCenterGroupCollapsed = useUIStore((s) => s.chatTaskCenterGroupCollapsed)
-  const setChatTaskCenterGroupCollapsed = useUIStore((s) => s.setChatTaskCenterGroupCollapsed)
   const categories = useCategoryStore((s) => s.categories)
   const fetchCategories = useCategoryStore((s) => s.fetchCategories)
   const createCategory = useCategoryStore((s) => s.createCategory)
@@ -853,11 +851,8 @@ export function ChatSidebar() {
       // Group conversations by category_id for ordered insertion
       const convsByCatId = new Map<string, Conversation[]>()
       const uncategorizedConvs: Conversation[] = []
-      const taskCenterConvs: Conversation[] = []
       topLevel.forEach((conv) => {
-        if (conv.source === 'task_center') {
-          taskCenterConvs.push(conv)
-        } else if (conv.category_id) {
+        if (conv.category_id) {
           const arr = convsByCatId.get(conv.category_id) ?? []
           arr.push(conv)
           convsByCatId.set(conv.category_id, arr)
@@ -995,8 +990,6 @@ export function ChatSidebar() {
         }
       })
 
-      taskCenterConvs.forEach((conv) => pushConvWithChildren(conv, 'taskCenter'))
-
       // Add uncategorized conversations (pinned + time groups)
       uncategorizedConvs.forEach((conv) => {
         const group = conv.is_pinned ? 'pinned' : getDateGroup(conv.updated_at)
@@ -1012,7 +1005,6 @@ export function ChatSidebar() {
     () => {
       const labels: Record<string, string> = {
         pinned: t('chat.pinned'),
-        taskCenter: '任务中心',
         today: t('chat.today'),
         yesterday: t('chat.yesterday'),
         thisWeek: t('chat.thisWeek'),
@@ -1032,13 +1024,6 @@ export function ChatSidebar() {
 
   // Track known category IDs to detect new ones
   const knownCatIdsRef = useRef(new Set<string>())
-  useEffect(() => {
-    const taskCenterKey = 'taskCenter'
-    setExpandedKeys((prev) => {
-      const withoutTaskCenter = prev.filter((key) => key !== taskCenterKey)
-      return chatTaskCenterGroupCollapsed ? withoutTaskCenter : [...withoutTaskCenter, taskCenterKey]
-    })
-  }, [chatTaskCenterGroupCollapsed])
 
   useEffect(() => {
     const currentIds = new Set(categories.map((c) => c.id))
@@ -1061,9 +1046,6 @@ export function ChatSidebar() {
 
   const focusConversationGroup = useCallback((conversationId: string | null | undefined) => {
     const nextKeys: string[] = []
-    if (!chatTaskCenterGroupCollapsed) {
-      nextKeys.push('taskCenter')
-    }
 
     if (!conversationId) {
       setExpandedKeys(nextKeys)
@@ -1073,12 +1055,10 @@ export function ChatSidebar() {
     const activeConv = conversations.find((c) => c.id === conversationId)
     if (activeConv?.category_id) {
       nextKeys.push(`cat:${activeConv.category_id}`)
-    } else if (activeConv?.source === 'task_center' && !nextKeys.includes('taskCenter')) {
-      nextKeys.push('taskCenter')
     }
 
     setExpandedKeys(nextKeys)
-  }, [chatTaskCenterGroupCollapsed, conversations])
+  }, [conversations])
 
   useEffect(() => {
     if (showArchived || searchText.trim() || multiSelectMode || archivedMultiSelect) return
@@ -1119,7 +1099,6 @@ export function ChatSidebar() {
       const expandedCatIds = new Set(
         keys.filter((k) => k.startsWith('cat:')).map((k) => k.slice(4)),
       )
-      setChatTaskCenterGroupCollapsed(!keys.includes('taskCenter'))
       categories.forEach((cat) => {
         const shouldBeCollapsed = !expandedCatIds.has(cat.id)
         if (cat.is_collapsed !== shouldBeCollapsed) {
@@ -1127,7 +1106,7 @@ export function ChatSidebar() {
         }
       })
     },
-    [categories, setChatTaskCenterGroupCollapsed, setCollapsed],
+    [categories, setCollapsed],
   )
 
   const handleDeleteCategory = useCallback(
@@ -1168,22 +1147,9 @@ export function ChatSidebar() {
           />
         )
       }
-      if (group === 'taskCenter') {
-        return (
-          <span className="wisespace-chat-task-center-group-label">
-            <span className="wisespace-chat-task-center-group-label__main">
-              <Briefcase size={13} />
-              <span>{groupLabels[group] ?? group}</span>
-            </span>
-            <span className="wisespace-chat-task-center-group-label__count">
-              {filteredConversations.filter((conv) => !conv.parent_conversation_id && conv.source === 'task_center').length}
-            </span>
-          </span>
-        )
-      }
       return <span className="wisespace-chat-time-group-label">{groupLabels[group] ?? group}</span>
     },
-    [categories, filteredConversations, groupLabels, t, handleDeleteCategory, handleNewConversation],
+    [categories, groupLabels, t, handleDeleteCategory, handleNewConversation],
   )
 
   const handleCreateCategory = useCallback(
@@ -1796,7 +1762,7 @@ export function ChatSidebar() {
         <div className="wisespace-chat-category-focus-bar">
           <span className="wisespace-chat-category-focus-bar__main">
             <span className="wisespace-chat-category-focus-bar__icon">
-              <Briefcase size={11} />
+              <FolderOpen size={11} />
             </span>
             <span className="wisespace-chat-category-focus-bar__text">
               {showAllCategoryGroups
@@ -1929,7 +1895,7 @@ export function ChatSidebar() {
                     }}
                     groupable={{
                       label: (group: string) => renderGroupLabel(group),
-                      collapsible: (group: string) => group.startsWith('cat:') || group === 'taskCenter',
+                      collapsible: (group: string) => group.startsWith('cat:'),
                       expandedKeys: expandedKeys,
                       onExpand: handleGroupExpand,
                     }}

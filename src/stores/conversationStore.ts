@@ -60,6 +60,7 @@ interface StreamBuffer {
   thinking: string | null;
 }
 let _streamBuffer: StreamBuffer | null = null;
+let _agentStreamBuffer: StreamBuffer | null = null;
 // Prefix injected before streaming content (e.g., search result tags)
 let _streamPrefix = '';
 // Conversations whose stream completed while the user was viewing a different
@@ -505,6 +506,50 @@ function replaceAgentMessageId(messages: Message[], oldId: string, newId: string
   ));
 }
 
+function upsertBufferedAssistantMessage(
+  messages: Message[],
+  conversationId: string,
+  messageId: string,
+  content: string,
+  thinking: string | null,
+): Message[] {
+  const existingIndex = messages.findIndex((message) => message.id === messageId);
+  if (existingIndex >= 0) {
+    return messages.map((message) => (
+      message.id === messageId
+        ? {
+            ...message,
+            content,
+            thinking,
+            status: message.status === 'complete' ? message.status : 'partial',
+          }
+        : message
+    ));
+  }
+
+  return [
+    ...messages,
+    {
+      id: messageId,
+      conversation_id: conversationId,
+      role: 'assistant',
+      content,
+      provider_id: null,
+      model_id: null,
+      token_count: null,
+      attachments: [],
+      thinking,
+      tool_calls_json: null,
+      tool_call_id: null,
+      created_at: Date.now(),
+      parent_message_id: null,
+      version_index: 0,
+      is_active: true,
+      status: 'partial',
+    },
+  ];
+}
+
 function patchAgentMessage(
   messages: Message[],
   targetId: string,
@@ -517,6 +562,24 @@ function patchAgentMessage(
 
 function isTemporaryMessageId(messageId: string | null | undefined): messageId is string {
   return typeof messageId === 'string' && messageId.startsWith('temp-');
+}
+
+function findResolvedUserMessage(messages: Message[], userMessage: Message | null | undefined): Message | null {
+  if (!userMessage) return null;
+  if (!isTemporaryMessageId(userMessage.id)) return userMessage;
+
+  const candidates = messages.filter((message) => (
+    message.role === 'user'
+    && message.conversation_id === userMessage.conversation_id
+    && !isTemporaryMessageId(message.id)
+    && message.content === userMessage.content
+  ));
+
+  return [...candidates].sort((left, right) => (
+    Math.abs(left.created_at - userMessage.created_at) - Math.abs(right.created_at - userMessage.created_at)
+    || right.created_at - left.created_at
+    || right.id.localeCompare(left.id)
+  ))[0] ?? null;
 }
 
 function rememberPendingLocalVersionSelection(
@@ -1439,6 +1502,18 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
           return {};
         });
         _streamBuffer = null;
+      } else if (_agentStreamBuffer && _agentStreamBuffer.conversationId === id && get().streamingConversationId === id) {
+        const realId = _agentStreamBuffer.resolvedId ?? _agentStreamBuffer.messageId;
+        set((s) => ({
+          messages: upsertBufferedAssistantMessage(
+            s.messages,
+            id,
+            realId,
+            _agentStreamBuffer!.content,
+            _agentStreamBuffer!.thinking || null,
+          ),
+          streamingMessageId: realId,
+        }));
       } else if (needsRefreshAfterStreamDone) {
         // Stream completed while away and buffer was already consumed — the
         // fetchMessages above should have loaded the final message from DB.
@@ -1916,6 +1991,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     let unlistenStreamText: UnlistenFn | null = null;
     let unlistenStreamThinking: UnlistenFn | null = null;
     let unlistenMessageId: UnlistenFn | null = null;
+    let unlistenUserMessageId: UnlistenFn | null = null;
     let cancelActiveRun: (() => void) | null = null;
     let cleanedUp = false;
 
@@ -1923,6 +1999,14 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     let _agentPendingText = '';
     let _agentPendingThinking = '';
     let _agentFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+    _agentStreamBuffer = {
+      messageId: currentMsgId,
+      conversationId,
+      content: '',
+      resolvedId: null,
+      thinking: null,
+    };
 
     const flushAgentStreamChunks = () => {
       if (_agentFlushTimer !== null) {
@@ -1970,9 +2054,21 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
           return { ...m, content, thinking };
         });
 
+        const nextMessages = updatedMessages;
+        const updatedAgentMessage = nextMessages.find((message) => message.id === currentMsgId);
+        if (updatedAgentMessage) {
+          _agentStreamBuffer = {
+            messageId: currentMsgId,
+            conversationId,
+            content: updatedAgentMessage.content,
+            resolvedId: currentMsgId,
+            thinking: updatedAgentMessage.thinking ?? null,
+          };
+        }
+
         return {
           thinkingActiveMessageIds: nextThinkingIds,
-          messages: updatedMessages,
+          messages: nextMessages,
         };
       });
     };
@@ -2000,11 +2096,13 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       unlistenDone?.();
       unlistenError?.();
       unlistenMessageId?.();
+      unlistenUserMessageId?.();
       unlistenStreamText = null;
       unlistenStreamThinking = null;
       unlistenDone = null;
       unlistenError = null;
       unlistenMessageId = null;
+      unlistenUserMessageId = null;
       if (_activeAgentCancel === cancelActiveRun) {
         _activeAgentCancel = null;
       }
@@ -2041,7 +2139,30 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
             streamingMessageId: realId,
             messages: replaceAgentMessageId(s.messages, oldId, realId),
           }));
+          if (_agentStreamBuffer && _agentStreamBuffer.conversationId === conversationId) {
+            _agentStreamBuffer = {
+              ..._agentStreamBuffer,
+              messageId: realId,
+              resolvedId: realId,
+            };
+          }
         }).then(keepAgentUnlisten((fn) => { unlistenMessageId = fn; }));
+
+        listen<{ conversationId: string; userMessageId: string }>('agent-user-message-id', (event) => {
+          if (event.payload.conversationId !== conversationId || !isCurrentAgentRun()) return;
+          const realUserId = event.payload.userMessageId;
+          set((s) => ({
+            messages: s.messages.map((message) => {
+              if (message.id === optimisticUserMsg.id) {
+                return { ...message, id: realUserId };
+              }
+              if (message.parent_message_id === optimisticUserMsg.id) {
+                return { ...message, parent_message_id: realUserId };
+              }
+              return message;
+            }),
+          }));
+        }).then(keepAgentUnlisten((fn) => { unlistenUserMessageId = fn; }));
 
         // Listen for incremental text chunks — buffer and flush periodically
         listen<AgentStreamTextEvent>('agent-stream-text', (event) => {
@@ -2122,6 +2243,13 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
               }),
             ),
           }));
+          _agentStreamBuffer = {
+            messageId: finalAssistantId,
+            conversationId,
+            content: finalContent,
+            resolvedId: finalAssistantId,
+            thinking: finalThinking,
+          };
 
           cleanup();
           if (isActiveConversation) {
@@ -2161,6 +2289,13 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
               status: 'error' as const,
             })),
           }));
+          _agentStreamBuffer = {
+            messageId: targetMessageId,
+            conversationId,
+            content: event.payload.message,
+            resolvedId: targetMessageId,
+            thinking: null,
+          };
 
           cleanup();
           reject(new Error(event.payload.message));
@@ -2226,10 +2361,11 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       }
     }
     if (!userMsg) throw new Error('No user message found');
+    const resolvedUserMsg = findResolvedUserMessage(msgs, userMsg) ?? userMsg;
 
     // Create placeholder for new version, preserving original created_at for position
     const tempAssistantId = `temp-assistant-${Date.now()}`;
-    const parentId = userMsg.id;
+    const parentId = resolvedUserMsg.id;
     const rKbIdsForPlaceholder = get().enabledKnowledgeBaseIds;
     const rMemIdsForPlaceholder = get().enabledMemoryNamespaceIds;
     const placeholderRagDisplay = [
@@ -2253,7 +2389,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       tool_calls_json: null,
       tool_call_id: null,
       created_at: originalAiMsg?.created_at ?? Date.now(),
-      parent_message_id: userMsg.id,
+      parent_message_id: resolvedUserMsg.id,
       version_index: parentVersions.length,
       is_active: true,
       status: 'partial',
@@ -2304,7 +2440,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       const rMemIds = get().enabledMemoryNamespaceIds;
       await invoke('regenerate_message', {
         conversationId,
-        userMessageId: userMsg.id,
+        userMessageId: resolvedUserMsg.id,
         enabledMcpServerIds: rMcpIds.length > 0 ? rMcpIds : undefined,
         thinkingBudget: rThinkingBudget,
         thinkingLevel: rThinkingLevel,
@@ -2347,8 +2483,9 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     if (!aiMsg?.parent_message_id) throw new Error('Cannot find parent user message');
     const userMsg = msgs.find(m => m.id === aiMsg.parent_message_id);
     if (!userMsg) throw new Error('User message not found');
+    const resolvedUserMsg = findResolvedUserMessage(msgs, userMsg) ?? userMsg;
 
-    const parentId = userMsg.id;
+    const parentId = resolvedUserMsg.id;
     const originalAiMsg = msgs.find(m => m.parent_message_id === parentId && m.is_active);
     const parentVersions = msgs.filter((m) => m.parent_message_id === parentId && m.role === 'assistant');
     const appendAsCompanion = hasMultipleModelVersions(parentVersions);
@@ -2374,7 +2511,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       tool_calls_json: null,
       tool_call_id: null,
       created_at: originalAiMsg?.created_at ?? Date.now(),
-      parent_message_id: userMsg.id,
+      parent_message_id: resolvedUserMsg.id,
       version_index: parentVersions.length,
       is_active: !appendAsCompanion,
       status: 'partial',
@@ -2409,7 +2546,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       const rMemIds = get().enabledMemoryNamespaceIds;
       await invoke('regenerate_with_model', {
         conversationId,
-        userMessageId: userMsg.id,
+        userMessageId: resolvedUserMsg.id,
         targetProviderId: providerId,
         targetModelId: modelId,
         enabledMcpServerIds: rMcpIds.length > 0 ? rMcpIds : undefined,
@@ -2482,7 +2619,10 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
 
     // Find the user message that was just created
     const msgs = get().messages;
-    const lastUserMsg = [...msgs].reverse().find((m) => m.role === 'user');
+    const lastUserMsg = findResolvedUserMessage(
+      msgs,
+      [...msgs].reverse().find((m) => m.role === 'user'),
+    );
     if (!lastUserMsg) {
       _isMultiModelActive = false;
       _multiModelTotalRemaining = 0;

@@ -22,6 +22,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Child;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::{sleep, Duration};
+use wisespace_agent::permission::{decide_permission, PermissionAction, PermissionMode, RiskLevel};
 use wisespace_core::repo::{agent_run, agent_session, conversation, message};
 use wisespace_core::types::{Attachment, AttachmentInput, MessageRole};
 
@@ -345,6 +346,81 @@ async fn create_turn(
         .map_err(|e| e.to_string())
 }
 
+fn is_turn_conflict_error(error: &str) -> bool {
+    error.contains("409 Conflict") && error.contains("/turns")
+}
+
+async fn interrupt_runtime_turn(
+    client: &reqwest::Client,
+    thread_id: &str,
+    turn_id: &str,
+) -> Result<(), String> {
+    let url = format!(
+        "{}/v1/threads/{}/turns/{}/interrupt",
+        runtime_base_url(),
+        thread_id,
+        turn_id
+    );
+    client
+        .post(url)
+        .header(AUTHORIZATION, runtime_auth_header())
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+async fn create_turn_with_recovery(
+    client: &reqwest::Client,
+    thread_id: &str,
+    workspace_root: &str,
+    model_id: Option<&str>,
+    auto_approve: bool,
+    prompt: &str,
+) -> Result<CreateTurnResponse, String> {
+    let first_error = match create_turn(client, thread_id, prompt).await {
+        Ok(response) => return Ok(response),
+        Err(error) if is_turn_conflict_error(&error) => error,
+        Err(error) => return Err(error),
+    };
+
+    tracing::warn!(
+        thread_id = %thread_id,
+        "DeepSeek runtime turn creation hit 409 conflict; attempting recovery"
+    );
+
+    if let Ok(detail) = get_thread_detail(client, thread_id).await {
+        let latest_turn = detail
+            .thread
+            .latest_turn_id
+            .as_deref()
+            .and_then(|turn_id| detail.turns.iter().find(|turn| turn.id == turn_id));
+        let latest_status = latest_turn.map(|turn| turn.status.as_str()).unwrap_or("unknown");
+        if !matches!(latest_status, "completed" | "failed" | "interrupted" | "cancelled") {
+            if let Some(turn_id) = detail.thread.latest_turn_id.as_deref() {
+                let _ = interrupt_runtime_turn(client, thread_id, turn_id).await;
+                sleep(Duration::from_millis(250)).await;
+                match create_turn(client, thread_id, prompt).await {
+                    Ok(response) => return Ok(response),
+                    Err(error) if !is_turn_conflict_error(&error) => return Err(error),
+                    Err(_) => {}
+                }
+            }
+        }
+    }
+
+    let replacement_thread =
+        create_runtime_thread(client, workspace_root, model_id, auto_approve).await?;
+    create_turn(client, &replacement_thread.id, prompt)
+        .await
+        .map_err(|error| {
+            format!(
+                "{}; retry with fresh runtime thread {} also failed: {}",
+                first_error, replacement_thread.id, error
+            )
+        })
+}
+
 fn normalize_thread_context(
     raw_context_json: Option<&str>,
     effective_cwd: &str,
@@ -387,6 +463,52 @@ fn extract_payload_turn(payload: &Value) -> Option<RuntimeTurnDetail> {
 
 fn parse_runtime_item_value(raw: Option<&str>) -> Option<Value> {
     raw.and_then(|value| serde_json::from_str::<Value>(value).ok())
+}
+
+fn compact_runtime_error_message(raw: &str) -> Option<String> {
+    let compact = raw
+        .replace("\r\n", "\n")
+        .split('\n')
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join(" | ");
+    if compact.is_empty() {
+        None
+    } else {
+        Some(compact)
+    }
+}
+
+fn extract_runtime_failure_reason(payload: &Value) -> Option<String> {
+    let direct_fields = [
+        payload.get("message").and_then(|value| value.as_str()),
+        payload.get("detail").and_then(|value| value.as_str()),
+        payload.get("summary").and_then(|value| value.as_str()),
+        payload
+            .get("error")
+            .and_then(|value| value.get("message"))
+            .and_then(|value| value.as_str()),
+        payload
+            .get("error")
+            .and_then(|value| value.get("detail"))
+            .and_then(|value| value.as_str()),
+    ];
+    for candidate in direct_fields.into_iter().flatten() {
+        if let Some(message) = compact_runtime_error_message(candidate) {
+            return Some(message);
+        }
+    }
+
+    if let Some(item) = extract_payload_item(payload) {
+        for candidate in [item.detail.as_deref(), item.summary.as_deref()].into_iter().flatten() {
+            if let Some(message) = compact_runtime_error_message(candidate) {
+                return Some(message);
+            }
+        }
+    }
+
+    None
 }
 
 fn summarize_runtime_item(item: &RuntimeItem) -> Value {
@@ -509,17 +631,7 @@ pub async fn interrupt_turn_from_context(raw_context_json: Option<&str>) -> Resu
 
     ensure_runtime_server().await?;
     let client = runtime_client()?;
-    let url = format!(
-        "{}/v1/threads/{}/turns/{}/interrupt",
-        runtime_base_url(),
-        thread_id,
-        turn_id
-    );
-    let _ = client
-        .post(url)
-        .header(AUTHORIZATION, runtime_auth_header())
-        .send()
-        .await;
+    let _ = interrupt_runtime_turn(&client, thread_id, turn_id).await;
     Ok(())
 }
 
@@ -584,7 +696,8 @@ pub async fn start_deepseek_tui_run(
         .or_else(|| session.sdk_context_json.clone());
     let context = normalize_thread_context(existing_context_json.as_deref(), &effective_cwd);
     let existing_thread_id = context.runtime_thread_id.clone();
-    let should_auto_approve = matches!(input.permission_mode.as_deref(), Some("full_access"));
+    let permission_mode = PermissionMode::from_str(input.permission_mode.as_deref().unwrap_or("default"));
+    let should_auto_approve = permission_mode == PermissionMode::FullAccess;
 
     let thread = if let Some(thread_id) = existing_thread_id {
         match get_thread_detail(&client, &thread_id).await {
@@ -680,7 +793,23 @@ pub async fn start_deepseek_tui_run(
         .await
         .map_err(|e| e.to_string())?;
 
-    let turn_response = create_turn(&client, &thread.id, &execution_prompt).await?;
+    let _ = app.emit(
+        "agent-user-message-id",
+        serde_json::json!({
+            "conversationId": input.conversation_id.clone(),
+            "userMessageId": user_message.id.clone(),
+        }),
+    );
+
+    let turn_response = create_turn_with_recovery(
+        &client,
+        &thread.id,
+        &effective_cwd,
+        input.model_id.as_deref().or(thread.model.as_deref()),
+        should_auto_approve,
+        &execution_prompt,
+    )
+    .await?;
     let resume_context_json = serialize_runtime_context(
         &context,
         &turn_response.thread.id,
@@ -714,7 +843,7 @@ pub async fn start_deepseek_tui_run(
     let cancel_tokens = state.agent_cancel_tokens.clone();
     let permission_senders = state.agent_permission_senders.clone();
     let assistant_id_for_task: Arc<RwLock<Option<String>>> = Arc::new(RwLock::new(None));
-    let thread_id = turn_response.thread.id.clone();
+    let mut thread_id = turn_response.thread.id.clone();
     let effective_model = input
         .model_id
         .clone()
@@ -850,10 +979,14 @@ pub async fn start_deepseek_tui_run(
                             return Ok(true);
                         }
                         "item.failed" => {
+                            let reason = extract_runtime_failure_reason(&envelope.payload)
+                                .map(|message| format!(": {}", message))
+                                .unwrap_or_default();
                             return Err(format!(
-                                "DeepSeek runtime item {} for turn {} failed",
+                                "DeepSeek runtime item {} for turn {} failed{}",
                                 envelope.item_id.as_deref().unwrap_or("unknown"),
-                                envelope.turn_id.as_deref().unwrap_or("unknown")
+                                envelope.turn_id.as_deref().unwrap_or("unknown"),
+                                reason,
                             ));
                         }
                         "item.interrupted" => {
@@ -883,6 +1016,104 @@ pub async fn start_deepseek_tui_run(
                     .as_ref()
                     .map(|value| extract_command_input(value, &active_turn_id))
                     .unwrap_or_else(|| serde_json::json!({}));
+                let risk_level = if tool_input
+                    .get("command")
+                    .and_then(|value| value.as_str())
+                    .is_some_and(|value| !value.trim().is_empty())
+                {
+                    RiskLevel::Execute
+                } else {
+                    RiskLevel::ReadOnly
+                };
+
+                if matches!(decide_permission(permission_mode, risk_level, false), PermissionAction::AutoAllow) {
+                    let _ = runtime::append_runtime_event(
+                        &db,
+                        &run.id,
+                        "permission_resolved",
+                        &serde_json::json!({
+                            "toolUseId": pending.approval_id,
+                            "toolName": pending.tool_name,
+                            "input": tool_input,
+                            "decision": "auto_allow",
+                            "value": "auto_allow",
+                            "reason": "permission_mode",
+                        }),
+                    )
+                    .await;
+                    let _ = update_thread_auto_approve(&client, &thread_id, true).await;
+                    let next_baseline = get_thread_detail(&client, &thread_id)
+                        .await
+                        .map(|value| value.latest_seq)
+                        .unwrap_or(active_baseline_seq);
+                    let continue_prompt =
+                        build_approval_continue_prompt(&pending.tool_name, &tool_input);
+                    match create_turn_with_recovery(
+                        &client,
+                        &thread_id,
+                        &effective_cwd,
+                        Some(&effective_model),
+                        should_auto_approve,
+                        &continue_prompt,
+                    )
+                    .await {
+                        Ok(next_turn) => {
+                            if next_turn.thread.id != thread_id {
+                                thread_id = next_turn.thread.id.clone();
+                            }
+                            active_baseline_seq = get_thread_detail(&client, &thread_id)
+                                .await
+                                .map(|value| value.latest_seq)
+                                .unwrap_or(next_baseline);
+                            active_turn_id = next_turn.turn.id.clone();
+                            active_resume_context_json = serialize_runtime_context(
+                                &load_deepseek_session_context(active_resume_context_json.as_deref()),
+                                &thread_id,
+                                Some(&active_turn_id),
+                                Some(&effective_model),
+                                &effective_cwd,
+                            );
+                            let _ = agent_run::update_run_resume_state(
+                                &db,
+                                &run.id,
+                                Some("resumable"),
+                                Some(None),
+                                Some(active_resume_context_json.as_deref()),
+                            )
+                            .await;
+                            let _ = agent_session::set_sdk_context_by_conversation_id(
+                                &db,
+                                &conversation_id,
+                                active_resume_context_json.as_deref(),
+                            )
+                            .await;
+                            let _ = agent_run::update_run_status(&db, &run.id, "running", None).await;
+                            continue;
+                        }
+                        Err(err) => {
+                            let _ = agent_run::finish_run(
+                                &db,
+                                &run.id,
+                                "failed",
+                                active_resume_context_json.as_deref(),
+                                None,
+                                0.0,
+                                Some(&err),
+                            )
+                            .await;
+                            let _ = app_handle.emit(
+                                "agent-error",
+                                AgentErrorPayload {
+                                    conversation_id: conversation_id.clone(),
+                                    assistant_message_id: Some(assistant_message_id.clone()),
+                                    message: err,
+                                },
+                            );
+                            return;
+                        }
+                    }
+                }
+
                 let permission_payload = AgentPermissionRequestPayload {
                     conversation_id: conversation_id.clone(),
                     assistant_message_id: assistant_message_id.clone(),
@@ -953,9 +1184,23 @@ pub async fn start_deepseek_tui_run(
                     .unwrap_or(active_baseline_seq);
                 let continue_prompt =
                     build_approval_continue_prompt(&permission_payload.tool_name, &permission_payload.input);
-                match create_turn(&client, &thread_id, &continue_prompt).await {
+                match create_turn_with_recovery(
+                    &client,
+                    &thread_id,
+                    &effective_cwd,
+                    Some(&effective_model),
+                    should_auto_approve,
+                    &continue_prompt,
+                )
+                .await {
                     Ok(next_turn) => {
-                        active_baseline_seq = next_baseline;
+                        if next_turn.thread.id != thread_id {
+                            thread_id = next_turn.thread.id.clone();
+                        }
+                        active_baseline_seq = get_thread_detail(&client, &thread_id)
+                            .await
+                            .map(|value| value.latest_seq)
+                            .unwrap_or(next_baseline);
                         active_turn_id = next_turn.turn.id.clone();
                         active_resume_context_json = serialize_runtime_context(
                             &load_deepseek_session_context(active_resume_context_json.as_deref()),

@@ -247,6 +247,18 @@ export interface ConversationSummary {
   updated_at: number;
 }
 
+export interface ConversationSummaryDraft {
+  title: string;
+  content: string;
+  generatedAt: number;
+}
+
+export interface SavedConversationSummaryFile {
+  fileId: string;
+  relativePath: string;
+  originalName: string;
+}
+
 export interface UpdateConversationInput {
   title?: string;
   provider_id?: string;
@@ -521,7 +533,7 @@ export interface RealtimeConfig {
 }
 
 // === UI State ===
-export type PageKey = 'chat' | 'tasks' | 'drawing' | 'knowledge' | 'memory' | 'gateway' | 'files' | 'settings' | 'skills';
+export type PageKey = 'chat' | 'drawing' | 'knowledge' | 'memory' | 'gateway' | 'files' | 'settings' | 'skills';
 
 // === Drawing ===
 export type DrawingModelId = 'gpt-image-2' | 'gpt-image-1.5' | 'gpt-image-1' | 'gpt-image-1-mini';
@@ -607,7 +619,7 @@ export interface DrawingEditInput extends DrawingGenerateInput {
 export interface DrawingMaskEditInput extends DrawingEditInput {
   mask_file_id: string;
 }
-export type SettingsSection = 'providers' | 'defaultModel' | 'conversationSettings' | 'general' | 'display' | 'proxy' | 'shortcuts' | 'data' | 'storage' | 'about' | 'searchProviders' | 'mcpServers' | 'agentExecutors' | 'backup';
+export type SettingsSection = 'providers' | 'defaultModel' | 'conversationSettings' | 'roles' | 'general' | 'display' | 'proxy' | 'shortcuts' | 'data' | 'storage' | 'about' | 'searchProviders' | 'mcpServers' | 'agentExecutors' | 'backup';
 
 // === Files Module ===
 export type FileCategory = 'images' | 'files';

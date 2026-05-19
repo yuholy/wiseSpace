@@ -1,7 +1,7 @@
-import { Badge, Tooltip, theme } from 'antd';
-import { MessageSquare, BookOpen, Brain, FolderOpen, Sparkles, ListChecks } from 'lucide-react';
+import { Tooltip, theme } from 'antd';
+import { MessageSquare, BookOpen, Brain, FolderOpen, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useUIStore, useSettingsStore, useTaskCenterStore } from '@/stores';
+import { useUIStore, useSettingsStore } from '@/stores';
 import { getShortcutBinding, formatShortcutForDisplay } from '@/lib/shortcuts';
 import type { ShortcutAction } from '@/lib/shortcuts';
 import { SidebarUserMenu } from './SidebarUserMenu';
@@ -9,7 +9,6 @@ import type { PageKey } from '@/types';
 
 const mainNavItems: { key: PageKey; icon: React.ReactNode; labelKey: string }[] = [
   { key: 'chat', icon: <MessageSquare size={18} />, labelKey: 'nav.chat' },
-  { key: 'tasks', icon: <ListChecks size={18} />, labelKey: 'nav.tasks' },
   { key: 'skills', icon: <Sparkles size={18} />, labelKey: 'nav.skills' },
   { key: 'knowledge', icon: <BookOpen size={18} />, labelKey: 'nav.knowledge' },
   { key: 'memory', icon: <Brain size={18} />, labelKey: 'nav.memory' },
@@ -24,9 +23,6 @@ export function Sidebar() {
   const activePage = useUIStore((s) => s.activePage);
   const setActivePage = useUIStore((s) => s.setActivePage);
   const settings = useSettingsStore((s) => s.settings);
-  const waitingCount = useTaskCenterStore((s) => s.waitingCount);
-  const interruptedCount = useTaskCenterStore((s) => s.interruptedCount);
-  const failedCount = useTaskCenterStore((s) => s.failedCount);
 
   const NAV_SHORTCUT_MAP: Partial<Record<PageKey, ShortcutAction>> = {
     // Gateway module hidden for now
@@ -68,11 +64,7 @@ export function Sidebar() {
             }
           }}
         >
-          {item.key === 'tasks' ? (
-            <Badge count={waitingCount || interruptedCount || failedCount} size="small" offset={[3, -3]}>
-              {item.icon}
-            </Badge>
-          ) : item.icon}
+          {item.icon}
         </button>
       </Tooltip>
     );
