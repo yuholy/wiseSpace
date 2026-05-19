@@ -2,9 +2,12 @@ import { Button, Divider, Typography } from 'antd';
 import { Github, Globe, Terminal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useState, useEffect, useCallback } from 'react';
+import { useResolvedDarkMode } from '@/hooks/useResolvedDarkMode';
 import { isTauri, invoke } from '@/lib/invoke';
 import { APP_REPO_HOST_LABEL, APP_REPO_URL } from '@/lib/repo';
-import logoUrl from '@/assets/image/logo.png?url';
+import darkLogoUrl from '@/assets/image/dark-logo.svg?url';
+import lightLogoUrl from '@/assets/image/white-logo.svg?url';
+import { useSettingsStore } from '@/stores';
 import { SettingsGroup } from './SettingsGroup';
 
 const { Text } = Typography;
@@ -13,6 +16,9 @@ const OFFICIAL_WEBSITE = 'https://app.wisespace.top';
 export function AboutPage() {
   const { t } = useTranslation();
   const [appVersion, setAppVersion] = useState('...');
+  const themeMode = useSettingsStore((s) => s.settings.theme_mode);
+  const isDark = useResolvedDarkMode(themeMode);
+  const logoUrl = isDark ? lightLogoUrl : darkLogoUrl;
 
   useEffect(() => {
     if (isTauri()) {

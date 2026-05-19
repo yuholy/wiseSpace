@@ -7,9 +7,11 @@ import {
   FolderOpen, RefreshCw, Download, Trash2, Sparkles, Store, Star, Github,
   ChevronRight, Layers, Radio,
 } from 'lucide-react';
-import appLogo from '@/assets/image/logo.png?url';
+import { useResolvedDarkMode } from '@/hooks/useResolvedDarkMode';
 import { useTranslation } from 'react-i18next';
-import { useSkillStore } from '@/stores';
+import darkLogoUrl from '@/assets/image/dark-logo.svg?url';
+import lightLogoUrl from '@/assets/image/white-logo.svg?url';
+import { useSettingsStore, useSkillStore } from '@/stores';
 import type { Skill, MarketplaceSkill } from '@/types';
 import { CopyButton } from '@/components/common/CopyButton';
 
@@ -28,12 +30,20 @@ const { Text, Paragraph } = Typography;
 
 
 
+const ALL_SOURCE_ICON = <Layers size={14} />;
+
+function WiseSpaceSourceIcon() {
+  const themeMode = useSettingsStore((s) => s.settings.theme_mode);
+  const isDark = useResolvedDarkMode(themeMode);
+  const appLogo = isDark ? lightLogoUrl : darkLogoUrl;
+
+  return <img src={appLogo} alt="" style={{ width: 14, height: 14, verticalAlign: 'middle' }} />;
+}
+
 const SOURCE_ICONS: Record<string, React.ReactNode> = {
-  wisespace: <img src={appLogo} alt="" style={{ width: 14, height: 14, verticalAlign: 'middle' }} />,
+  wisespace: <WiseSpaceSourceIcon />,
   agents: <Radio size={14} />,
 };
-
-const ALL_SOURCE_ICON = <Layers size={14} />;
 
 function SkillCard({
   skill,

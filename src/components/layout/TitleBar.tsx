@@ -6,7 +6,7 @@ import { useResolvedDarkMode } from '@/hooks/useResolvedDarkMode';
 import { isTauri, invoke } from '@/lib/invoke';
 import { useSettingsStore, useUIStore } from '@/stores';
 import darkLogoUrl from '@/assets/image/dark-logo.svg?url';
-import defaultLogoUrl from '@/assets/image/logo.png?url';
+import lightLogoUrl from '@/assets/image/white-logo.svg?url';
 
 const IS_WINDOWS = navigator.userAgent.includes('Windows');
 
@@ -26,7 +26,7 @@ export function TitleBar() {
   const themeMode = useSettingsStore((s) => s.settings.theme_mode);
   const [isMaximized, setIsMaximized] = useState(false);
   const isDark = useResolvedDarkMode(themeMode);
-  const appLogo = isDark ? darkLogoUrl : defaultLogoUrl;
+  const appLogo = isDark ? lightLogoUrl : darkLogoUrl;
 
   useEffect(() => {
     if (!IS_WINDOWS || !isTauri()) return;
