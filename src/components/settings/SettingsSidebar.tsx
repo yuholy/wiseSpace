@@ -12,7 +12,6 @@ import {
   Plug,
   Search,
   Settings,
-  Users,
   Zap,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -22,7 +21,6 @@ import type { SettingsSection } from '@/types';
 const MENU_ICONS: Record<SettingsSection, React.ReactNode> = {
   providers: <Cloud size={16} />,
   conversationSettings: <MessageSquare size={16} />,
-  roles: <Users size={16} />,
   defaultModel: <Bot size={16} />,
   general: <Settings size={16} />,
   display: <Palette size={16} />,
@@ -43,13 +41,10 @@ const SECTION_KEYS: SettingsSection[] = [
   'display',
   'providers',
   'conversationSettings',
-  'roles',
   'defaultModel',
-  'searchProviders',
   'mcpServers',
   'agentExecutors',
   'proxy',
-  'shortcuts',
   'dataStorage',
   'backup',
   'about',

@@ -12,6 +12,12 @@ use wisespace_core::webdav;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AutoBackupScheduleMode {
+    ResumeFromLastBackup,
+    ResetFromNow,
+}
+
 #[derive(Default)]
 struct RestoreCleanup {
     files: Vec<PathBuf>,
@@ -171,18 +177,49 @@ pub async fn update_backup_settings(
         &state.sea_db,
         &state.app_data_dir,
         &backup_settings,
+        AutoBackupScheduleMode::ResetFromNow,
     )
     .await;
 
     Ok(())
 }
 
+fn compute_auto_backup_initial_delay_secs(
+    mode: AutoBackupScheduleMode,
+    interval_secs: u64,
+    last_created_at: Option<&str>,
+) -> u64 {
+    if mode == AutoBackupScheduleMode::ResetFromNow {
+        return interval_secs;
+    }
+
+    let Some(last_ts) = last_created_at else {
+        return interval_secs;
+    };
+
+    if let Ok(last_time) = chrono::NaiveDateTime::parse_from_str(last_ts, "%Y-%m-%d %H:%M:%S") {
+        let elapsed = chrono::Utc::now()
+            .naive_utc()
+            .signed_duration_since(last_time)
+            .num_seconds()
+            .max(0) as u64;
+        if elapsed >= interval_secs {
+            0
+        } else {
+            interval_secs - elapsed
+        }
+    } else {
+        interval_secs
+    }
+}
+
 /// Start or restart the auto-backup scheduler
-async fn restart_auto_backup(
+pub(crate) async fn restart_auto_backup(
     handle: &Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     db: &DatabaseConnection,
     app_data_dir: &PathBuf,
     settings: &AutoBackupSettings,
+    mode: AutoBackupScheduleMode,
 ) {
     let mut guard = handle.lock().await;
 
@@ -201,29 +238,12 @@ async fn restart_auto_backup(
     let max_count = settings.max_count;
     let interval_secs = interval_hours as u64 * 3600;
 
-    // Calculate initial delay: catch up if overdue
-    let initial_delay_secs = match backup::list_backups(&db).await {
-        Ok(backups) if !backups.is_empty() => {
-            let last_ts = &backups[0].created_at;
-            if let Ok(last_time) =
-                chrono::NaiveDateTime::parse_from_str(last_ts, "%Y-%m-%d %H:%M:%S")
-            {
-                let elapsed = chrono::Utc::now()
-                    .naive_utc()
-                    .signed_duration_since(last_time)
-                    .num_seconds()
-                    .max(0) as u64;
-                if elapsed >= interval_secs {
-                    0
-                } else {
-                    interval_secs - elapsed
-                }
-            } else {
-                interval_secs
-            }
-        }
-        _ => interval_secs,
-    };
+    let last_created_at = backup::list_backups(&db)
+        .await
+        .ok()
+        .and_then(|backups| backups.into_iter().next().map(|backup| backup.created_at));
+    let initial_delay_secs =
+        compute_auto_backup_initial_delay_secs(mode, interval_secs, last_created_at.as_deref());
 
     let task = tokio::spawn(async move {
         let interval = std::time::Duration::from_secs(interval_secs);
@@ -256,6 +276,31 @@ async fn restart_auto_backup(
     });
 
     *guard = Some(task);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{compute_auto_backup_initial_delay_secs, AutoBackupScheduleMode};
+
+    #[test]
+    fn reset_from_now_uses_full_interval_even_if_recent_backup_exists() {
+        let delay = compute_auto_backup_initial_delay_secs(
+            AutoBackupScheduleMode::ResetFromNow,
+            3600,
+            Some("2099-01-01 00:00:00"),
+        );
+        assert_eq!(delay, 3600);
+    }
+
+    #[test]
+    fn resume_mode_catches_up_when_last_backup_is_overdue() {
+        let delay = compute_auto_backup_initial_delay_secs(
+            AutoBackupScheduleMode::ResumeFromLastBackup,
+            3600,
+            Some("2000-01-01 00:00:00"),
+        );
+        assert_eq!(delay, 0);
+    }
 }
 
 async fn restore_backup_zip(

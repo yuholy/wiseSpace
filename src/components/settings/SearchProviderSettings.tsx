@@ -56,10 +56,11 @@ function SearchProviderList({
   const { token } = theme.useToken();
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-1">
+    <div className="flex h-full min-h-0 flex-col p-2">
+      <div className="flex-1 overflow-y-auto">
+        <div className="flex flex-col gap-1">
         {providers.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex min-h-40 items-center justify-center">
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('settings.searchProviders.empty')} />
           </div>
         ) : (
@@ -98,8 +99,9 @@ function SearchProviderList({
             );
           })
         )}
+        </div>
       </div>
-      <div className="shrink-0 p-2 pt-0">
+      <div className="mt-auto pt-2 pb-2">
         <Button
           type="dashed"
           block
@@ -278,7 +280,7 @@ function SearchProviderDetail({
 
 // ── Main Component ────────────────────────────────────────
 
-export default function SearchProviderSettings() {
+export default function SearchProviderSettings({ embedded = false }: { embedded?: boolean }) {
   const { t } = useTranslation();
   const { providers, loadProviders, createProvider } = useSearchStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -323,8 +325,8 @@ export default function SearchProviderSettings() {
   };
 
   return (
-    <div className="flex h-full">
-      <div className="w-64 shrink-0 pt-2" style={{ borderRight: '1px solid var(--border-color)' }}>
+    <div className={`flex h-full min-h-0 ${embedded ? 'min-h-0' : ''}`}>
+      <div className="w-64 shrink-0 h-full min-h-0 pt-2 flex flex-col" style={{ borderRight: '1px solid var(--border-color)' }}>
         <SearchProviderList
           providers={providers}
           selectedId={selectedId}

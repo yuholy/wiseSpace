@@ -6,14 +6,11 @@ import {
   GeneralSettings,
   DisplaySettings,
   ProxySettings,
-  ShortcutSettings,
   DataStorageSettings,
   AboutPage,
-  SearchProviderSettings,
   McpServerSettings,
   AgentExecutorSettings,
   BackupCenter,
-  RoleManagementSettings,
 } from '@/components/settings';
 import { DefaultModelSettings } from '@/components/settings/DefaultModelSettings';
 import { ConversationSettings } from '@/components/settings/ConversationSettings';
@@ -22,17 +19,16 @@ import type { SettingsSection } from '@/types';
 const SECTION_COMPONENTS: Record<SettingsSection, React.ComponentType> = {
   providers: ProviderSettings,
   conversationSettings: ConversationSettings,
-  roles: RoleManagementSettings,
   defaultModel: DefaultModelSettings,
   general: GeneralSettings,
   display: DisplaySettings,
   proxy: ProxySettings,
-  shortcuts: ShortcutSettings,
+  shortcuts: GeneralSettings,
   data: DataStorageSettings,
   storage: DataStorageSettings,
   dataStorage: DataStorageSettings,
   about: AboutPage,
-  searchProviders: SearchProviderSettings,
+  searchProviders: ProviderSettings,
   mcpServers: McpServerSettings,
   agentExecutors: AgentExecutorSettings,
   backup: BackupCenter,
@@ -41,7 +37,8 @@ const SECTION_COMPONENTS: Record<SettingsSection, React.ComponentType> = {
 export function SettingsPage() {
   const { token } = theme.useToken();
   const settingsSection = useUIStore((s) => s.settingsSection);
-  const ContentComponent = SECTION_COMPONENTS[settingsSection as SettingsSection] ?? AgentExecutorSettings;
+  const normalizedSection = settingsSection === 'searchProviders' ? 'providers' : settingsSection;
+  const ContentComponent = SECTION_COMPONENTS[normalizedSection as SettingsSection] ?? AgentExecutorSettings;
 
   return (
     <div className="flex h-full">

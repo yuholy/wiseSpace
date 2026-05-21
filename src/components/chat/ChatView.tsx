@@ -17,7 +17,7 @@ import { MermaidBlockHeaderActions } from './MermaidBlockHeaderActions';
 import { InfographicBlockHeaderActions } from './InfographicBlockHeaderActions';
 import { DiagramModeToggle } from './DiagramModeToggle';
 import { MermaidZoomControls } from './MermaidZoomControls';
-import { useConversationStore, useProviderStore, useSettingsStore, useAgentStore, useRolePresetStore } from '@/stores';
+import { useConversationStore, useProviderStore, useSettingsStore, useAgentStore, useSkillStore, useUIStore } from '@/stores';
 import { setupAgentEventListeners } from '@/stores/agentStore';
 import { useUserProfileStore } from '@/stores/userProfileStore';
 import { useResolvedDarkMode } from '@/hooks/useResolvedDarkMode';
@@ -58,6 +58,15 @@ import {
   stripLeadingWiseSpaceDisplayTags,
 } from './chatStreaming';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
+
+const openExternalUrl = async (url: string) => {
+  try {
+    const { openUrl } = await import('@tauri-apps/plugin-opener');
+    await openUrl(url);
+  } catch {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+};
 import { buildAssistantDisplayContent, shouldHideAssistantBubble } from './toolCallDisplay';
 import { ChatScrollIndicator } from './ChatScrollIndicator';
 import { ChatMinimap, MinimapScrollProvider } from './ChatMinimap';
@@ -75,7 +84,7 @@ import { useResolvedAvatarSrc } from '@/hooks/useResolvedAvatarSrc';
 import type { Message, Attachment, ConversationStats, ConversationSummaryDraft, SavedConversationSummaryFile } from '@/types';
 import type { AskUserEvent, PermissionRequestEvent } from '@/types/agent';
 import { getAgentExecutorMeta } from '@/lib/agentExecutors';
-import { composeSystemPromptWithRole, getRolePresetById, parseRolePromptSections } from '@/lib/rolePresets';
+import { composeSystemPromptWithRole, getRolePresetById, parseRolePromptSections, ROLE_PRESETS } from '@/lib/rolePresets';
 
 // ── markstream-react custom thinking component ──────────────────────────
 
@@ -2427,19 +2436,31 @@ export function ChatView() {
   }, []);
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId);
-  const visibleRoleIds = useRolePresetStore((s) => s.visibleRoleIds);
+  const skills = useSkillStore((s) => s.skills);
+  const loadSkills = useSkillStore((s) => s.loadSkills);
+  const setActivePage = useUIStore((s) => s.setActivePage);
   const activeAgentExecutor = getAgentExecutorMeta(activeAgentExecutorId);
   const showHeaderModelSelector = activeConversation?.mode !== 'agent' || activeAgentExecutor.id === 'wisespace-local';
   const isTitleGenerating = activeConversationId != null && titleGeneratingConversationId === activeConversationId;
   const canSummarizeConversation = Boolean(activeConversationId && messages.length > 0 && !loading);
-  const visibleRolePresets = useMemo(
-    () => visibleRoleIds.map((roleId) => getRolePresetById(roleId)).filter((role) => role !== null),
-    [visibleRoleIds],
-  );
   const activeConversationRole = useMemo(() => {
     const roleId = parseRolePromptSections(activeConversation?.system_prompt).roleId;
     return getRolePresetById(roleId);
   }, [activeConversation?.system_prompt]);
+  const activeRoleRecommendedSkills = useMemo(() => {
+    const recommendedNames = activeConversationRole?.recommendedSkillNames ?? [];
+    return recommendedNames.map((name) => ({
+      name,
+      skill: skills.find((item) => item.name === name) ?? null,
+      url: activeConversationRole?.recommendedSkillLinks?.[name] ?? null,
+    }));
+  }, [activeConversationRole, skills]);
+
+  useEffect(() => {
+    if ((activeConversationRole?.recommendedSkillNames?.length ?? 0) > 0 && skills.length === 0) {
+      void loadSkills();
+    }
+  }, [activeConversationRole, loadSkills, skills.length]);
 
   const handleSelectConversationRole = useCallback(async (roleId: string | null) => {
     if (!activeConversation) return;
@@ -2464,7 +2485,7 @@ export function ChatView() {
         key: '__clear__',
         label: <span style={{ fontSize: 11, fontWeight: 400 }}>{t('chat.clearRole')}</span>,
       },
-      ...visibleRolePresets.map((role) => ({
+      ...ROLE_PRESETS.map((role) => ({
         key: role.id,
         label: (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 1, lineHeight: 1.35 }}>
@@ -2478,8 +2499,125 @@ export function ChatView() {
         ),
       })),
     ],
-    [t, visibleRolePresets],
+    [t],
   );
+
+  const roleDetailsContent = useMemo(() => {
+    if (!activeConversationRole) return null;
+
+    const hasRecommendedSkills = activeRoleRecommendedSkills.length > 0;
+    const availableSkillCount = activeRoleRecommendedSkills.filter((item) => item.skill).length;
+    const sectionLabelStyle: React.CSSProperties = {
+      fontSize: 12,
+      fontWeight: 600,
+      lineHeight: 1.4,
+      color: token.colorTextSecondary,
+    };
+    const bodyTextStyle: React.CSSProperties = {
+      fontSize: 12,
+      lineHeight: 1.65,
+    };
+    const compactTagStyle: React.CSSProperties = {
+      marginInlineEnd: 0,
+      fontSize: 12,
+      lineHeight: '18px',
+      paddingInline: 8,
+    };
+
+    return (
+      <div style={{ width: 320, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.4, color: token.colorText }}>
+              {activeConversationRole.name}
+            </span>
+            {activeConversationRole.shortLabel ? (
+              <Tag color="processing" style={compactTagStyle}>
+                {activeConversationRole.shortLabel}
+              </Tag>
+            ) : null}
+          </div>
+          <Typography.Text type="secondary" style={bodyTextStyle}>
+            {activeConversationRole.description}
+          </Typography.Text>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={sectionLabelStyle}>
+              {t('chat.roleOutputPattern')}
+            </div>
+            <Tag color="blue" style={{ ...compactTagStyle, width: 'fit-content' }}>
+              {t(`chat.roleOutputPatternMap.${activeConversationRole.defaultOutputPattern ?? 'general_execution'}`)}
+            </Tag>
+          </div>
+          <div style={sectionLabelStyle}>
+            {t('chat.roleRecommendedSkills')}
+          </div>
+          {hasRecommendedSkills ? (
+            <>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {activeRoleRecommendedSkills.map(({ name, skill, url }) => (
+                  <Tag
+                    key={name}
+                    color={skill ? (skill.enabled ? 'success' : 'default') : 'warning'}
+                    style={{
+                      ...compactTagStyle,
+                      cursor: url ? 'pointer' : 'default',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                    onClick={() => {
+                      if (url) void openExternalUrl(url);
+                    }}
+                  >
+                    {name}
+                    {url ? <ArrowUpRight size={11} /> : null}
+                  </Tag>
+                ))}
+              </div>
+              {activeConversationRole.recommendedSkillDescription ? (
+                <Typography.Text type="secondary" style={bodyTextStyle}>
+                  {activeConversationRole.recommendedSkillDescription}
+                </Typography.Text>
+              ) : null}
+              {availableSkillCount === 0 ? (
+                <Alert
+                  type="info"
+                  showIcon
+                  message={<span style={bodyTextStyle}>{t('chat.roleSkillsUnavailableHint')}</span>}
+                />
+              ) : null}
+            </>
+          ) : (
+            <Alert
+              type="info"
+              showIcon
+              message={<span style={bodyTextStyle}>{t('chat.roleNoRecommendedSkills')}</span>}
+            />
+          )}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+          <Button
+            size="small"
+            onClick={() => setActivePage('skills')}
+            style={{ fontSize: 12, lineHeight: 1.2 }}
+          >
+            {t('commandPalette.goToSkills')}
+          </Button>
+        </div>
+      </div>
+    );
+  }, [
+    activeConversationRole,
+    activeRoleRecommendedSkills,
+    setActivePage,
+    t,
+    token.colorText,
+    token.colorTextSecondary,
+  ]);
 
   const handleOpenConversationSummary = useCallback(async () => {
     if (!activeConversationId) return;
@@ -4254,27 +4392,38 @@ export function ChatView() {
               <div className="flex-1" />
 
               {activeConversation && (
-                <Dropdown
-                  menu={{
-                    items: roleMenuItems,
-                    onClick: ({ key }) => {
-                      void handleSelectConversationRole(key === '__clear__' ? null : String(key));
-                    },
-                  }}
-                  trigger={['click']}
-                >
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<Bot size={11} />}
-                    style={{ height: 24, paddingInline: 4, fontSize: 11, fontWeight: 500 }}
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <Dropdown
+                    menu={{
+                      items: roleMenuItems,
+                      onClick: ({ key }) => {
+                        void handleSelectConversationRole(key === '__clear__' ? null : String(key));
+                      },
+                    }}
+                    trigger={['click']}
                   >
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, lineHeight: 1 }}>
-                      {activeConversationRole?.name ?? t('chat.selectRole')}
-                      <ChevronDown size={11} />
-                    </span>
-                  </Button>
-                </Dropdown>
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<Bot size={11} />}
+                      style={{ height: 24, paddingInline: 4, fontSize: 11, fontWeight: 500 }}
+                    >
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, lineHeight: 1 }}>
+                        {activeConversationRole?.name ?? t('chat.selectRole')}
+                        <ChevronDown size={11} />
+                      </span>
+                    </Button>
+                  </Dropdown>
+                  {activeConversationRole ? (
+                    <Popover
+                      content={roleDetailsContent}
+                      trigger="click"
+                      placement="bottomRight"
+                    >
+                      <Button type="text" size="small" icon={<Sparkles size={12} />} />
+                    </Popover>
+                  ) : null}
+                </div>
               )}
               {showHeaderModelSelector && <ModelSelector />}
               {activeConversation && (
@@ -4308,27 +4457,38 @@ export function ChatView() {
               <Typography.Text type="secondary">{t('chat.welcome')}</Typography.Text>
               <div className="flex-1" />
               {activeConversation && (
-                <Dropdown
-                  menu={{
-                    items: roleMenuItems,
-                    onClick: ({ key }) => {
-                      void handleSelectConversationRole(key === '__clear__' ? null : String(key));
-                    },
-                  }}
-                  trigger={['click']}
-                >
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<Bot size={11} />}
-                    style={{ height: 24, paddingInline: 4, fontSize: 11, fontWeight: 500 }}
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <Dropdown
+                    menu={{
+                      items: roleMenuItems,
+                      onClick: ({ key }) => {
+                        void handleSelectConversationRole(key === '__clear__' ? null : String(key));
+                      },
+                    }}
+                    trigger={['click']}
                   >
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, lineHeight: 1 }}>
-                      {activeConversationRole?.name ?? t('chat.selectRole')}
-                      <ChevronDown size={11} />
-                    </span>
-                  </Button>
-                </Dropdown>
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<Bot size={11} />}
+                      style={{ height: 24, paddingInline: 4, fontSize: 11, fontWeight: 500 }}
+                    >
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, lineHeight: 1 }}>
+                        {activeConversationRole?.name ?? t('chat.selectRole')}
+                        <ChevronDown size={11} />
+                      </span>
+                    </Button>
+                  </Dropdown>
+                  {activeConversationRole ? (
+                    <Popover
+                      content={roleDetailsContent}
+                      trigger="click"
+                      placement="bottomRight"
+                    >
+                      <Button type="text" size="small" icon={<Sparkles size={12} />} />
+                    </Popover>
+                  ) : null}
+                </div>
               )}
               {showHeaderModelSelector && <ModelSelector />}
             </>

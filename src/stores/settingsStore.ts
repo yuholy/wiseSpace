@@ -67,7 +67,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   gateway_force_ssl: false,
   always_on_top: false,
   tray_enabled: true,
-  global_shortcuts_enabled: true,
+  global_shortcuts_enabled: false,
   shortcut_registration_logs_enabled: false,
   shortcut_trigger_toast_enabled: false,
   notifications_enabled: true,

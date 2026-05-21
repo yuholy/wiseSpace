@@ -10,7 +10,6 @@ import { GlobalCopyMenu } from '@/components/layout/GlobalCopyMenu';
 import { useCommandPalette } from '@/hooks/useCommandPalette';
 import { useUIStore, useSettingsStore, useConversationStore } from '@/stores';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
-import { useGlobalShortcutManager } from '@/hooks/useGlobalShortcutManager';
 import { useResolvedDarkMode } from '@/hooks/useResolvedDarkMode';
 import { useGlobalOverlayScrollbars } from '@/hooks/useGlobalOverlayScrollbars';
 import { useProviderDeepLink } from '@/hooks/useProviderDeepLink';
@@ -130,7 +129,6 @@ function AppRoot() {
   }, []);
 
   useKeyboardShortcuts();
-  useGlobalShortcutManager();
   useGlobalOverlayScrollbars();
 
   // Load persisted settings from backend on startup, then apply native settings
