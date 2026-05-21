@@ -7,14 +7,13 @@ import {
   DisplaySettings,
   ProxySettings,
   ShortcutSettings,
-  DataManager,
+  DataStorageSettings,
   AboutPage,
   SearchProviderSettings,
   McpServerSettings,
   AgentExecutorSettings,
   BackupCenter,
   RoleManagementSettings,
-  StorageSpaceManager,
 } from '@/components/settings';
 import { DefaultModelSettings } from '@/components/settings/DefaultModelSettings';
 import { ConversationSettings } from '@/components/settings/ConversationSettings';
@@ -29,8 +28,9 @@ const SECTION_COMPONENTS: Record<SettingsSection, React.ComponentType> = {
   display: DisplaySettings,
   proxy: ProxySettings,
   shortcuts: ShortcutSettings,
-  data: DataManager,
-  storage: StorageSpaceManager,
+  data: DataStorageSettings,
+  storage: DataStorageSettings,
+  dataStorage: DataStorageSettings,
   about: AboutPage,
   searchProviders: SearchProviderSettings,
   mcpServers: McpServerSettings,

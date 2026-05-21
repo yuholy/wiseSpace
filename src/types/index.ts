@@ -619,7 +619,7 @@ export interface DrawingEditInput extends DrawingGenerateInput {
 export interface DrawingMaskEditInput extends DrawingEditInput {
   mask_file_id: string;
 }
-export type SettingsSection = 'providers' | 'defaultModel' | 'conversationSettings' | 'roles' | 'general' | 'display' | 'proxy' | 'shortcuts' | 'data' | 'storage' | 'about' | 'searchProviders' | 'mcpServers' | 'agentExecutors' | 'backup';
+export type SettingsSection = 'providers' | 'defaultModel' | 'conversationSettings' | 'roles' | 'general' | 'display' | 'proxy' | 'shortcuts' | 'data' | 'storage' | 'dataStorage' | 'about' | 'searchProviders' | 'mcpServers' | 'agentExecutors' | 'backup';
 
 // === Files Module ===
 export type FileCategory = 'images' | 'files';

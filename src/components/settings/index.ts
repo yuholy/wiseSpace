@@ -9,6 +9,7 @@ export { DisplaySettings } from './DisplaySettings';
 export { ProxySettings } from './ProxySettings';
 export { ShortcutSettings } from './ShortcutSettings';
 export { DataManager } from './DataManager';
+export { DataStorageSettings } from './DataStorageSettings';
 export { AboutPage } from './AboutPage';
 export { default as SearchProviderSettings } from './SearchProviderSettings';
 export { default as McpServerSettings } from './McpServerSettings';

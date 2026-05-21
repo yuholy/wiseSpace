@@ -7,7 +7,11 @@ import { SettingsGroup } from './SettingsGroup';
 
 const { Text } = Typography;
 
-export function DataManager() {
+interface DataManagerProps {
+  embedded?: boolean;
+}
+
+export function DataManager({ embedded = false }: DataManagerProps) {
   const { t } = useTranslation();
   const { message } = App.useApp();
 
@@ -117,7 +121,7 @@ export function DataManager() {
   const rowStyle = { padding: '4px 0' };
 
   return (
-    <div className="p-6 pb-12">
+    <div className={embedded ? '' : 'p-6 pb-12'}>
       <SettingsGroup title={t('settings.groupData')}>
         <div style={rowStyle} className="flex items-center justify-between">
           <span>{t('settings.exportData')}</span>

@@ -43,7 +43,11 @@ const BUCKET_ICONS: Record<string, React.ReactNode> = {
   backups: <CloudUpload size={20} />,
 };
 
-export function StorageSpaceManager() {
+interface StorageSpaceManagerProps {
+  embedded?: boolean;
+}
+
+export function StorageSpaceManager({ embedded = false }: StorageSpaceManagerProps) {
   const { t } = useTranslation();
   const { message, modal } = App.useApp();
   const [inventory, setInventory] = useState<StorageInventory | null>(null);
@@ -179,7 +183,7 @@ export function StorageSpaceManager() {
   const totalFiles = inventory?.buckets.reduce((sum, b) => sum + b.file_count, 0) ?? 0;
 
   return (
-    <div className="p-6 pb-12">
+    <div className={embedded ? '' : 'p-6 pb-12'}>
       {loading ? (
         <div className="flex justify-center py-12">
           <Spin />
