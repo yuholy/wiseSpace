@@ -102,9 +102,9 @@ Unavailable items should be visible but disabled, with a setup hint.
 Agent mode status line should show:
 
 ```text
-Agent è·¯ OpenCode
-Workspace è·¯ D:/project/example
-Permission è·¯ Default
+Agent è·?OpenCode
+Workspace è·?D:/project/example
+Permission è·?Default
 ```
 
 Keep it compact. Long paths should truncate.
@@ -252,7 +252,7 @@ Future adapters:
 - Codex adapter.
 
 They should use the same task/result standard from
-`docs/agent-connector-standard.md`, but may execute locally through a CLI rather
+`docs/agent/agent-connector-standard.md`, but may execute locally through a CLI rather
 than HTTP.
 
 ### 7.3 External Connector
@@ -357,4 +357,5 @@ Recommended first code executor:
   only from a secondary "More executors" menu?
 - Should executor selection be per conversation, per workspace, or global?
 - How should wiseSpace summarize file changes from third-party code agents?
+
 

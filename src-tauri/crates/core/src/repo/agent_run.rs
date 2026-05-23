@@ -12,6 +12,7 @@ fn model_to_agent_run(model: agent_runs::Model) -> AgentRun {
     AgentRun {
         id: model.id,
         conversation_id: model.conversation_id,
+        workspace_id: model.workspace_id,
         profile_id: model.profile_id,
         runner_kind: model.runner_kind,
         provider_id: model.provider_id,
@@ -69,6 +70,11 @@ pub async fn create_run(
     sdk_context_json: Option<&str>,
     workspace_root: Option<&str>,
 ) -> Result<AgentRun> {
+    let workspace = crate::repo::workspace::ensure_canonical_workspace_for_conversation(
+        db,
+        conversation_id,
+    )
+    .await?;
     let now = now_string();
     let resume_capability = match runner_kind {
         "sdk" => "resumable",
@@ -84,6 +90,7 @@ pub async fn create_run(
     let model = agent_runs::ActiveModel {
         id: Set(gen_id()),
         conversation_id: Set(conversation_id.to_string()),
+        workspace_id: Set(Some(workspace.id)),
         profile_id: Set(profile_id.to_string()),
         runner_kind: Set(runner_kind.to_string()),
         provider_id: Set(provider_id.map(ToString::to_string)),

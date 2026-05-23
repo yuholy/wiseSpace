@@ -2,6 +2,13 @@
 
 ## 2026-05-18
 
+### chore(release): publish GitHub releases without installer assets
+- Scope: aligned the repository release policy so GitHub Releases publish version notes and tags only, without uploading installer bundles.
+- Release policy:
+  - Updated `.github/workflows/release.yml` so build jobs no longer attach Windows portable archives or Linux package artifacts to GitHub Releases.
+  - Kept draft-note generation and final release publication intact, so tagged releases still produce a formal GitHub Release page.
+  - Release assets should now be handled outside the GitHub Release workflow when needed; the default project rule is release metadata only.
+
 ### feat(agent): ship DeepSeek-TUI, multimodal fallback, backup cleanup, and chat rendering fixes
 - Scope: integrated DeepSeek-TUI as a local coding executor, added multimodal fallback routing for non-vision chat models, reduced backup bloat, and tightened chat/task rendering behavior.
 - Agent runtime:
@@ -9,16 +16,16 @@
   - Wired DeepSeek runtime approval and interrupt events back into wiseSpace permission and interrupted-run flows.
   - Completed local agent attachment passthrough so uploaded files reach runtime context instead of stopping at optimistic UI state.
 - Chat and settings:
-  - Added multimodal fallback settings under Default Models and surfaced a lightweight “vision fallback used” display tag in chat output.
-  - Normalized malformed/repeated `<think>` content in assistant rendering and delayed heavy markdown re-rendering when returning to chat, reducing visible stalls and repeated “thinking complete” blocks.
+  - Added multimodal fallback settings under Default Models and surfaced a lightweight “vision fallback used�?display tag in chat output.
+  - Normalized malformed/repeated `<think>` content in assistant rendering and delayed heavy markdown re-rendering when returning to chat, reducing visible stalls and repeated “thinking complete�?blocks.
   - Simplified chat sidebar and input labels, removed stale Claude skill and Beta surface copy, and cleaned up workspace display to show concise folder names with full-path tooltips.
 - Backup and storage:
   - Fixed ZIP backups to avoid double-packing `documents/workspace` and standalone `workspace` content.
   - Made workspace backup respect project `.gitignore` rules and added default excludes for heavy directories such as `node_modules`, `venv`, `dist`, `build`, and `.git`.
   - Added cleanup for leaked `_webdav_temp_*.db` files and serialized backup manifest sync with duplicate-manifest pruning so Backup Center stays responsive.
 - Docs:
-  - Added `docs/deepseek-tui-integration-plan.md` and `docs/s3-backup-sync-plan.md`.
-  - Extended `docs/optimization-backlog.md` with S3-compatible backup/sync planning.
+  - Added `docs/agent/deepseek-tui-integration-plan.md` and `docs/planning/s3-backup-sync-plan.md`.
+  - Extended `docs/planning/optimization-backlog.md` with S3-compatible backup/sync planning.
 - Verification:
   - `pnpm typecheck`
   - `pnpm test:run src/components/chat/__tests__/toolCallDisplay.test.tsx src/components/chat/__tests__/chatStreaming.test.ts src/lib/__tests__/chatMarkdown.test.ts`
@@ -62,8 +69,8 @@
   - Split interrupted and cancelled task handling from waiting and failed buckets in the task center.
   - Restored visible Chinese labels on the tasks page and removed corrupted copy introduced by prior encoding issues.
 - Docs:
-  - Added local agent issue templates under `docs/local-agent-issue-templates.md`.
-  - Refreshed `docs/agent-strengthening-plan.md` with the latest local-agent roadmap context.
+  - Added local agent issue templates under `docs/agent/local-agent-issue-templates.md`.
+  - Refreshed `docs/agent/agent-strengthening-plan.md` with the latest local-agent roadmap context.
 - Verification:
   - `pnpm typecheck`
   - `pnpm test:run src/lib/__tests__/agentRunStatus.test.ts src/stores/__tests__/agentStore.test.ts src/stores/__tests__/conversationStore.agent.test.ts`
@@ -71,3 +78,4 @@
   - `cargo test --manifest-path src-tauri\Cargo.toml agent_runtime::runtime -- --nocapture`
   - `cargo test --manifest-path src-tauri\Cargo.toml -p wisespace-core --lib mark_incomplete_runs_interrupted_marks_sdk_runs_resumable_when_context_exists -- --nocapture`
   - `cargo test --manifest-path src-tauri\Cargo.toml -p wisespace-core --lib mark_incomplete_runs_interrupted_marks_sdk_runs_replay_only_without_context -- --nocapture`
+

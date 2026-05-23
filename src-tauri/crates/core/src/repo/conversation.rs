@@ -11,6 +11,7 @@ use crate::utils::{gen_id, now_ts};
 fn conversation_from_entity(m: conversations::Model) -> Conversation {
     Conversation {
         id: m.id,
+        workspace_id: m.workspace_id,
         title: m.title,
         model_id: m.model_id,
         provider_id: m.provider_id,
@@ -146,6 +147,8 @@ pub async fn create_conversation_with_source_and_mode(
     .insert(db)
     .await?;
 
+    let _ = super::workspace::ensure_canonical_workspace_for_conversation(db, &id).await?;
+
     get_conversation(db, &id).await
 }
 
@@ -161,6 +164,7 @@ pub async fn update_conversation(
 
     let now = now_ts();
     let existing = conversation_from_entity(row.clone());
+    let should_sync_workspace = input.title.is_some();
 
     let title = input.title.unwrap_or(existing.title);
     let provider_id = input.provider_id.unwrap_or(existing.provider_id);
@@ -231,6 +235,10 @@ pub async fn update_conversation(
     }
     am.updated_at = Set(now);
     am.update(db).await?;
+
+    if should_sync_workspace {
+        let _ = super::workspace::sync_workspace_metadata_from_conversation(db, id).await?;
+    }
 
     get_conversation(db, id).await
 }
@@ -388,10 +396,13 @@ pub async fn branch_conversation(
         mode: Set(source.mode.clone()),
         created_at: Set(now),
         updated_at: Set(now),
+        workspace_id: Set(None),
         ..Default::default()
     }
     .insert(db)
     .await?;
+
+    let _ = super::workspace::ensure_canonical_workspace_for_conversation(db, &new_id).await?;
 
     // 7. Copy messages — assign new IDs and remap parent_message_id references
     let mut id_map = std::collections::HashMap::new();

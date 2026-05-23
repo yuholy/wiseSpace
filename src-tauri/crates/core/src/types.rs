@@ -273,6 +273,7 @@ pub struct ModelParamOverrides {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Conversation {
     pub id: String,
+    pub workspace_id: Option<String>,
     pub title: String,
     pub model_id: String,
     pub provider_id: String,
@@ -426,6 +427,18 @@ pub struct UpdateConversationInput {
     pub parent_conversation_id: Option<Option<String>>,
     pub mode: Option<String>,
     pub source: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Workspace {
+    pub id: String,
+    pub slug: String,
+    pub name: String,
+    pub root_path: String,
+    pub source: String,
+    pub description: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1192,6 +1205,7 @@ pub struct ToolExecution {
 pub struct AgentProfile {
     pub id: String,
     pub conversation_id: String,
+    pub workspace_id: Option<String>,
     pub workspace_root: Option<String>,
     pub permission_mode: String,
     pub default_runner_kind: String,
@@ -1206,6 +1220,7 @@ pub struct AgentProfile {
 pub struct AgentRun {
     pub id: String,
     pub conversation_id: String,
+    pub workspace_id: Option<String>,
     pub profile_id: String,
     pub runner_kind: String,
     pub provider_id: Option<String>,
@@ -1256,6 +1271,7 @@ pub struct AgentRunEvent {
 pub struct AgentSession {
     pub id: String,
     pub conversation_id: String,
+    pub workspace_id: Option<String>,
     pub cwd: Option<String>,
     pub permission_mode: String,
     pub runtime_status: String,
@@ -1805,6 +1821,7 @@ pub struct UpdateExternalAgentInput {
 pub struct AgentTask {
     pub id: String,
     pub conversation_id: Option<String>,
+    pub workspace_id: Option<String>,
     pub source_message_id: Option<String>,
     pub external_agent_id: String,
     pub external_task_id: Option<String>,

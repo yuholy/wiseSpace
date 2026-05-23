@@ -25,3 +25,4 @@ pub mod settings;
 pub mod skill;
 pub mod stored_file;
 pub mod tool_execution;
+pub mod workspace;

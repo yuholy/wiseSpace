@@ -392,6 +392,7 @@ mod tests {
             size_bytes: 1024,
             storage_path: path.to_string(),
             conversation_id: None,
+            workspace_id: None,
             created_at: "2024-01-01T00:00:00Z".to_string(),
         }
     }

@@ -192,7 +192,7 @@ Frontend types should be extended to reflect the same fields.
 
 ## Connection Validation Requirements
 
-Avoid false-positive “connection successful” checks.
+Avoid false-positive “connection successful�?checks.
 
 The check flow should validate at least:
 
@@ -279,3 +279,4 @@ When implementation starts, turn this plan into an executable issue set:
 - scheduler
 - Backup Center UI
 - regression and compatibility tests
+

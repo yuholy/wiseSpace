@@ -8,8 +8,8 @@ but do not need to block the current mainline.
 - Move wiseSpace toward the local-agent-first roadmap.
   The remote OpenClaw integration is useful as a connector, but the main product
   experience should be wiseSpace's native local agent. See
-  `docs/local-agent-first-roadmap.md` and
-  `docs/agent-executor-selector-design.md`.
+  `docs/agent/local-agent-first-roadmap.md` and
+  `docs/agent/agent-executor-selector-design.md`.
 
   Scope:
   - Keep OpenClaw as an optional connector.
@@ -25,7 +25,7 @@ but do not need to block the current mainline.
   make agents feel like a coherent execution mode inside chat.
 
   Scope:
-  - Follow `docs/agent-connector-standard.md`.
+  - Follow `docs/agent/agent-connector-standard.md`.
   - Keep raw Sync/Retry/event controls in diagnostics, not in the main chat
     viewport.
   - Insert completed external-agent results as normal assistant messages.
@@ -163,3 +163,4 @@ but do not need to block the current mainline.
   3. Local embedding setup presets
   4. Optional no-embedding fallback
   5. S3-compatible remote backup/sync MVP
+

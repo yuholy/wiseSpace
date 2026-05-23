@@ -11,3 +11,4 @@ Completed:
 Follow-up ideas:
 - Continue reviewing third-party vendored or generated artifacts separately if upstream branding needs to be updated there too
 - Re-run a repo-wide legacy scan before each tagged release
+

@@ -12,6 +12,7 @@ fn model_to_agent_profile(model: agent_profiles::Model) -> AgentProfile {
     AgentProfile {
         id: model.id,
         conversation_id: model.conversation_id,
+        workspace_id: model.workspace_id,
         workspace_root: model.workspace_root,
         permission_mode: model.permission_mode,
         default_runner_kind: model.default_runner_kind,
@@ -56,6 +57,11 @@ pub async fn upsert_profile(
     default_provider_id: Option<&str>,
     default_model_id: Option<&str>,
 ) -> Result<AgentProfile> {
+    let workspace = crate::repo::workspace::ensure_canonical_workspace_for_conversation(
+        db,
+        conversation_id,
+    )
+    .await?;
     let existing = agent_profiles::Entity::find()
         .filter(agent_profiles::Column::ConversationId.eq(conversation_id))
         .one(db)
@@ -63,7 +69,11 @@ pub async fn upsert_profile(
     let now = now_string();
 
     if let Some(model) = existing {
+        let existing_workspace_id = model.workspace_id.clone();
         let mut am: agent_profiles::ActiveModel = model.into();
+        if existing_workspace_id != Some(workspace.id.clone()) {
+            am.workspace_id = Set(Some(workspace.id.clone()));
+        }
         if let Some(value) = workspace_root {
             am.workspace_root = Set(Some(value.to_string()));
         }
@@ -87,6 +97,7 @@ pub async fn upsert_profile(
     let model = agent_profiles::ActiveModel {
         id: Set(gen_id()),
         conversation_id: Set(conversation_id.to_string()),
+        workspace_id: Set(Some(workspace.id)),
         workspace_root: Set(Some(
             workspace_root
                 .map(ToString::to_string)

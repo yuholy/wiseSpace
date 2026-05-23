@@ -26,6 +26,7 @@ fn agent_task_from_model(model: agent_tasks::Model) -> AgentTask {
     AgentTask {
         id: model.id,
         conversation_id: model.conversation_id,
+        workspace_id: model.workspace_id,
         source_message_id: model.source_message_id,
         external_agent_id: model.external_agent_id,
         external_task_id: model.external_task_id,
@@ -167,11 +168,20 @@ pub async fn create_agent_task(
     title: &str,
     request_payload_json: &str,
 ) -> Result<AgentTask> {
+    let workspace_id = match conversation_id {
+        Some(value) => Some(
+            crate::repo::workspace::ensure_canonical_workspace_for_conversation(db, value)
+                .await?
+                .id,
+        ),
+        None => None,
+    };
     let id = gen_id();
     let now = now_ts();
     agent_tasks::ActiveModel {
         id: Set(id.clone()),
         conversation_id: Set(conversation_id.map(|value| value.to_string())),
+        workspace_id: Set(workspace_id),
         source_message_id: Set(source_message_id.map(|value| value.to_string())),
         external_agent_id: Set(external_agent_id.to_string()),
         external_task_id: Set(None),

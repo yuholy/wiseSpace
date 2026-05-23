@@ -88,3 +88,4 @@ Once the wiseSpace flow is validated, keep the same wiseSpace usage path and cha
 - `Auth`: set according to the real backend
 
 That lets us validate wiseSpace first, then replace the mock transport with the real one without changing the chat-side workflow.
+

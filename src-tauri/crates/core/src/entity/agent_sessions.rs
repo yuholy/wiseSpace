@@ -7,6 +7,7 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: String,
     pub conversation_id: String,
+    pub workspace_id: Option<String>,
     pub cwd: Option<String>,
     pub permission_mode: String,
     pub runtime_status: String,

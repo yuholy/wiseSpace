@@ -137,6 +137,7 @@ export interface ConversationCategory {
 
 export interface Conversation {
   id: string;
+  workspace_id?: string | null;
   title: string;
   model_id: string;
   provider_id: string;
@@ -162,6 +163,17 @@ export interface Conversation {
   message_count: number;
   created_at: number;
   updated_at: number;
+}
+
+export interface Workspace {
+  id: string;
+  slug: string;
+  name: string;
+  root_path: string;
+  source: string;
+  description?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ToolCall {

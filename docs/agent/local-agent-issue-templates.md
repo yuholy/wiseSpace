@@ -5,7 +5,7 @@ issue templates. It is intended to be used together with:
 
 - [wiseSpace Agent Strengthening Plan](./agent-strengthening-plan.md)
 - [wiseSpace Local-Agent-First Roadmap](./local-agent-first-roadmap.md)
-- [wiseSpace Optimization Backlog](./optimization-backlog.md)
+- [wiseSpace Optimization Backlog](../planning/optimization-backlog.md)
 
 Unless otherwise noted, all issues here assume the current phase keeps
 `wiseSpace Local` as the primary execution path and does not expand external
@@ -24,8 +24,8 @@ main execution document for the current local-agent track.
 
 ### Modules
 
-- `docs/agent-strengthening-plan.md`
-- `docs/CHANGE_LOG.md`
+- `docs/agent/agent-strengthening-plan.md`
+- `docs/project/CHANGE_LOG.md`
 - Optional: `docs/local-agent-status.md`
 
 ### Tasks
@@ -58,8 +58,8 @@ main execution document for the current local-agent track.
 - Manual Markdown rendering check.
 - Manual encoding check on Windows.
 - Terminology consistency review against:
-  - `docs/local-agent-first-roadmap.md`
-  - `docs/optimization-backlog.md`
+  - `docs/agent/local-agent-first-roadmap.md`
+  - `docs/planning/optimization-backlog.md`
 
 ## Issue 2
 
@@ -504,3 +504,4 @@ available.
 - Memory retrieval without embeddings.
 - Auto-return to normal retrieval once embeddings are configured.
 - UI state switches correctly.
+

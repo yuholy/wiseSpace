@@ -245,6 +245,7 @@ mod tests {
             size_bytes: Set(100),
             storage_path: Set(path.into()),
             conversation_id: Set(conv.map(String::from)),
+            workspace_id: Set(None),
             created_at: Set("2024-01-01".into()),
         };
         am.insert(db).await.unwrap();

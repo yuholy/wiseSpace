@@ -27,6 +27,7 @@ pub struct Model {
     pub is_pinned: i32,
     pub is_archived: i32,
     pub workspace_snapshot_json: String,
+    pub workspace_id: Option<String>,
     pub active_branch_id: Option<String>,
     pub active_artifact_id: Option<String>,
     pub research_mode: i32,

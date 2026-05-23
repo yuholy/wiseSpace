@@ -3,10 +3,22 @@ use std::path::{Path, PathBuf};
 use wisespace_core::repo::{agent_profile, agent_run, agent_session};
 use wisespace_core::types::{AgentProfile, AgentSession};
 
-fn default_workspace_root(conversation_id: &str) -> String {
-    wisespace_core::storage_paths::conversation_workspace_dir(conversation_id)
-        .to_string_lossy()
-        .to_string()
+async fn default_workspace_root(
+    db: &DatabaseConnection,
+    conversation_id: &str,
+) -> Result<String, String> {
+    let title = wisespace_core::repo::conversation::get_conversation(db, conversation_id)
+        .await
+        .map(|conversation| conversation.title)
+        .unwrap_or_default();
+
+    let path = if title.trim().is_empty() {
+        wisespace_core::storage_paths::conversation_workspace_dir(conversation_id)
+    } else {
+        wisespace_core::storage_paths::titled_conversation_workspace_dir(&title, conversation_id)
+    };
+
+    Ok(path.to_string_lossy().to_string())
 }
 
 fn legacy_workspace_root(conversation_id: &str) -> PathBuf {
@@ -130,7 +142,7 @@ async fn ensure_profile_workspace_location(
     db: &DatabaseConnection,
     profile: AgentProfile,
 ) -> Result<AgentProfile, String> {
-    let desired = default_workspace_root(&profile.conversation_id);
+    let desired = default_workspace_root(db, &profile.conversation_id).await?;
     let current = profile.workspace_root.clone().unwrap_or_default();
 
     if current.is_empty() {
@@ -230,7 +242,7 @@ pub async fn get_or_create_profile(
     let profile = agent_profile::upsert_profile(
         db,
         conversation_id,
-        Some(&default_workspace_root(conversation_id)),
+        Some(&default_workspace_root(db, conversation_id).await?),
         Some("default"),
         Some("sdk"),
         None,
@@ -240,6 +252,106 @@ pub async fn get_or_create_profile(
     .map_err(|e| e.to_string())?;
 
     ensure_profile_workspace_location(db, profile).await
+}
+
+pub async fn sync_workspace_root_to_conversation_title(
+    db: &DatabaseConnection,
+    conversation_id: &str,
+) -> Result<Option<String>, String> {
+    let Some(profile) = agent_profile::get_profile_by_conversation_id(db, conversation_id)
+        .await
+        .map_err(|e| e.to_string())?
+    else {
+        return Ok(None);
+    };
+
+    let Some(current_root) = profile.workspace_root.clone() else {
+        return Ok(None);
+    };
+
+    let current_path = decode_workspace_root(&current_root);
+    let legacy_path = legacy_workspace_root(conversation_id);
+    let default_id_path = wisespace_core::storage_paths::conversation_workspace_dir(conversation_id);
+    let desired = default_workspace_root(db, conversation_id).await?;
+    let desired_path = decode_workspace_root(&desired);
+
+    if desired_path == current_path {
+        return Ok(Some(desired));
+    }
+
+    let current_parent = current_path.parent().map(|value| value.to_path_buf());
+    let workspace_root = wisespace_core::storage_paths::workspace_root();
+    let is_managed_default = current_path == legacy_path
+        || current_path == default_id_path
+        || current_parent.as_ref() == Some(&workspace_root);
+
+    if !is_managed_default {
+        return Ok(Some(current_root));
+    }
+
+    if desired_path.exists() && desired_path != current_path {
+        let updated = agent_profile::upsert_profile(
+            db,
+            conversation_id,
+            Some(&desired),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        let _ = agent_session::upsert_agent_session(db, conversation_id, Some(&desired), None).await;
+        return Ok(updated.workspace_root);
+    }
+
+    if current_path.exists() && current_path != desired_path {
+        if let Some(parent) = desired_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                format!(
+                    "Failed to create workspace parent '{}': {}",
+                    parent.display(),
+                    e
+                )
+            })?;
+        }
+
+        match std::fs::rename(&current_path, &desired_path) {
+            Ok(_) => {}
+            Err(_) => {
+                copy_dir_recursive(&current_path, &desired_path)?;
+                std::fs::remove_dir_all(&current_path).map_err(|e| {
+                    format!(
+                        "Failed to remove old workspace '{}' after copy: {}",
+                        current_path.display(),
+                        e
+                    )
+                })?;
+            }
+        }
+    } else {
+        std::fs::create_dir_all(&desired_path).map_err(|e| {
+            format!(
+                "Failed to create agent workspace '{}': {}",
+                desired_path.display(),
+                e
+            )
+        })?;
+    }
+
+    let updated = agent_profile::upsert_profile(
+        db,
+        conversation_id,
+        Some(&desired),
+        None,
+        None,
+        None,
+        None,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    let _ = agent_session::upsert_agent_session(db, conversation_id, Some(&desired), None).await;
+    Ok(updated.workspace_root)
 }
 
 pub async fn list_profiles(db: &DatabaseConnection) -> Result<Vec<AgentProfile>, String> {
@@ -300,6 +412,7 @@ pub async fn get_compat_session(
     Ok(Some(AgentSession {
         id: profile.id.clone(),
         conversation_id: profile.conversation_id.clone(),
+        workspace_id: profile.workspace_id.clone(),
         cwd: profile.workspace_root.clone(),
         permission_mode: profile.permission_mode.clone(),
         runtime_status,
@@ -336,11 +449,16 @@ mod tests {
 
     #[test]
     fn default_workspace_root_uses_documents_workspace_dir() {
-        let root = default_workspace_root("conv-xyz");
-        let expected = wisespace_core::storage_paths::conversation_workspace_dir("conv-xyz")
-            .to_string_lossy()
-            .to_string();
-        assert_eq!(root, expected);
+        let db = tokio::runtime::Runtime::new().unwrap();
+        db.block_on(async {
+            let pool = wisespace_core::db::create_test_pool().await.unwrap();
+            let db = pool.conn;
+            let root = default_workspace_root(&db, "conv-xyz").await.unwrap();
+            let expected = wisespace_core::storage_paths::conversation_workspace_dir("conv-xyz")
+                .to_string_lossy()
+                .to_string();
+            assert_eq!(root, expected);
+        });
     }
 
     #[tokio::test]
@@ -388,5 +506,38 @@ mod tests {
         let _ = std::fs::remove_dir_all(&docs_root);
         let _ = std::fs::remove_dir_all(&old_workspace);
         let _ = std::fs::remove_dir_all(&new_workspace);
+    }
+
+    #[tokio::test]
+    async fn get_or_create_profile_uses_readable_workspace_name_from_title() {
+        let pool = wisespace_core::db::create_test_pool().await.unwrap();
+        let db = pool.conn;
+        let docs_root = std::env::temp_dir().join(unique_id("wisespace_docs_title_root"));
+        let _ = std::fs::remove_dir_all(&docs_root);
+        wisespace_core::storage_paths::set_documents_root(docs_root.clone());
+
+        let conversation = wisespace_core::repo::conversation::create_conversation(
+            &db,
+            "项目排期讨论",
+            "model-1",
+            "provider-1",
+            None,
+        )
+        .await
+        .unwrap();
+
+        let profile = get_or_create_profile(&db, &conversation.id).await.unwrap();
+        let expected = wisespace_core::storage_paths::titled_conversation_workspace_dir(
+            "项目排期讨论",
+            &conversation.id,
+        );
+
+        assert_eq!(
+            profile.workspace_root.as_deref(),
+            Some(expected.to_string_lossy().as_ref())
+        );
+
+        wisespace_core::storage_paths::clear_documents_root_override();
+        let _ = std::fs::remove_dir_all(&docs_root);
     }
 }

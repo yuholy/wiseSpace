@@ -495,9 +495,9 @@ Make the integration understandable for future maintainers.
 
 Modules:
 
-- `docs/agent-strengthening-plan.md`
-- `docs/deepseek-tui-integration-plan.md`
-- `docs/CHANGE_LOG.md`
+- `docs/agent/agent-strengthening-plan.md`
+- `docs/agent/deepseek-tui-integration-plan.md`
+- `docs/project/CHANGE_LOG.md`
 
 Tasks:
 
@@ -598,3 +598,4 @@ The smallest version worth shipping should include:
 
 At that point, wiseSpace will already support continuous code-task sessions
 through DeepSeek-TUI without embedding the raw TUI.
+

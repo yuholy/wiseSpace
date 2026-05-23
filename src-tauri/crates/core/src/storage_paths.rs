@@ -57,6 +57,56 @@ pub fn conversation_workspace_dir(conversation_id: &str) -> PathBuf {
     workspace_root().join(conversation_id)
 }
 
+/// Builds a readable workspace directory name from a title plus a short
+/// conversation suffix for deterministic uniqueness.
+pub fn workspace_dir_name_from_title(title: &str, conversation_id: &str) -> String {
+    let sanitized: String = title
+        .trim()
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else if c.is_whitespace() || matches!(c, '-' | '_' | '.') {
+                '-'
+            } else {
+                '-'
+            }
+        })
+        .collect();
+
+    let compacted = sanitized
+        .split('-')
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+
+    let base = if compacted.is_empty() {
+        "workspace".to_string()
+    } else {
+        compacted.chars().take(40).collect::<String>()
+    };
+
+    let suffix: String = conversation_id
+        .chars()
+        .rev()
+        .take(6)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+
+    if suffix.is_empty() {
+        base
+    } else {
+        format!("{}-{}", base, suffix)
+    }
+}
+
+/// Returns the readable per-conversation workspace directory under workspace root.
+pub fn titled_conversation_workspace_dir(title: &str, conversation_id: &str) -> PathBuf {
+    workspace_root().join(workspace_dir_name_from_title(title, conversation_id))
+}
+
 /// Returns the typed subdirectory for a given MIME type.
 /// - "image/*" → "images"
 /// - everything else → "files"
@@ -251,6 +301,32 @@ mod tests {
         assert_eq!(
             conversation_workspace_dir("conv-123"),
             documents_root().join("workspace").join("conv-123")
+        );
+    }
+
+    #[test]
+    fn workspace_dir_name_from_title_builds_readable_name() {
+        assert_eq!(
+            workspace_dir_name_from_title("My Project Workspace", "conv-abcdef"),
+            "my-project-workspace-abcdef"
+        );
+    }
+
+    #[test]
+    fn workspace_dir_name_from_title_falls_back_when_title_empty() {
+        assert_eq!(
+            workspace_dir_name_from_title("   ", "conv-abcdef"),
+            "workspace-abcdef"
+        );
+    }
+
+    #[test]
+    fn titled_conversation_workspace_dir_is_under_workspace_root() {
+        assert_eq!(
+            titled_conversation_workspace_dir("Project Alpha", "conv-123456"),
+            documents_root()
+                .join("workspace")
+                .join("project-alpha-123456")
         );
     }
 

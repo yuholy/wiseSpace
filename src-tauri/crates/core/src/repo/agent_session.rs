@@ -9,6 +9,7 @@ fn model_to_agent_session(model: agent_sessions::Model) -> AgentSession {
     AgentSession {
         id: model.id,
         conversation_id: model.conversation_id,
+        workspace_id: model.workspace_id,
         cwd: model.cwd,
         permission_mode: model.permission_mode,
         runtime_status: model.runtime_status,
@@ -29,6 +30,11 @@ pub async fn upsert_agent_session(
     cwd: Option<&str>,
     permission_mode: Option<&str>,
 ) -> Result<AgentSession> {
+    let workspace = crate::repo::workspace::ensure_canonical_workspace_for_conversation(
+        db,
+        conversation_id,
+    )
+    .await?;
     let existing = agent_sessions::Entity::find()
         .filter(agent_sessions::Column::ConversationId.eq(conversation_id))
         .one(db)
@@ -37,7 +43,11 @@ pub async fn upsert_agent_session(
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
     if let Some(model) = existing {
+        let existing_workspace_id = model.workspace_id.clone();
         let mut am: agent_sessions::ActiveModel = model.into();
+        if existing_workspace_id != Some(workspace.id.clone()) {
+            am.workspace_id = Set(Some(workspace.id.clone()));
+        }
         if let Some(cwd) = cwd {
             am.cwd = Set(Some(cwd.to_string()));
         }
@@ -52,6 +62,7 @@ pub async fn upsert_agent_session(
         let model = agent_sessions::ActiveModel {
             id: Set(id),
             conversation_id: Set(conversation_id.to_string()),
+            workspace_id: Set(Some(workspace.id)),
             cwd: Set(cwd.map(|s| s.to_string())),
             permission_mode: Set(permission_mode.unwrap_or("default").to_string()),
             runtime_status: Set("idle".to_string()),

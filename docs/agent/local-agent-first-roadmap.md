@@ -199,3 +199,4 @@ External connector only when selected or routed by policy
 - Rebuilding wiseSpace around a remote agent runtime.
 - Showing external task internals in the normal chat surface.
 - Making every connector share wiseSpace memory automatically.
+

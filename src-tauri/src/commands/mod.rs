@@ -22,3 +22,4 @@ pub mod settings;
 pub mod skills;
 pub mod storage;
 pub mod webdav;
+pub mod workspaces;

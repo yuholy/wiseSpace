@@ -17,6 +17,7 @@ import { NamespaceIcon } from '@/components/shared/NamespaceIcon';
 import { KnowledgeBaseIcon } from '@/components/shared/KnowledgeBaseIcon';
 import { getShortcutBinding, formatShortcutForDisplay, matchesShortcutEvent } from '@/lib/shortcuts';
 import type { ShortcutAction } from '@/lib/shortcuts';
+import { getReadableWorkspaceLabel } from '@/lib/workspaceDisplay';
 import { VoiceCall } from './VoiceCall';
 import { ConversationSettingsModal } from './ConversationSettingsModal';
 import { ModelSelector } from './ModelSelector';
@@ -484,9 +485,8 @@ export function InputArea() {
   }, []);
 
   const formatWorkspacePath = useCallback((path: string): string => {
-    const segments = path.replace(/\\/g, '/').split('/').filter(Boolean);
-    return segments.length > 0 ? segments[segments.length - 1] : path;
-  }, []);
+    return getReadableWorkspaceLabel(path, activeConversation?.title);
+  }, [activeConversation?.title]);
   void abbreviatePath;
 
   const handleSelectCwd = useCallback(async () => {
@@ -1574,7 +1574,13 @@ export function InputArea() {
             </Dropdown>
           )}
           {currentMode === 'agent' && (
-            <Tooltip title={workspaceTooltipText}>
+            <Tooltip
+              title={
+                resolvedAgentCwd
+                  ? `当前工作空间：${getReadableWorkspaceLabel(resolvedAgentCwd, activeConversation?.title)}\n目录：${resolvedAgentCwd}\n点击可切换目录`
+                  : workspaceTooltipText
+              }
+            >
               <Button
                 type="text"
                 size="small"

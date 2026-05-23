@@ -1029,14 +1029,23 @@ pub async fn update_conversation(
     id: String,
     mut input: UpdateConversationInput,
 ) -> Result<Conversation, String> {
+    let should_sync_workspace_name = input.title.is_some();
     if let Some(provider_id) = input.provider_id.as_deref() {
         let real_provider_id = resolve_command_provider_id(&state.sea_db, provider_id).await?;
         input.provider_id = Some(real_provider_id);
     }
 
-    wisespace_core::repo::conversation::update_conversation(&state.sea_db, &id, input)
+    let updated = wisespace_core::repo::conversation::update_conversation(&state.sea_db, &id, input)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    if should_sync_workspace_name {
+        let _ =
+            crate::agent_runtime::profile::sync_workspace_root_to_conversation_title(&state.sea_db, &id)
+                .await;
+    }
+
+    Ok(updated)
 }
 
 #[tauri::command]
@@ -1910,6 +1919,11 @@ pub async fn regenerate_conversation_title(
                         },
                     );
                 } else {
+                    let _ = crate::agent_runtime::profile::sync_workspace_root_to_conversation_title(
+                        &db,
+                        &conv_id,
+                    )
+                    .await;
                     let _ = app_clone.emit(
                         "conversation-title-updated",
                         ConversationTitleUpdatedEvent {
@@ -2413,6 +2427,11 @@ fn spawn_stream_task(
             {
                 tracing::error!("Failed to auto-update title: {}", e);
             } else {
+                let _ = crate::agent_runtime::profile::sync_workspace_root_to_conversation_title(
+                    &db,
+                    &conversation_id,
+                )
+                .await;
                 let _ = app.emit(
                     "conversation-title-updated",
                     ConversationTitleUpdatedEvent {
@@ -2464,6 +2483,12 @@ fn spawn_stream_task(
                             },
                         );
                     } else {
+                        let _ =
+                            crate::agent_runtime::profile::sync_workspace_root_to_conversation_title(
+                                &db,
+                                &conversation_id,
+                            )
+                            .await;
                         let _ = app.emit(
                             "conversation-title-updated",
                             ConversationTitleUpdatedEvent {
@@ -4146,6 +4171,7 @@ mod tests {
     ) -> Conversation {
         Conversation {
             id: "conv-1".to_string(),
+            workspace_id: None,
             title: "Conversation".to_string(),
             model_id: "model-1".to_string(),
             provider_id: "provider-1".to_string(),

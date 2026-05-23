@@ -194,6 +194,9 @@ pub fn run() {
             commands::branches::compare_branches,
             commands::branches::get_workspace_snapshot,
             commands::branches::update_workspace_snapshot,
+            commands::workspaces::list_workspaces,
+            commands::workspaces::get_workspace,
+            commands::workspaces::get_workspace_by_conversation,
             // search providers
             commands::search::list_search_providers,
             commands::search::create_search_provider,

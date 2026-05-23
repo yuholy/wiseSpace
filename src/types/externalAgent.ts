@@ -36,6 +36,7 @@ export interface UpdateExternalAgentInput {
 export interface AgentTask {
   id: string;
   conversationId?: string | null;
+  workspaceId?: string | null;
   sourceMessageId?: string | null;
   externalAgentId: string;
   externalTaskId?: string | null;
