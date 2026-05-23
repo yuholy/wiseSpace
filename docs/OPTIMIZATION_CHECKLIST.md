@@ -1,6 +1,6 @@
 # wiseSpace Optimization Checklist
 
-> Last updated: 2026-05-23
+> Last updated: 2026-05-24
 >
 > This is the top-level optimization tracker for wiseSpace.
 >
@@ -33,7 +33,7 @@ Related docs:
 
 ### 1. Workspace First
 
-- Status: `in_progress`
+- Status: `done`
 - Goal: make `workspace` the main long-lived container instead of overloading
   `conversation`
 - Scope:
@@ -49,55 +49,99 @@ Related docs:
   - `workspaces` entity added and related entities now include `workspace_id`
   - repo / command workspace identity chain connected for conversation, agent,
     and stored file main flows
+  - canonical workspace identity now self-heals for existing conversations,
+    and propagates `workspace_id` into related agent/task/file records
+  - workspace command surface now supports listing, lookup by conversation,
+    rename, and attaching a conversation to an existing workspace
+  - shared or manually renamed workspaces are protected from accidental
+    conversation-title-driven metadata overwrites
 - Source:
   - `docs/project/ARCHITECTURE.md`
   - `docs/planning/workspace-scope-audit.md`
 
 ### 2. Clarify Chat vs. Agent
 
-- Status: `pending`
+- Status: `done`
 - Goal: keep ordinary chat lightweight while making execution flows explicit
 - Scope:
   - position chat as a workspace thread
   - position agent run as workspace execution history
   - reduce ambiguity in UI and state transitions
+- Current progress:
+  - InputArea now exposes an explicit mode boundary summary for chat vs. agent
+  - agent conversations are visibly tagged in the sidebar instead of blending
+    into ordinary chat threads
+  - ChatInspector now shows mode, execution boundary, workspace, and runtime
+    details in one place
 - Source:
   - `docs/project/ARCHITECTURE.md`
 
 ### 3. Make Workspace Snapshot Real
 
-- Status: `pending`
+- Status: `done`
 - Goal: replace snapshot placeholder behavior with real workspace-backed
   projection data
 - Scope:
   - replace stub snapshot commands
   - define source of truth between workspace defaults and conversation overrides
   - expose stable frontend types and store behavior
+- Current progress:
+  - `get_workspace_snapshot` now returns a real projection from persisted
+    conversation state
+  - `update_workspace_snapshot` now writes back to conversation preference
+    fields and `workspace_snapshot_json`
+  - frontend store invocation and browser mock were aligned with the real shape
 - Source:
   - `docs/planning/workspace-implementation-checklist.md`
 
 ### 4. Move Reusable Context Bindings to Workspace Scope
 
-- Status: `pending`
+- Status: `done`
 - Goal: stop storing reusable MCP / knowledge / memory enablement only on the
   conversation row
 - Scope:
   - add workspace binding tables
   - support compatibility reads during migration
   - migrate frontend context behavior to workspace-aware reads
+- Current progress:
+  - workspace binding tables for MCP / knowledge / memory are being introduced
+  - conversation repo now syncs workspace bindings from conversation-owned
+    compatibility fields
+  - snapshot projection prefers workspace bindings when available, while
+    remaining compatible with legacy conversation rows
+  - chat runtime paths now prefer workspace bindings for RAG and MCP tool
+    resolution, while still honoring explicit conversation-level overrides
+  - frontend binding controls now read and write through workspace snapshot
+    state, and browser-mode mocks now persist per-conversation snapshots
+  - search preference hydration and writes now also flow through
+    `workspaceSnapshot.searchPolicy`, reducing one more legacy
+    conversation-only context path
+  - shared frontend context derivation helpers now keep InputArea and
+    ChatInspector aligned, including fallback behavior before a snapshot load
+  - research mode and tool approval state are now part of the shared
+    workspace-derived context view used by inspector and input surfaces
+  - regression coverage now includes workspace snapshot hydration, workspace
+    binding writes, rollback behavior, and updated InputArea store mocks
 - Source:
   - `docs/planning/workspace-scope-audit.md`
   - `docs/planning/workspace-implementation-checklist.md`
 
 ### 5. Productize the Safety Model
 
-- Status: `pending`
+- Status: `done`
 - Goal: make permission, path, and execution boundaries visible and
   understandable to users
 - Scope:
   - surface execution boundaries in UI
   - improve command/file safety affordances
   - make recovery and auditability easier
+- Current progress:
+  - InputArea now surfaces workspace execution boundaries and workspace-level
+    tool approval policy beside agent permission controls
+  - ChatInspector now summarizes permission mode, tool approval mode,
+    research mode, and workspace path/binding context
+  - existing approval cards remain the detailed runtime layer, while the
+    surrounding UI now makes the policy model visible before execution starts
 - Source:
   - `docs/research/COMPETITOR_DECISION_ROADMAP.md`
 

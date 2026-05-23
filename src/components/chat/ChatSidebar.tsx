@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef, memo, startTransition } from 'react'
-import { Button, Input, App, theme, Tooltip, Avatar, Checkbox, Dropdown, Empty } from 'antd'
+import { Button, Input, App, theme, Tooltip, Avatar, Checkbox, Dropdown, Empty, Tag } from 'antd'
 import { MessageSquarePlus, Search, Archive, ListTodo, Trash2, Pencil, Share, Pin, PinOff, Loader, X, Undo2, ArrowLeft, FileImage, FileCode, FileType, FileText, FolderPlus, FolderOpen, GripVertical, ChevronRight, MessageSquareText, PanelLeftClose, Bot, Brain, Code } from 'lucide-react'
 import { ModelIcon } from '@lobehub/icons'
 import { getConvIcon } from '@/lib/convIcon'
@@ -870,15 +870,29 @@ export function ChatSidebar() {
         const expanded = isExpanded(conv.id)
 
         let label: React.ReactNode
+        const modeTag = conv.mode === 'agent'
+          ? (
+            <Tag color="blue" bordered={false} style={{ marginInlineEnd: 0, fontSize: 10, lineHeight: '16px', paddingInline: 6 }}>
+              {t('common.agentMode')}
+            </Tag>
+          )
+          : null
+
         if (conv.is_pinned && !isChild) {
           label = (
             <span className="flex items-center gap-1">
               <span className="truncate">{conv.title}</span>
+              {modeTag}
               <Pin size={12} style={{ color: token.colorTextQuaternary, flexShrink: 0 }} />
             </span>
           )
         } else {
-          label = conv.title
+          label = modeTag ? (
+            <span className="flex items-center gap-1">
+              <span className="truncate">{conv.title}</span>
+              {modeTag}
+            </span>
+          ) : conv.title
         }
 
         // Wrap label with expand/collapse toggle for parents with children

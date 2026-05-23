@@ -29,6 +29,155 @@ function setStore<T>(key: string, value: T): void {
   localStorage.setItem(`wisespace_${key}`, JSON.stringify(value));
 }
 
+type BrowserConversation = {
+  id: string;
+  search_enabled?: boolean;
+  search_provider_id?: string | null;
+  enabled_mcp_server_ids?: string[];
+  enabled_knowledge_base_ids?: string[];
+  enabled_memory_namespace_ids?: string[];
+  updated_at?: number;
+};
+
+type BrowserWorkspaceSnapshot = {
+  searchPolicy: {
+    enabled: boolean;
+    searchProviderId?: string;
+    queryMode: 'manual' | 'auto';
+    resultLimit: number;
+  };
+  toolBinding: {
+    serverIds: string[];
+    defaultTools?: string[];
+    approvalMode: 'inherit' | 'ask' | 'allow_safe';
+  };
+  knowledgeBinding: {
+    knowledgeBaseIds: string[];
+    autoAttach: boolean;
+  };
+  memoryPolicy: {
+    enabled: boolean;
+    namespaceId?: string;
+    writeBack: boolean;
+  };
+  toggles: {
+    searchEnabled: boolean;
+    searchProviderId?: string;
+    enabledKnowledgeBaseIds: string[];
+    enabledMcpServerIds: string[];
+    enabledToolNames?: string[];
+    memoryEnabled: boolean;
+    memoryNamespaceId?: string;
+    memoryWriteBack: boolean;
+    disabledContextSourceIds?: string[];
+  };
+  researchMode: boolean;
+  pinnedArtifactIds: string[];
+};
+
+function getConversationById(conversationId: string): BrowserConversation | null {
+  return getStore<BrowserConversation[]>('conversations', []).find((conversation) => conversation.id === conversationId) ?? null;
+}
+
+function createWorkspaceSnapshotFromConversation(
+  conversation?: BrowserConversation | null,
+): BrowserWorkspaceSnapshot {
+  const enabledKnowledgeBaseIds = [...(conversation?.enabled_knowledge_base_ids ?? [])];
+  const enabledMcpServerIds = [...(conversation?.enabled_mcp_server_ids ?? [])];
+  const enabledMemoryNamespaceIds = [...(conversation?.enabled_memory_namespace_ids ?? [])];
+  const memoryNamespaceId = enabledMemoryNamespaceIds[0];
+  const memoryEnabled = enabledMemoryNamespaceIds.length > 0;
+  const searchEnabled = Boolean(conversation?.search_enabled);
+  const searchProviderId = conversation?.search_provider_id ?? undefined;
+
+  return {
+    searchPolicy: {
+      enabled: searchEnabled,
+      searchProviderId,
+      queryMode: 'manual',
+      resultLimit: 10,
+    },
+    toolBinding: {
+      serverIds: enabledMcpServerIds,
+      approvalMode: 'ask',
+    },
+    knowledgeBinding: {
+      knowledgeBaseIds: enabledKnowledgeBaseIds,
+      autoAttach: false,
+    },
+    memoryPolicy: {
+      enabled: memoryEnabled,
+      namespaceId: memoryNamespaceId,
+      writeBack: false,
+    },
+    toggles: {
+      searchEnabled,
+      searchProviderId,
+      enabledKnowledgeBaseIds,
+      enabledMcpServerIds,
+      memoryEnabled,
+      memoryNamespaceId,
+      memoryWriteBack: false,
+    },
+    researchMode: false,
+    pinnedArtifactIds: [],
+  };
+}
+
+function getWorkspaceSnapshotsStore(): Record<string, BrowserWorkspaceSnapshot> {
+  return getStore<Record<string, BrowserWorkspaceSnapshot>>('workspace_snapshots', {});
+}
+
+function mergeWorkspaceSnapshot(
+  base: BrowserWorkspaceSnapshot,
+  patch?: Partial<BrowserWorkspaceSnapshot>,
+): BrowserWorkspaceSnapshot {
+  if (!patch) return base;
+  return {
+    ...base,
+    ...patch,
+    searchPolicy: patch.searchPolicy ? { ...base.searchPolicy, ...patch.searchPolicy } : base.searchPolicy,
+    toolBinding: patch.toolBinding ? { ...base.toolBinding, ...patch.toolBinding } : base.toolBinding,
+    knowledgeBinding: patch.knowledgeBinding ? { ...base.knowledgeBinding, ...patch.knowledgeBinding } : base.knowledgeBinding,
+    memoryPolicy: patch.memoryPolicy ? { ...base.memoryPolicy, ...patch.memoryPolicy } : base.memoryPolicy,
+    toggles: patch.toggles ? { ...base.toggles, ...patch.toggles } : base.toggles,
+    pinnedArtifactIds: patch.pinnedArtifactIds ? [...patch.pinnedArtifactIds] : base.pinnedArtifactIds,
+  };
+}
+
+function getWorkspaceSnapshot(conversationId: string): BrowserWorkspaceSnapshot {
+  const snapshots = getWorkspaceSnapshotsStore();
+  const existing = snapshots[conversationId];
+  if (existing) return existing;
+
+  const snapshot = createWorkspaceSnapshotFromConversation(getConversationById(conversationId));
+  snapshots[conversationId] = snapshot;
+  setStore('workspace_snapshots', snapshots);
+  return snapshot;
+}
+
+function syncConversationFromWorkspaceSnapshot(
+  conversationId: string,
+  snapshot: BrowserWorkspaceSnapshot,
+): void {
+  const conversations = getStore<BrowserConversation[]>('conversations', []);
+  const index = conversations.findIndex((conversation) => conversation.id === conversationId);
+  if (index === -1) return;
+
+  conversations[index] = {
+    ...conversations[index],
+    search_enabled: snapshot.searchPolicy.enabled,
+    search_provider_id: snapshot.searchPolicy.searchProviderId ?? null,
+    enabled_mcp_server_ids: [...snapshot.toolBinding.serverIds],
+    enabled_knowledge_base_ids: [...snapshot.knowledgeBinding.knowledgeBaseIds],
+    enabled_memory_namespace_ids: snapshot.memoryPolicy.enabled && snapshot.memoryPolicy.namespaceId
+      ? [snapshot.memoryPolicy.namespaceId]
+      : [],
+    updated_at: nowTs(),
+  };
+  setStore('conversations', conversations);
+}
+
 function generateBrowserResponse(userContent: string): string {
   const greeting = /^(你好|hi|hello|hey|嗨)/i.test(userContent.trim());
   if (greeting) {
@@ -1494,9 +1643,18 @@ export async function handleCommand<T>(cmd: string, args?: Record<string, unknow
 
     // ── Phase 2: Workspace Snapshot ────────────────────────────────────
     case 'get_workspace_snapshot':
-      return { conversations: [], providers: [], settings: {}, captured_at: nowTs() } as T;
-    case 'update_workspace_snapshot':
-      return undefined as T;
+      return getWorkspaceSnapshot((args as any)?.conversation_id) as T;
+    case 'update_workspace_snapshot': {
+      const conversationId = (args as any)?.conversation_id as string;
+      const input = (args as any)?.input as Partial<BrowserWorkspaceSnapshot> | undefined;
+      const snapshots = getWorkspaceSnapshotsStore();
+      const current = getWorkspaceSnapshot(conversationId);
+      const updated = mergeWorkspaceSnapshot(current, input);
+      snapshots[conversationId] = updated;
+      setStore('workspace_snapshots', snapshots);
+      syncConversationFromWorkspaceSnapshot(conversationId, updated);
+      return updated as T;
+    }
 
     // ── Proxy Test ────────────────────────────────────────────────────────
     case 'test_proxy': {

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message, MessagePage } from '@/types';
+import type { ConversationWorkspaceSnapshot } from '@/types/workspace';
 
 const invokeMock = vi.fn();
 const listenMock = vi.fn();
@@ -64,6 +65,38 @@ function makeConversation(id: string, overrides: Record<string, unknown> = {}) {
     message_count: 0,
     created_at: 1,
     updated_at: 1,
+    ...overrides,
+  };
+}
+
+function makeWorkspaceSnapshot(overrides: Record<string, unknown> = {}): ConversationWorkspaceSnapshot {
+  return {
+    searchPolicy: {
+      enabled: false,
+      queryMode: 'manual',
+      resultLimit: 10,
+    },
+    toolBinding: {
+      serverIds: [],
+      approvalMode: 'ask',
+    },
+    knowledgeBinding: {
+      knowledgeBaseIds: [],
+      autoAttach: false,
+    },
+    memoryPolicy: {
+      enabled: false,
+      writeBack: false,
+    },
+    toggles: {
+      searchEnabled: false,
+      enabledKnowledgeBaseIds: [],
+      enabledMcpServerIds: [],
+      memoryEnabled: false,
+      memoryWriteBack: false,
+    },
+    researchMode: false,
+    pinnedArtifactIds: [],
     ...overrides,
   };
 }
@@ -511,25 +544,215 @@ describe('conversationStore pagination', () => {
     expect(useConversationStore.getState().enabledMemoryNamespaceIds).toEqual(['mem-b']);
   });
 
-  it('persists search preference changes for the active conversation', async () => {
-    invokeMock.mockResolvedValue(makePage([], false));
-    invokeMock.mockResolvedValueOnce(makeConversation('conv-1'));
+  it('hydrates workspace binding state from a loaded workspace snapshot', async () => {
+    const snapshot = makeWorkspaceSnapshot({
+      searchPolicy: {
+        enabled: true,
+        searchProviderId: 'search-snapshot',
+        queryMode: 'manual',
+        resultLimit: 10,
+      },
+      toolBinding: {
+        serverIds: ['mcp-snapshot'],
+        approvalMode: 'ask',
+      },
+      knowledgeBinding: {
+        knowledgeBaseIds: ['kb-snapshot'],
+        autoAttach: true,
+      },
+      memoryPolicy: {
+        enabled: true,
+        namespaceId: 'mem-snapshot',
+        writeBack: true,
+      },
+      toggles: {
+        searchEnabled: true,
+        searchProviderId: 'search-snapshot',
+        enabledKnowledgeBaseIds: ['kb-snapshot'],
+        enabledMcpServerIds: ['mcp-snapshot'],
+        memoryEnabled: true,
+        memoryNamespaceId: 'mem-snapshot',
+        memoryWriteBack: true,
+      },
+    });
+
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === 'get_workspace_snapshot') {
+        return Promise.resolve(snapshot);
+      }
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+
     const { useConversationStore } = await import('../conversationStore');
 
     useConversationStore.setState({
       activeConversationId: 'conv-1',
+      conversations: [makeConversation('conv-1', {
+        search_enabled: false,
+        search_provider_id: null,
+        enabled_mcp_server_ids: ['mcp-legacy'],
+        enabled_knowledge_base_ids: ['kb-legacy'],
+        enabled_memory_namespace_ids: ['mem-legacy'],
+      })] as never[],
+      searchEnabled: false,
+      searchProviderId: null,
+      enabledMcpServerIds: ['mcp-legacy'],
+      enabledKnowledgeBaseIds: ['kb-legacy'],
+      enabledMemoryNamespaceIds: ['mem-legacy'],
+    });
+
+    await useConversationStore.getState().loadWorkspaceSnapshot('conv-1');
+
+    expect(invokeMock).toHaveBeenCalledWith('get_workspace_snapshot', {
+      conversation_id: 'conv-1',
+    });
+    expect(useConversationStore.getState().workspaceSnapshot).toEqual(snapshot);
+    expect(useConversationStore.getState().searchEnabled).toBe(true);
+    expect(useConversationStore.getState().searchProviderId).toBe('search-snapshot');
+    expect(useConversationStore.getState().enabledMcpServerIds).toEqual(['mcp-snapshot']);
+    expect(useConversationStore.getState().enabledKnowledgeBaseIds).toEqual(['kb-snapshot']);
+    expect(useConversationStore.getState().enabledMemoryNamespaceIds).toEqual(['mem-snapshot']);
+  });
+
+  it('persists search preference changes through workspace snapshot updates', async () => {
+    const updatedSnapshot = makeWorkspaceSnapshot({
+      searchPolicy: {
+        enabled: true,
+        searchProviderId: 'search-1',
+        queryMode: 'manual',
+        resultLimit: 10,
+      },
+      toggles: {
+        searchEnabled: true,
+        searchProviderId: 'search-1',
+        enabledKnowledgeBaseIds: [],
+        enabledMcpServerIds: [],
+        memoryEnabled: false,
+        memoryWriteBack: false,
+      },
+    });
+    const { useConversationStore } = await import('../conversationStore');
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === 'update_workspace_snapshot') {
+        return Promise.resolve(updatedSnapshot);
+      }
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+
+    useConversationStore.setState({
+      activeConversationId: 'conv-1',
       conversations: [makeConversation('conv-1')] as never[],
+      workspaceSnapshot: makeWorkspaceSnapshot(),
     });
 
     useConversationStore.getState().setSearchEnabled(true);
     await flushPromises();
 
-    expect(invokeMock).toHaveBeenCalledWith('update_conversation', {
-      id: 'conv-1',
+    expect(invokeMock).toHaveBeenCalledWith('update_workspace_snapshot', {
+      conversation_id: 'conv-1',
       input: {
-        search_enabled: true,
+        searchPolicy: {
+          enabled: true,
+          searchProviderId: undefined,
+          queryMode: 'manual',
+          resultLimit: 10,
+        },
+        toolBinding: undefined,
+        knowledgeBinding: undefined,
+        memoryPolicy: undefined,
+        toggles: {
+          searchEnabled: true,
+          enabledKnowledgeBaseIds: [],
+          enabledMcpServerIds: [],
+          memoryEnabled: false,
+          memoryWriteBack: false,
+        },
+        researchMode: undefined,
+        pinnedArtifactIds: undefined,
       },
     });
+    expect(useConversationStore.getState().workspaceSnapshot).toEqual(updatedSnapshot);
+    expect(useConversationStore.getState().searchEnabled).toBe(true);
+  });
+
+  it('persists search provider selection through workspace snapshot updates', async () => {
+    const updatedSnapshot = makeWorkspaceSnapshot({
+      searchPolicy: {
+        enabled: true,
+        searchProviderId: 'search-next',
+        queryMode: 'manual',
+        resultLimit: 10,
+      },
+      toggles: {
+        searchEnabled: true,
+        searchProviderId: 'search-next',
+        enabledKnowledgeBaseIds: [],
+        enabledMcpServerIds: [],
+        memoryEnabled: false,
+        memoryWriteBack: false,
+      },
+    });
+
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === 'update_workspace_snapshot') {
+        return Promise.resolve(updatedSnapshot);
+      }
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+
+    const { useConversationStore } = await import('../conversationStore');
+
+    useConversationStore.setState({
+      activeConversationId: 'conv-1',
+      conversations: [makeConversation('conv-1')] as never[],
+      workspaceSnapshot: makeWorkspaceSnapshot({
+        searchPolicy: {
+          enabled: true,
+          searchProviderId: 'search-prev',
+          queryMode: 'manual',
+          resultLimit: 10,
+        },
+        toggles: {
+          searchEnabled: true,
+          searchProviderId: 'search-prev',
+          enabledKnowledgeBaseIds: [],
+          enabledMcpServerIds: [],
+          memoryEnabled: false,
+          memoryWriteBack: false,
+        },
+      }),
+      searchEnabled: true,
+      searchProviderId: 'search-prev',
+    });
+
+    useConversationStore.getState().setSearchProviderId('search-next');
+    await flushPromises();
+
+    expect(invokeMock).toHaveBeenCalledWith('update_workspace_snapshot', {
+      conversation_id: 'conv-1',
+      input: {
+        searchPolicy: {
+          enabled: true,
+          searchProviderId: 'search-next',
+          queryMode: 'manual',
+          resultLimit: 10,
+        },
+        toolBinding: undefined,
+        knowledgeBinding: undefined,
+        memoryPolicy: undefined,
+        toggles: {
+          searchEnabled: true,
+          searchProviderId: 'search-next',
+          enabledKnowledgeBaseIds: [],
+          enabledMcpServerIds: [],
+          memoryEnabled: false,
+          memoryWriteBack: false,
+        },
+        researchMode: undefined,
+        pinnedArtifactIds: undefined,
+      },
+    });
+    expect(useConversationStore.getState().searchProviderId).toBe('search-next');
   });
 
   it('persists reasoning level changes separately from legacy thinking budget', async () => {
@@ -571,8 +794,83 @@ describe('conversationStore pagination', () => {
 
     await flushPromises();
 
+    expect(invokeMock).toHaveBeenCalledWith('update_workspace_snapshot', {
+      conversation_id: 'conv-1',
+      input: {
+        searchPolicy: undefined,
+        toolBinding: {
+          serverIds: ['mcp-a', 'mcp-b'],
+          defaultTools: undefined,
+          approvalMode: 'ask',
+        },
+        knowledgeBinding: undefined,
+        memoryPolicy: undefined,
+        toggles: undefined,
+        researchMode: undefined,
+        pinnedArtifactIds: undefined,
+      },
+    });
     expect(useConversationStore.getState().enabledMcpServerIds).toEqual(['mcp-a']);
     expect(useConversationStore.getState().error).toBe('Error: save failed');
+  });
+
+  it('persists knowledge bindings through workspace snapshot updates', async () => {
+    const updatedSnapshot = makeWorkspaceSnapshot({
+      knowledgeBinding: {
+        knowledgeBaseIds: ['kb-a', 'kb-b'],
+        autoAttach: true,
+      },
+      toggles: {
+        searchEnabled: false,
+        enabledKnowledgeBaseIds: ['kb-a', 'kb-b'],
+        enabledMcpServerIds: [],
+        memoryEnabled: false,
+        memoryWriteBack: false,
+      },
+    });
+
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === 'update_workspace_snapshot') {
+        return Promise.resolve(updatedSnapshot);
+      }
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+
+    const { useConversationStore } = await import('../conversationStore');
+
+    useConversationStore.setState({
+      activeConversationId: 'conv-1',
+      conversations: [makeConversation('conv-1')] as never[],
+      workspaceSnapshot: makeWorkspaceSnapshot(),
+      enabledKnowledgeBaseIds: [],
+    });
+
+    useConversationStore.getState().setEnabledKnowledgeBaseIds(['kb-a', 'kb-b']);
+    await flushPromises();
+
+    expect(invokeMock).toHaveBeenCalledWith('update_workspace_snapshot', {
+      conversation_id: 'conv-1',
+      input: {
+        searchPolicy: undefined,
+        toolBinding: undefined,
+        knowledgeBinding: {
+          knowledgeBaseIds: ['kb-a', 'kb-b'],
+          autoAttach: false,
+        },
+        memoryPolicy: undefined,
+        toggles: {
+          searchEnabled: false,
+          enabledKnowledgeBaseIds: ['kb-a', 'kb-b'],
+          enabledMcpServerIds: [],
+          memoryEnabled: false,
+          memoryWriteBack: false,
+        },
+        researchMode: undefined,
+        pinnedArtifactIds: undefined,
+      },
+    });
+    expect(useConversationStore.getState().workspaceSnapshot).toEqual(updatedSnapshot);
+    expect(useConversationStore.getState().enabledKnowledgeBaseIds).toEqual(['kb-a', 'kb-b']);
   });
 
   it('keeps streaming active when a non-final done chunk arrives during a tool loop', async () => {

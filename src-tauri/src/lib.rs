@@ -197,6 +197,8 @@ pub fn run() {
             commands::workspaces::list_workspaces,
             commands::workspaces::get_workspace,
             commands::workspaces::get_workspace_by_conversation,
+            commands::workspaces::rename_workspace,
+            commands::workspaces::attach_conversation_to_workspace,
             // search providers
             commands::search::list_search_providers,
             commands::search::create_search_provider,

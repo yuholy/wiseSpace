@@ -37,6 +37,7 @@ mod m20260509_000002_agent_run_resume_support;
 mod m20260510_000001_sdk_only_agent_runtime;
 mod m20260512_000001_add_conversation_source;
 mod m20260523_000001_workspace_identity_foundation;
+mod m20260524_000001_add_workspace_binding_tables;
 
 pub struct Migrator;
 
@@ -81,6 +82,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260510_000001_sdk_only_agent_runtime::Migration),
             Box::new(m20260512_000001_add_conversation_source::Migration),
             Box::new(m20260523_000001_workspace_identity_foundation::Migration),
+            Box::new(m20260524_000001_add_workspace_binding_tables::Migration),
         ]
     }
 }
@@ -246,6 +248,27 @@ mod tests {
                 ("provider-xai".to_string(), "xai".to_string()),
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn migrator_up_adds_workspace_binding_tables_on_sqlite() {
+        let db = sqlite_test_db().await;
+
+        Migrator::up(&db, None)
+            .await
+            .expect("run sqlite migrations");
+
+        let manager = SchemaManager::new(&db);
+        for table in [
+            "workspace_mcp_bindings",
+            "workspace_knowledge_bindings",
+            "workspace_memory_bindings",
+        ] {
+            assert!(
+                manager.has_table(table).await.expect("check binding table"),
+                "missing table {table}"
+            );
+        }
     }
 
     #[tokio::test]

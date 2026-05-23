@@ -1,8 +1,21 @@
 import { useMemo } from 'react';
 import { Tabs, Empty, List, Descriptions, Tag, Typography, theme } from 'antd';
-import { Search, Wrench, Paperclip, Info, FileText, Activity } from 'lucide-react';
+import {
+  Search,
+  Wrench,
+  Paperclip,
+  Info,
+  FileText,
+  Activity,
+  Bot,
+  MessageSquare,
+  ShieldCheck,
+  ShieldAlert,
+  Shield,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useConversationStore, useArtifactStore, useAgentStore } from '@/stores';
+import { buildWorkspaceContextSources, deriveWorkspaceContextState } from '@/lib/workspaceContextState';
 
 const EMPTY_AGENT_RUNS: readonly [] = [];
 const EMPTY_AGENT_RUN_EVENTS: readonly [] = [];
@@ -27,6 +40,11 @@ export function ChatInspector({
     s.conversations.find((c) => c.id === s.activeConversationId),
   );
   const workspaceSnapshot = useConversationStore((s) => s.workspaceSnapshot);
+  const searchEnabled = useConversationStore((s) => s.searchEnabled);
+  const searchProviderId = useConversationStore((s) => s.searchProviderId);
+  const enabledMcpServerIds = useConversationStore((s) => s.enabledMcpServerIds);
+  const enabledKnowledgeBaseIds = useConversationStore((s) => s.enabledKnowledgeBaseIds);
+  const enabledMemoryNamespaceIds = useConversationStore((s) => s.enabledMemoryNamespaceIds);
   const messages = useConversationStore((s) => s.messages);
   const { artifacts } = useArtifactStore();
   const agentProfile = useAgentStore((s) =>
@@ -41,28 +59,66 @@ export function ChatInspector({
     return latestRunId ? s.runEventsByRunId[latestRunId] ?? EMPTY_AGENT_RUN_EVENTS : EMPTY_AGENT_RUN_EVENTS;
   });
   const latestRun = agentRuns[0];
+  const currentMode = conversation?.mode ?? 'chat';
 
-  const contextSources = useMemo(() => {
-    if (!workspaceSnapshot) return [];
-    const sources: { type: string; title: string }[] = [];
-    if (workspaceSnapshot.knowledgeBinding?.knowledgeBaseIds?.length) {
-      workspaceSnapshot.knowledgeBinding.knowledgeBaseIds.forEach((id) =>
-        sources.push({ type: 'knowledge', title: id }),
-      );
+  const contextState = useMemo(() => {
+    return deriveWorkspaceContextState({
+      conversation,
+      workspaceSnapshot,
+      searchEnabled,
+      searchProviderId,
+      enabledMcpServerIds,
+      enabledKnowledgeBaseIds,
+      enabledMemoryNamespaceIds,
+    });
+  }, [
+    conversation,
+    workspaceSnapshot,
+    searchEnabled,
+    searchProviderId,
+    enabledMcpServerIds,
+    enabledKnowledgeBaseIds,
+    enabledMemoryNamespaceIds,
+  ]);
+
+  const contextSources = useMemo(
+    () => buildWorkspaceContextSources(contextState),
+    [contextState],
+  );
+
+  const toolApprovalLabel = useMemo(() => {
+    switch (contextState.toolApprovalMode) {
+      case 'allow_safe':
+        return t('chat.inspector.toolApprovalAllowSafe', 'Allow safe tools');
+      case 'inherit':
+        return t('chat.inspector.toolApprovalInherit', 'Inherit from tool policy');
+      default:
+        return t('chat.inspector.toolApprovalAsk', 'Ask before tool use');
     }
-    if (workspaceSnapshot.searchPolicy?.enabled) {
-      sources.push({ type: 'search', title: workspaceSnapshot.searchPolicy.searchProviderId ?? 'search' });
+  }, [contextState.toolApprovalMode, t]);
+
+  const agentPermissionSummary = useMemo(() => {
+    switch (agentProfile?.permissionMode) {
+      case 'full_access':
+        return {
+          label: t('chat.inspector.permissionFullAccess', 'Full access'),
+          color: 'red' as const,
+          icon: <ShieldAlert size={12} />,
+        };
+      case 'accept_edits':
+        return {
+          label: t('chat.inspector.permissionAcceptEdits', 'Accept edits'),
+          color: 'gold' as const,
+          icon: <ShieldCheck size={12} />,
+        };
+      default:
+        return {
+          label: t('chat.inspector.permissionDefault', 'Ask each time'),
+          color: 'default' as const,
+          icon: <Shield size={12} />,
+        };
     }
-    if (workspaceSnapshot.memoryPolicy?.enabled) {
-      sources.push({ type: 'memory', title: workspaceSnapshot.memoryPolicy.namespaceId ?? 'memory' });
-    }
-    if (workspaceSnapshot.toolBinding?.serverIds?.length) {
-      workspaceSnapshot.toolBinding.serverIds.forEach((id) =>
-        sources.push({ type: 'tool', title: id }),
-      );
-    }
-    return sources;
-  }, [workspaceSnapshot]);
+  }, [agentProfile?.permissionMode, t]);
 
   const toolCalls = useMemo(() => {
     return agentRunEvents
@@ -124,10 +180,7 @@ export function ChatInspector({
             )}
           />
         ) : (
-          <Empty
-            description={conversationId ? t('common.noData') : t('common.noData')}
-            style={{ marginTop: 48 }}
-          />
+          <Empty description={t('common.noData')} style={{ marginTop: 48 }} />
         ),
       },
       {
@@ -145,10 +198,7 @@ export function ChatInspector({
             )}
           />
         ) : (
-          <Empty
-            description={t('chat.inspector.tools')}
-            style={{ marginTop: 48 }}
-          />
+          <Empty description={t('chat.inspector.tools')} style={{ marginTop: 48 }} />
         ),
       },
       {
@@ -168,10 +218,7 @@ export function ChatInspector({
               )}
             />
           ) : (
-            <Empty
-              description={t('chat.inspector.attachments')}
-              style={{ marginTop: 48 }}
-            />
+            <Empty description={t('chat.inspector.attachments')} style={{ marginTop: 48 }} />
           );
         })(),
       },
@@ -183,20 +230,58 @@ export function ChatInspector({
           <Descriptions column={1} size="small" style={{ padding: '8px 0' }}>
             <Descriptions.Item label={t('chat.inspector.session')}>
               <Typography.Text copyable={{ text: conversation.id }}>
-                {conversation.id.slice(0, 8)}…
+                {conversation.id.slice(0, 8)}...
               </Typography.Text>
             </Descriptions.Item>
+            <Descriptions.Item label={t('chat.inspector.mode', 'Mode')}>
+              <Tag
+                color={currentMode === 'agent' ? 'blue' : 'default'}
+                icon={currentMode === 'agent' ? <Bot size={12} /> : <MessageSquare size={12} />}
+              >
+                {currentMode === 'agent' ? t('common.agentMode') : t('common.chatMode')}
+              </Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label={t('chat.inspector.boundary', 'Boundary')}>
+              {currentMode === 'agent'
+                ? t('chat.inspector.agentBoundary', 'Agent mode can run tools, write files, and follow workspace execution policies.')
+                : t('chat.inspector.chatBoundary', 'Chat mode stays in conversation flow without agent execution.')}
+            </Descriptions.Item>
             <Descriptions.Item label={t('gateway.defaultProvider')}>
-              {agentRuns[0]?.providerId || conversation.provider_id || '-'}
+              {latestRun?.providerId || conversation.provider_id || '-'}
             </Descriptions.Item>
             <Descriptions.Item label={t('gateway.defaultModel')}>
-              {agentRuns[0]?.modelId || conversation.model_id || '-'}
+              {latestRun?.modelId || conversation.model_id || '-'}
             </Descriptions.Item>
-            <Descriptions.Item label={t('common.status', '状态')}>
-              {agentRuns[0]?.status || '-'}
+            <Descriptions.Item label={t('common.status', 'Status')}>
+              {latestRun?.status || '-'}
             </Descriptions.Item>
-            <Descriptions.Item label={t('common.permission', '权限')}>
-              {agentProfile?.permissionMode || '-'}
+            <Descriptions.Item label={t('common.permission', 'Permission')}>
+              <Tag color={agentPermissionSummary.color} icon={agentPermissionSummary.icon}>
+                {agentPermissionSummary.label}
+              </Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label={t('chat.inspector.toolApproval', 'Tool approval')}>
+              <Tag
+                color={
+                  contextState.toolApprovalMode === 'allow_safe'
+                    ? 'green'
+                    : contextState.toolApprovalMode === 'inherit'
+                      ? 'blue'
+                      : 'default'
+                }
+              >
+                {toolApprovalLabel}
+              </Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label={t('chat.inspector.researchMode', 'Research mode')}>
+              <Tag color={contextState.researchMode ? 'purple' : 'default'}>
+                {contextState.researchMode ? t('common.enabled', 'Enabled') : t('common.disabled', 'Disabled')}
+              </Tag>
+            </Descriptions.Item>
+            <Descriptions.Item label={t('chat.inspector.workspace', 'Workspace')}>
+              <Typography.Text ellipsis>
+                {agentProfile?.workspaceRoot || t('chat.inspector.workspaceBindings', 'Conversation workspace bindings')}
+              </Typography.Text>
             </Descriptions.Item>
             <Descriptions.Item label={t('gateway.created')}>
               {new Date(conversation.created_at).toLocaleString()}
@@ -206,10 +291,7 @@ export function ChatInspector({
             </Descriptions.Item>
           </Descriptions>
         ) : (
-          <Empty
-            description={t('common.noData')}
-            style={{ marginTop: 48 }}
-          />
+          <Empty description={t('common.noData')} style={{ marginTop: 48 }} />
         ),
       },
       {
@@ -263,10 +345,7 @@ export function ChatInspector({
             />
           </div>
         ) : (
-          <Empty
-            description={t('common.noData')}
-            style={{ marginTop: 48 }}
-          />
+          <Empty description={t('common.noData')} style={{ marginTop: 48 }} />
         ),
       },
       {
@@ -287,14 +366,26 @@ export function ChatInspector({
             )}
           />
         ) : (
-          <Empty
-            description={conversationId ? t('common.noData') : t('common.noData')}
-            style={{ marginTop: 48 }}
-          />
+          <Empty description={t('common.noData')} style={{ marginTop: 48 }} />
         ),
       },
     ],
-    [t, conversationId, contextSources, toolCalls, messages, conversation, conversationArtifacts, agentRuns, agentProfile, latestRun, runTimeline],
+    [
+      t,
+      contextSources,
+      toolCalls,
+      messages,
+      conversation,
+      currentMode,
+      latestRun,
+      agentPermissionSummary,
+      contextState.researchMode,
+      contextState.toolApprovalMode,
+      toolApprovalLabel,
+      agentProfile?.workspaceRoot,
+      runTimeline,
+      conversationArtifacts,
+    ],
   );
 
   return (

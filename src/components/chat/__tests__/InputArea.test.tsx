@@ -20,13 +20,23 @@ const setThinkingLevel = vi.fn();
 const insertContextClear = vi.fn();
 const setActivePage = vi.fn();
 const setSettingsSection = vi.fn();
+const sendAgentMessage = vi.fn();
+const setActiveAgentExecutorId = vi.fn();
+const setActiveAgentExecutorModel = vi.fn();
+const updateAgentCwd = vi.fn();
+const updateAgentPermissionMode = vi.fn();
+const fetchAgentProfile = vi.fn();
 
 const conversationState = {
   streaming: false,
+  compressing: false,
   activeConversationId: 'conv-1',
   sendMessage,
+  sendAgentMessage,
   createConversation,
   messages: [],
+  totalActiveCount: 0,
+  hasOlderMessages: false,
   conversations: [
     {
       id: 'conv-1',
@@ -37,6 +47,7 @@ const conversationState = {
   ],
   searchEnabled: true,
   searchProviderId: 'search-1',
+  workspaceSnapshot: null,
   setSearchEnabled,
   setSearchProviderId,
   enabledMcpServerIds: [] as string[],
@@ -50,6 +61,16 @@ const conversationState = {
   setThinkingBudget,
   setThinkingLevel,
   insertContextClear,
+  activeAgentExecutorId: null as string | null,
+  setActiveAgentExecutorId,
+  setActiveAgentExecutorModel,
+};
+
+const agentState = {
+  profilesByConversation: {} as Record<string, { workspaceRoot?: string | null; permissionMode?: string | null }>,
+  updateCwd: updateAgentCwd,
+  updatePermissionMode: updateAgentPermissionMode,
+  fetchProfile: fetchAgentProfile,
 };
 
 const providerState = {
@@ -117,6 +138,10 @@ vi.mock('@/stores', () => ({
   useConversationStore: Object.assign(
     (selector: (state: typeof conversationState) => unknown) => selector(conversationState),
     { getState: () => conversationState },
+  ),
+  useAgentStore: Object.assign(
+    (selector: (state: typeof agentState) => unknown) => selector(agentState),
+    { getState: () => agentState },
   ),
   useProviderStore: Object.assign(
     (selector: (state: typeof providerState) => unknown) => selector(providerState),

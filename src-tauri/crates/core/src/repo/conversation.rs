@@ -4,7 +4,9 @@ use serde_json;
 use crate::entity::{conversation_summaries, conversations, messages};
 use crate::error::{Result, WiseSpaceError};
 use crate::types::{
-    Conversation, ConversationSearchResult, ConversationSummary, UpdateConversationInput,
+    ContextToggleState, Conversation, ConversationSearchResult, ConversationSummary,
+    ConversationWorkspaceSnapshot, KnowledgeBinding, MemoryPolicy, SearchPolicy, ToolBinding,
+    UpdateConversationInput, UpdateConversationWorkspaceSnapshotInput,
 };
 use crate::utils::{gen_id, now_ts};
 
@@ -49,7 +51,128 @@ fn stringify_string_list(values: &[String]) -> String {
     serde_json::to_string(values).expect("failed to serialize conversation preference JSON")
 }
 
+pub fn default_workspace_snapshot() -> ConversationWorkspaceSnapshot {
+    ConversationWorkspaceSnapshot {
+        search_policy: SearchPolicy {
+            enabled: false,
+            search_provider_id: None,
+            query_mode: "manual".to_string(),
+            result_limit: 10,
+        },
+        tool_binding: ToolBinding {
+            server_ids: Vec::new(),
+            default_tools: None,
+            approval_mode: "ask".to_string(),
+        },
+        knowledge_binding: KnowledgeBinding {
+            knowledge_base_ids: Vec::new(),
+            auto_attach: false,
+        },
+        memory_policy: MemoryPolicy {
+            enabled: false,
+            namespace_id: None,
+            write_back: false,
+        },
+        toggles: ContextToggleState {
+            search_enabled: false,
+            search_provider_id: None,
+            enabled_knowledge_base_ids: Vec::new(),
+            enabled_mcp_server_ids: Vec::new(),
+            enabled_tool_names: None,
+            memory_enabled: false,
+            memory_namespace_id: None,
+            memory_write_back: false,
+            disabled_context_source_ids: None,
+        },
+        research_mode: false,
+        pinned_artifact_ids: Vec::new(),
+    }
+}
+
+fn parse_workspace_snapshot_json(raw: &str) -> ConversationWorkspaceSnapshot {
+    if raw.trim().is_empty() {
+        return default_workspace_snapshot();
+    }
+
+    serde_json::from_str(raw).unwrap_or_else(|_| default_workspace_snapshot())
+}
+
+fn project_workspace_snapshot(
+    row: &conversations::Model,
+    persisted: Option<ConversationWorkspaceSnapshot>,
+) -> ConversationWorkspaceSnapshot {
+    let mut snapshot = persisted.unwrap_or_else(default_workspace_snapshot);
+    let knowledge_base_ids = parse_string_list(&row.enabled_knowledge_base_ids);
+    let server_ids = parse_string_list(&row.enabled_mcp_server_ids);
+    let memory_namespace_ids = parse_string_list(&row.enabled_memory_namespace_ids);
+    let memory_namespace_id = memory_namespace_ids.first().cloned();
+    let memory_enabled = memory_namespace_id.is_some() || snapshot.memory_policy.enabled;
+
+    snapshot.search_policy.enabled = row.search_enabled != 0;
+    snapshot.search_policy.search_provider_id = row.search_provider_id.clone();
+    if snapshot.search_policy.query_mode.trim().is_empty() {
+        snapshot.search_policy.query_mode = "manual".to_string();
+    }
+    if snapshot.search_policy.result_limit <= 0 {
+        snapshot.search_policy.result_limit = 10;
+    }
+
+    snapshot.tool_binding.server_ids = server_ids.clone();
+    if snapshot.tool_binding.approval_mode.trim().is_empty() {
+        snapshot.tool_binding.approval_mode = "ask".to_string();
+    }
+
+    snapshot.knowledge_binding.knowledge_base_ids = knowledge_base_ids.clone();
+
+    snapshot.memory_policy.enabled = memory_enabled;
+    snapshot.memory_policy.namespace_id = memory_namespace_id.clone();
+
+    snapshot.toggles.search_enabled = row.search_enabled != 0;
+    snapshot.toggles.search_provider_id = row.search_provider_id.clone();
+    snapshot.toggles.enabled_knowledge_base_ids = knowledge_base_ids;
+    snapshot.toggles.enabled_mcp_server_ids = server_ids;
+    snapshot.toggles.memory_enabled = memory_enabled;
+    snapshot.toggles.memory_namespace_id = memory_namespace_id;
+    snapshot.toggles.memory_write_back = snapshot.memory_policy.write_back;
+
+    snapshot.research_mode = row.research_mode != 0;
+
+    snapshot
+}
+
+fn apply_workspace_snapshot_input(
+    current: ConversationWorkspaceSnapshot,
+    input: UpdateConversationWorkspaceSnapshotInput,
+) -> ConversationWorkspaceSnapshot {
+    let mut next = current;
+
+    if let Some(search_policy) = input.search_policy {
+        next.search_policy = search_policy;
+    }
+    if let Some(tool_binding) = input.tool_binding {
+        next.tool_binding = tool_binding;
+    }
+    if let Some(knowledge_binding) = input.knowledge_binding {
+        next.knowledge_binding = knowledge_binding;
+    }
+    if let Some(memory_policy) = input.memory_policy {
+        next.memory_policy = memory_policy;
+    }
+    if let Some(toggles) = input.toggles {
+        next.toggles = toggles;
+    }
+    if let Some(research_mode) = input.research_mode {
+        next.research_mode = research_mode;
+    }
+    if let Some(pinned_artifact_ids) = input.pinned_artifact_ids {
+        next.pinned_artifact_ids = pinned_artifact_ids;
+    }
+
+    next
+}
+
 pub async fn list_conversations(db: &DatabaseConnection) -> Result<Vec<Conversation>> {
+    super::workspace::ensure_workspace_identity_backfilled(db).await?;
     let rows = conversations::Entity::find()
         .filter(conversations::Column::IsArchived.eq(0))
         .order_by_desc(conversations::Column::IsPinned)
@@ -61,6 +184,7 @@ pub async fn list_conversations(db: &DatabaseConnection) -> Result<Vec<Conversat
 }
 
 pub async fn list_archived_conversations(db: &DatabaseConnection) -> Result<Vec<Conversation>> {
+    super::workspace::ensure_workspace_identity_backfilled(db).await?;
     let rows = conversations::Entity::find()
         .filter(conversations::Column::IsArchived.ne(0))
         .order_by_desc(conversations::Column::UpdatedAt)
@@ -71,12 +195,79 @@ pub async fn list_archived_conversations(db: &DatabaseConnection) -> Result<Vec<
 }
 
 pub async fn get_conversation(db: &DatabaseConnection, id: &str) -> Result<Conversation> {
+    let _ = super::workspace::ensure_workspace_identity_for_conversation(db, id).await?;
     let row = conversations::Entity::find_by_id(id)
         .one(db)
         .await?
         .ok_or_else(|| WiseSpaceError::NotFound(format!("Conversation {}", id)))?;
 
     Ok(conversation_from_entity(row))
+}
+
+pub async fn get_workspace_snapshot(
+    db: &DatabaseConnection,
+    conversation_id: &str,
+) -> Result<ConversationWorkspaceSnapshot> {
+    let row = conversations::Entity::find_by_id(conversation_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| WiseSpaceError::NotFound(format!("Conversation {}", conversation_id)))?;
+
+    let persisted = parse_workspace_snapshot_json(&row.workspace_snapshot_json);
+    let (server_ids, knowledge_base_ids, memory_namespace_ids) =
+        super::workspace::resolve_effective_binding_ids(db, conversation_id).await?;
+
+    let mut projected_row = row;
+    projected_row.enabled_mcp_server_ids = stringify_string_list(&server_ids);
+    projected_row.enabled_knowledge_base_ids = stringify_string_list(&knowledge_base_ids);
+    projected_row.enabled_memory_namespace_ids = stringify_string_list(&memory_namespace_ids);
+
+    Ok(project_workspace_snapshot(&projected_row, Some(persisted)))
+}
+
+pub async fn update_workspace_snapshot(
+    db: &DatabaseConnection,
+    conversation_id: &str,
+    input: UpdateConversationWorkspaceSnapshotInput,
+) -> Result<ConversationWorkspaceSnapshot> {
+    let row = conversations::Entity::find_by_id(conversation_id)
+        .one(db)
+        .await?
+        .ok_or_else(|| WiseSpaceError::NotFound(format!("Conversation {}", conversation_id)))?;
+
+    let current = project_workspace_snapshot(
+        &row,
+        Some(parse_workspace_snapshot_json(&row.workspace_snapshot_json)),
+    );
+    let next = apply_workspace_snapshot_input(current, input);
+
+    let mut am: conversations::ActiveModel = row.into();
+    am.search_enabled = Set(if next.search_policy.enabled { 1 } else { 0 });
+    am.search_provider_id = Set(next.search_policy.search_provider_id.clone());
+    am.enabled_mcp_server_ids = Set(stringify_string_list(&next.tool_binding.server_ids));
+    am.enabled_knowledge_base_ids =
+        Set(stringify_string_list(&next.knowledge_binding.knowledge_base_ids));
+
+    let memory_namespace_ids = if next.memory_policy.enabled {
+        next.memory_policy
+            .namespace_id
+            .clone()
+            .into_iter()
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    am.enabled_memory_namespace_ids = Set(stringify_string_list(&memory_namespace_ids));
+    am.research_mode = Set(if next.research_mode { 1 } else { 0 });
+    am.workspace_snapshot_json = Set(
+        serde_json::to_string(&next)
+            .expect("failed to serialize conversation workspace snapshot"),
+    );
+    am.updated_at = Set(now_ts());
+    am.update(db).await?;
+    super::workspace::sync_workspace_bindings_from_conversation(db, conversation_id).await?;
+
+    get_workspace_snapshot(db, conversation_id).await
 }
 
 pub async fn create_conversation(
@@ -148,6 +339,7 @@ pub async fn create_conversation_with_source_and_mode(
     .await?;
 
     let _ = super::workspace::ensure_canonical_workspace_for_conversation(db, &id).await?;
+    super::workspace::sync_workspace_bindings_from_conversation(db, &id).await?;
 
     get_conversation(db, &id).await
 }
@@ -165,6 +357,9 @@ pub async fn update_conversation(
     let now = now_ts();
     let existing = conversation_from_entity(row.clone());
     let should_sync_workspace = input.title.is_some();
+    let should_sync_bindings = input.enabled_mcp_server_ids.is_some()
+        || input.enabled_knowledge_base_ids.is_some()
+        || input.enabled_memory_namespace_ids.is_some();
 
     let title = input.title.unwrap_or(existing.title);
     let provider_id = input.provider_id.unwrap_or(existing.provider_id);
@@ -235,6 +430,10 @@ pub async fn update_conversation(
     }
     am.updated_at = Set(now);
     am.update(db).await?;
+
+    if should_sync_bindings {
+        super::workspace::sync_workspace_bindings_from_conversation(db, id).await?;
+    }
 
     if should_sync_workspace {
         let _ = super::workspace::sync_workspace_metadata_from_conversation(db, id).await?;
@@ -403,6 +602,7 @@ pub async fn branch_conversation(
     .await?;
 
     let _ = super::workspace::ensure_canonical_workspace_for_conversation(db, &new_id).await?;
+    super::workspace::sync_workspace_bindings_from_conversation(db, &new_id).await?;
 
     // 7. Copy messages — assign new IDs and remap parent_message_id references
     let mut id_map = std::collections::HashMap::new();
@@ -444,6 +644,105 @@ pub async fn branch_conversation(
     }
 
     get_conversation(db, &new_id).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_conversation_row() -> conversations::Model {
+        conversations::Model {
+            id: "conv-1".to_string(),
+            title: "Conversation".to_string(),
+            model_id: "model-1".to_string(),
+            provider_id: "provider-1".to_string(),
+            system_prompt: None,
+            temperature: None,
+            max_tokens: None,
+            top_p: None,
+            frequency_penalty: None,
+            search_enabled: 1,
+            search_provider_id: Some("search-1".to_string()),
+            thinking_budget: None,
+            thinking_level: None,
+            enabled_mcp_server_ids: serde_json::to_string(&vec!["mcp-1".to_string()]).unwrap(),
+            enabled_knowledge_base_ids: serde_json::to_string(&vec!["kb-1".to_string()]).unwrap(),
+            enabled_memory_namespace_ids: serde_json::to_string(&vec!["mem-1".to_string()])
+                .unwrap(),
+            message_count: 0,
+            created_at: 0,
+            updated_at: 0,
+            is_pinned: 0,
+            is_archived: 0,
+            workspace_snapshot_json: String::new(),
+            workspace_id: None,
+            active_branch_id: None,
+            active_artifact_id: None,
+            research_mode: 1,
+            context_compression: 0,
+            category_id: None,
+            parent_conversation_id: None,
+            mode: "chat".to_string(),
+            source: "chat".to_string(),
+        }
+    }
+
+    #[test]
+    fn project_workspace_snapshot_prefers_real_conversation_state() {
+        let mut persisted = default_workspace_snapshot();
+        persisted.search_policy.enabled = false;
+        persisted.search_policy.query_mode = "auto".to_string();
+        persisted.search_policy.result_limit = 25;
+        persisted.tool_binding.approval_mode = "allow_safe".to_string();
+        persisted.memory_policy.write_back = true;
+        persisted.pinned_artifact_ids = vec!["artifact-1".to_string()];
+
+        let snapshot = project_workspace_snapshot(&sample_conversation_row(), Some(persisted));
+
+        assert!(snapshot.search_policy.enabled);
+        assert_eq!(snapshot.search_policy.search_provider_id.as_deref(), Some("search-1"));
+        assert_eq!(snapshot.search_policy.query_mode, "auto");
+        assert_eq!(snapshot.search_policy.result_limit, 25);
+        assert_eq!(snapshot.tool_binding.server_ids, vec!["mcp-1".to_string()]);
+        assert_eq!(snapshot.knowledge_binding.knowledge_base_ids, vec!["kb-1".to_string()]);
+        assert!(snapshot.memory_policy.enabled);
+        assert_eq!(snapshot.memory_policy.namespace_id.as_deref(), Some("mem-1"));
+        assert!(snapshot.memory_policy.write_back);
+        assert!(snapshot.toggles.search_enabled);
+        assert_eq!(snapshot.toggles.enabled_mcp_server_ids, vec!["mcp-1".to_string()]);
+        assert_eq!(
+            snapshot.toggles.enabled_knowledge_base_ids,
+            vec!["kb-1".to_string()]
+        );
+        assert!(snapshot.toggles.memory_enabled);
+        assert_eq!(snapshot.pinned_artifact_ids, vec!["artifact-1".to_string()]);
+        assert!(snapshot.research_mode);
+    }
+
+    #[test]
+    fn apply_workspace_snapshot_input_updates_only_requested_sections() {
+        let current = default_workspace_snapshot();
+        let next = apply_workspace_snapshot_input(
+            current,
+            UpdateConversationWorkspaceSnapshotInput {
+                search_policy: Some(SearchPolicy {
+                    enabled: true,
+                    search_provider_id: Some("search-2".to_string()),
+                    query_mode: "auto".to_string(),
+                    result_limit: 20,
+                }),
+                pinned_artifact_ids: Some(vec!["artifact-2".to_string()]),
+                ..Default::default()
+            },
+        );
+
+        assert!(next.search_policy.enabled);
+        assert_eq!(next.search_policy.search_provider_id.as_deref(), Some("search-2"));
+        assert_eq!(next.search_policy.query_mode, "auto");
+        assert_eq!(next.search_policy.result_limit, 20);
+        assert_eq!(next.tool_binding.server_ids, Vec::<String>::new());
+        assert_eq!(next.pinned_artifact_ids, vec!["artifact-2".to_string()]);
+    }
 }
 
 pub async fn search_conversations(

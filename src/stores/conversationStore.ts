@@ -126,17 +126,58 @@ type ConversationPreferenceState = Pick<
   | 'enabledMemoryNamespaceIds'
 >;
 
+function workspaceSearchStateFromSnapshot(
+  snapshot?: ConversationWorkspaceSnapshot | null,
+  conversation?: Conversation | null,
+): Pick<ConversationPreferenceState, 'searchEnabled' | 'searchProviderId'> {
+  if (!snapshot) {
+    return {
+      searchEnabled: conversation?.search_enabled ?? false,
+      searchProviderId: conversation?.search_provider_id ?? null,
+    };
+  }
+
+  return {
+    searchEnabled: snapshot.searchPolicy.enabled,
+    searchProviderId: snapshot.searchPolicy.searchProviderId ?? null,
+  };
+}
+
+function workspaceBindingStateFromSnapshot(
+  snapshot?: ConversationWorkspaceSnapshot | null,
+  conversation?: Conversation | null,
+): Pick<
+  ConversationPreferenceState,
+  'enabledMcpServerIds' | 'enabledKnowledgeBaseIds' | 'enabledMemoryNamespaceIds'
+> {
+  if (!snapshot) {
+    return {
+      enabledMcpServerIds: [...(conversation?.enabled_mcp_server_ids ?? [])],
+      enabledKnowledgeBaseIds: [...(conversation?.enabled_knowledge_base_ids ?? [])],
+      enabledMemoryNamespaceIds: [...(conversation?.enabled_memory_namespace_ids ?? [])],
+    };
+  }
+
+  const memoryNamespaceIds = snapshot.memoryPolicy.enabled
+    ? (snapshot.memoryPolicy.namespaceId ? [snapshot.memoryPolicy.namespaceId] : [])
+    : [];
+
+  return {
+    enabledMcpServerIds: [...snapshot.toolBinding.serverIds],
+    enabledKnowledgeBaseIds: [...snapshot.knowledgeBinding.knowledgeBaseIds],
+    enabledMemoryNamespaceIds: memoryNamespaceIds,
+  };
+}
+
 function conversationPreferenceStateFromConversation(
   conversation?: Conversation | null,
+  snapshot?: ConversationWorkspaceSnapshot | null,
 ): ConversationPreferenceState {
   return {
-    searchEnabled: conversation?.search_enabled ?? false,
-    searchProviderId: conversation?.search_provider_id ?? null,
+    ...workspaceSearchStateFromSnapshot(snapshot, conversation),
     thinkingBudget: conversation?.thinking_budget ?? null,
     thinkingLevel: conversation?.thinking_level ?? null,
-    enabledMcpServerIds: [...(conversation?.enabled_mcp_server_ids ?? [])],
-    enabledKnowledgeBaseIds: [...(conversation?.enabled_knowledge_base_ids ?? [])],
-    enabledMemoryNamespaceIds: [...(conversation?.enabled_memory_namespace_ids ?? [])],
+    ...workspaceBindingStateFromSnapshot(snapshot, conversation),
   };
 }
 
@@ -702,7 +743,7 @@ async function persistConversationPreferences(
     set((state) => ({
       ...mergeConversationCollections(state.conversations, state.archivedConversations, updated),
       ...(state.activeConversationId === conversationId
-        ? conversationPreferenceStateFromConversation(updated)
+        ? conversationPreferenceStateFromConversation(updated, state.workspaceSnapshot)
         : {}),
       error: null,
     }));
@@ -729,6 +770,37 @@ async function persistConversationPreferences(
         ...rollbackState,
         error: String(error),
       };
+    });
+  }
+}
+
+async function persistWorkspaceBindingPreferences(
+  set: (partial: Partial<ConversationState> | ((state: ConversationState) => Partial<ConversationState>)) => void,
+  get: () => ConversationState,
+  conversationId: string,
+  snapshotPatch: Partial<ConversationWorkspaceSnapshot>,
+  optimisticState: Partial<ConversationPreferenceState>,
+  rollbackState: Partial<ConversationPreferenceState>,
+) {
+  try {
+    await get().updateWorkspaceSnapshot(conversationId, snapshotPatch);
+  } catch (error) {
+    const state = get();
+    if (!preferenceStateMatches({
+      searchEnabled: state.searchEnabled,
+      searchProviderId: state.searchProviderId,
+      thinkingBudget: state.thinkingBudget,
+      thinkingLevel: state.thinkingLevel,
+      enabledMcpServerIds: state.enabledMcpServerIds,
+      enabledKnowledgeBaseIds: state.enabledKnowledgeBaseIds,
+      enabledMemoryNamespaceIds: state.enabledMemoryNamespaceIds,
+    }, optimisticState)) {
+      return;
+    }
+
+    set({
+      ...rollbackState,
+      error: String(error),
     });
   }
 }
@@ -1100,12 +1172,27 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   setSearchEnabled: (enabled) => {
     const previous = get().searchEnabled;
     const conversationId = get().activeConversationId;
+    const snapshot = get().workspaceSnapshot;
     set({ searchEnabled: enabled });
     if (conversationId) {
-      void persistConversationPreferences(
+      void persistWorkspaceBindingPreferences(
         set,
+        get,
         conversationId,
-        { search_enabled: enabled },
+        {
+          searchPolicy: {
+            enabled,
+            searchProviderId: snapshot?.searchPolicy.searchProviderId,
+            queryMode: snapshot?.searchPolicy.queryMode ?? 'manual',
+            resultLimit: snapshot?.searchPolicy.resultLimit ?? 10,
+          },
+          toggles: snapshot
+            ? {
+              ...snapshot.toggles,
+              searchEnabled: enabled,
+            }
+            : undefined,
+        },
         { searchEnabled: enabled },
         { searchEnabled: previous },
       );
@@ -1114,12 +1201,27 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   setSearchProviderId: (id) => {
     const previous = get().searchProviderId;
     const conversationId = get().activeConversationId;
+    const snapshot = get().workspaceSnapshot;
     set({ searchProviderId: id });
     if (conversationId) {
-      void persistConversationPreferences(
+      void persistWorkspaceBindingPreferences(
         set,
+        get,
         conversationId,
-        { search_provider_id: id },
+        {
+          searchPolicy: {
+            enabled: snapshot?.searchPolicy.enabled ?? get().searchEnabled,
+            searchProviderId: id ?? undefined,
+            queryMode: snapshot?.searchPolicy.queryMode ?? 'manual',
+            resultLimit: snapshot?.searchPolicy.resultLimit ?? 10,
+          },
+          toggles: snapshot
+            ? {
+              ...snapshot.toggles,
+              searchProviderId: id ?? undefined,
+            }
+            : undefined,
+        },
         { searchProviderId: id },
         { searchProviderId: previous },
       );
@@ -1128,13 +1230,24 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   setEnabledMcpServerIds: (ids) => {
     const previous = get().enabledMcpServerIds;
     const conversationId = get().activeConversationId;
+    const snapshot = get().workspaceSnapshot;
     const nextIds = [...ids];
     set({ enabledMcpServerIds: nextIds });
     if (conversationId) {
-      void persistConversationPreferences(
+      void persistWorkspaceBindingPreferences(
         set,
+        get,
         conversationId,
-        { enabled_mcp_server_ids: nextIds },
+        {
+          toolBinding: {
+            serverIds: nextIds,
+            defaultTools: snapshot?.toolBinding.defaultTools,
+            approvalMode: snapshot?.toolBinding.approvalMode ?? 'ask',
+          },
+          toggles: snapshot
+            ? { ...snapshot.toggles, enabledMcpServerIds: nextIds }
+            : undefined,
+        },
         { enabledMcpServerIds: nextIds },
         { enabledMcpServerIds: previous },
       );
@@ -1142,16 +1255,27 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
   toggleMcpServer: (id) => {
     const previous = get().enabledMcpServerIds;
+    const snapshot = get().workspaceSnapshot;
     const nextIds = previous.includes(id)
       ? previous.filter((serverId) => serverId !== id)
       : [...previous, id];
     const conversationId = get().activeConversationId;
     set({ enabledMcpServerIds: nextIds });
     if (conversationId) {
-      void persistConversationPreferences(
+      void persistWorkspaceBindingPreferences(
         set,
+        get,
         conversationId,
-        { enabled_mcp_server_ids: nextIds },
+        {
+          toolBinding: {
+            serverIds: nextIds,
+            defaultTools: snapshot?.toolBinding.defaultTools,
+            approvalMode: snapshot?.toolBinding.approvalMode ?? 'ask',
+          },
+          toggles: snapshot
+            ? { ...snapshot.toggles, enabledMcpServerIds: nextIds }
+            : undefined,
+        },
         { enabledMcpServerIds: nextIds },
         { enabledMcpServerIds: previous },
       );
@@ -1188,13 +1312,23 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   setEnabledKnowledgeBaseIds: (ids) => {
     const previous = get().enabledKnowledgeBaseIds;
     const conversationId = get().activeConversationId;
+    const snapshot = get().workspaceSnapshot;
     const nextIds = [...ids];
     set({ enabledKnowledgeBaseIds: nextIds });
     if (conversationId) {
-      void persistConversationPreferences(
+      void persistWorkspaceBindingPreferences(
         set,
+        get,
         conversationId,
-        { enabled_knowledge_base_ids: nextIds },
+        {
+          knowledgeBinding: {
+            knowledgeBaseIds: nextIds,
+            autoAttach: snapshot?.knowledgeBinding.autoAttach ?? false,
+          },
+          toggles: snapshot
+            ? { ...snapshot.toggles, enabledKnowledgeBaseIds: nextIds }
+            : undefined,
+        },
         { enabledKnowledgeBaseIds: nextIds },
         { enabledKnowledgeBaseIds: previous },
       );
@@ -1202,16 +1336,26 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
   toggleKnowledgeBase: (id) => {
     const previous = get().enabledKnowledgeBaseIds;
+    const snapshot = get().workspaceSnapshot;
     const nextIds = previous.includes(id)
       ? previous.filter((knowledgeBaseId) => knowledgeBaseId !== id)
       : [...previous, id];
     const conversationId = get().activeConversationId;
     set({ enabledKnowledgeBaseIds: nextIds });
     if (conversationId) {
-      void persistConversationPreferences(
+      void persistWorkspaceBindingPreferences(
         set,
+        get,
         conversationId,
-        { enabled_knowledge_base_ids: nextIds },
+        {
+          knowledgeBinding: {
+            knowledgeBaseIds: nextIds,
+            autoAttach: snapshot?.knowledgeBinding.autoAttach ?? false,
+          },
+          toggles: snapshot
+            ? { ...snapshot.toggles, enabledKnowledgeBaseIds: nextIds }
+            : undefined,
+        },
         { enabledKnowledgeBaseIds: nextIds },
         { enabledKnowledgeBaseIds: previous },
       );
@@ -1220,13 +1364,28 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   setEnabledMemoryNamespaceIds: (ids) => {
     const previous = get().enabledMemoryNamespaceIds;
     const conversationId = get().activeConversationId;
+    const snapshot = get().workspaceSnapshot;
     const nextIds = [...ids];
     set({ enabledMemoryNamespaceIds: nextIds });
     if (conversationId) {
-      void persistConversationPreferences(
+      void persistWorkspaceBindingPreferences(
         set,
+        get,
         conversationId,
-        { enabled_memory_namespace_ids: nextIds },
+        {
+          memoryPolicy: {
+            enabled: nextIds.length > 0,
+            namespaceId: nextIds[0] ?? undefined,
+            writeBack: snapshot?.memoryPolicy.writeBack ?? false,
+          },
+          toggles: snapshot
+            ? {
+              ...snapshot.toggles,
+              memoryEnabled: nextIds.length > 0,
+              memoryNamespaceId: nextIds[0] ?? undefined,
+            }
+            : undefined,
+        },
         { enabledMemoryNamespaceIds: nextIds },
         { enabledMemoryNamespaceIds: previous },
       );
@@ -1234,16 +1393,31 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
   toggleMemoryNamespace: (id) => {
     const previous = get().enabledMemoryNamespaceIds;
+    const snapshot = get().workspaceSnapshot;
     const nextIds = previous.includes(id)
       ? previous.filter((memoryNamespaceId) => memoryNamespaceId !== id)
       : [...previous, id];
     const conversationId = get().activeConversationId;
     set({ enabledMemoryNamespaceIds: nextIds });
     if (conversationId) {
-      void persistConversationPreferences(
+      void persistWorkspaceBindingPreferences(
         set,
+        get,
         conversationId,
-        { enabled_memory_namespace_ids: nextIds },
+        {
+          memoryPolicy: {
+            enabled: nextIds.length > 0,
+            namespaceId: nextIds[0] ?? undefined,
+            writeBack: snapshot?.memoryPolicy.writeBack ?? false,
+          },
+          toggles: snapshot
+            ? {
+              ...snapshot.toggles,
+              memoryEnabled: nextIds.length > 0,
+              memoryNamespaceId: nextIds[0] ?? undefined,
+            }
+            : undefined,
+        },
         { enabledMemoryNamespaceIds: nextIds },
         { enabledMemoryNamespaceIds: previous },
       );
@@ -1396,6 +1570,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     if (!id) {
       set({
         activeConversationId: null,
+        workspaceSnapshot: null,
         messages: [],
         activeAgentExecutorId: DEFAULT_AGENT_EXECUTOR_ID,
         activeAgentExecutorModel: null,
@@ -1430,6 +1605,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       activeConversationId: id,
       activeAgentExecutorId: savedExecutorId,
       activeAgentExecutorModel: savedExecutorModel || null,
+      workspaceSnapshot: null,
       messages: cachedPage?.messages ?? [],
       loading: !cachedPage || cachedPage.messages.length === 0,
       loadingOlder: false,
@@ -1439,6 +1615,9 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       error: null,
       ...conversationPreferenceStateFromConversation(conversation),
     });
+    if (isTauri()) {
+      void get().loadWorkspaceSnapshot(id);
+    }
     const refreshMessages = () => get().fetchMessages(id).then(() => {
       if (requestSeq !== _activeMessageLoadSeq || get().activeConversationId !== id) {
         return;
@@ -1563,10 +1742,14 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       set((s) => ({
         conversations: [conversation, ...s.conversations],
         activeConversationId: conversation.id,
+        workspaceSnapshot: null,
         messages: [],
         error: null,
         ...conversationPreferenceStateFromConversation(conversation),
       }));
+      if (isTauri()) {
+        void get().loadWorkspaceSnapshot(conversation.id);
+      }
       return conversation;
     } catch (e) {
       set({ error: String(e) });
@@ -1579,7 +1762,9 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       const updated = await invoke<Conversation>('update_conversation', { id, input });
       set((s) => ({
         ...mergeConversationCollections(s.conversations, s.archivedConversations, updated),
-        ...(s.activeConversationId === id ? conversationPreferenceStateFromConversation(updated) : {}),
+        ...(s.activeConversationId === id
+          ? conversationPreferenceStateFromConversation(updated, s.workspaceSnapshot)
+          : {}),
         error: null,
       }));
     })();
@@ -1636,9 +1821,13 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       set((s) => ({
         conversations: [newConv, ...s.conversations],
         activeConversationId: newConv.id,
+        workspaceSnapshot: null,
         messages: [],
         error: null,
       }));
+      if (isTauri()) {
+        void get().loadWorkspaceSnapshot(newConv.id);
+      }
       // Load the branched messages
       const msgs = await invoke<Message[]>('list_messages', { conversationId: newConv.id });
       set({ messages: msgs });
@@ -3529,27 +3718,52 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       const snapshot = await invoke<ConversationWorkspaceSnapshot>('get_workspace_snapshot', {
         conversation_id: conversationId,
       });
-      set({ workspaceSnapshot: snapshot });
+      const conversation = get().conversations.find((item) => item.id === conversationId)
+        ?? get().archivedConversations.find((item) => item.id === conversationId);
+      set((state) => (
+        state.activeConversationId === conversationId
+          ? {
+            workspaceSnapshot: snapshot,
+            ...workspaceSearchStateFromSnapshot(snapshot, conversation),
+            ...workspaceBindingStateFromSnapshot(snapshot, conversation),
+          }
+          : {}
+      ));
       return snapshot;
     } catch {
-      set({ workspaceSnapshot: null });
+      set((state) => (state.activeConversationId === conversationId ? { workspaceSnapshot: null } : {}));
       return null;
     }
   },
 
   updateWorkspaceSnapshot: async (conversationId, snapshot) => {
     try {
-      await invoke('update_workspace_snapshot', {
+      const updatedSnapshot = await invoke<ConversationWorkspaceSnapshot>('update_workspace_snapshot', {
         conversation_id: conversationId,
-        ...snapshot,
+        input: {
+          searchPolicy: snapshot.searchPolicy,
+          toolBinding: snapshot.toolBinding,
+          knowledgeBinding: snapshot.knowledgeBinding,
+          memoryPolicy: snapshot.memoryPolicy,
+          toggles: snapshot.toggles,
+          researchMode: snapshot.researchMode,
+          pinnedArtifactIds: snapshot.pinnedArtifactIds,
+        },
       });
-      set((s) => ({
-        workspaceSnapshot: s.workspaceSnapshot
-          ? { ...s.workspaceSnapshot, ...snapshot }
-          : null,
-      }));
+      const conversation = get().conversations.find((item) => item.id === conversationId)
+        ?? get().archivedConversations.find((item) => item.id === conversationId);
+      set((state) => (
+        state.activeConversationId === conversationId
+          ? {
+            workspaceSnapshot: updatedSnapshot,
+            ...workspaceSearchStateFromSnapshot(updatedSnapshot, conversation),
+            ...workspaceBindingStateFromSnapshot(updatedSnapshot, conversation),
+          }
+          : {}
+      ));
     } catch (e) {
       console.error('Failed to update workspace snapshot:', e);
+      throw e;
     }
   },
 

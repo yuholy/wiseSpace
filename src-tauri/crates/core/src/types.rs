@@ -429,6 +429,76 @@ pub struct UpdateConversationInput {
     pub source: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchPolicy {
+    pub enabled: bool,
+    pub search_provider_id: Option<String>,
+    pub query_mode: String,
+    pub result_limit: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolBinding {
+    pub server_ids: Vec<String>,
+    pub default_tools: Option<Vec<String>>,
+    pub approval_mode: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct KnowledgeBinding {
+    pub knowledge_base_ids: Vec<String>,
+    pub auto_attach: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryPolicy {
+    pub enabled: bool,
+    pub namespace_id: Option<String>,
+    pub write_back: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextToggleState {
+    pub search_enabled: bool,
+    pub search_provider_id: Option<String>,
+    pub enabled_knowledge_base_ids: Vec<String>,
+    pub enabled_mcp_server_ids: Vec<String>,
+    pub enabled_tool_names: Option<Vec<String>>,
+    pub memory_enabled: bool,
+    pub memory_namespace_id: Option<String>,
+    pub memory_write_back: bool,
+    pub disabled_context_source_ids: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationWorkspaceSnapshot {
+    pub search_policy: SearchPolicy,
+    pub tool_binding: ToolBinding,
+    pub knowledge_binding: KnowledgeBinding,
+    pub memory_policy: MemoryPolicy,
+    pub toggles: ContextToggleState,
+    pub research_mode: bool,
+    pub pinned_artifact_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateConversationWorkspaceSnapshotInput {
+    pub search_policy: Option<SearchPolicy>,
+    pub tool_binding: Option<ToolBinding>,
+    pub knowledge_binding: Option<KnowledgeBinding>,
+    pub memory_policy: Option<MemoryPolicy>,
+    pub toggles: Option<ContextToggleState>,
+    pub research_mode: Option<bool>,
+    pub pinned_artifact_ids: Option<Vec<String>>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Workspace {
     pub id: String,
