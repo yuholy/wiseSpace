@@ -226,6 +226,8 @@ pub fn run() {
             commands::external_agents::sync_external_agent_task,
             commands::external_agents::list_agent_tasks,
             commands::external_agents::list_agent_task_events,
+            // unified extensions
+            commands::extensions::list_extensions,
             // knowledge
             commands::knowledge::list_knowledge_bases,
             commands::knowledge::create_knowledge_base,

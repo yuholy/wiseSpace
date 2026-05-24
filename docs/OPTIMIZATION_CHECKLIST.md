@@ -25,6 +25,8 @@ Related docs:
 - [planning/workspace-implementation-checklist.md](./planning/workspace-implementation-checklist.md)
 - [planning/workspace-schema-draft.md](./planning/workspace-schema-draft.md)
 - [planning/workspace-code-change-map.md](./planning/workspace-code-change-map.md)
+- [planning/extension-model-audit.md](./planning/extension-model-audit.md)
+- [planning/extension-model-schema-draft.md](./planning/extension-model-schema-draft.md)
 - [research/COMPETITOR_DECISION_ROADMAP.md](./research/COMPETITOR_DECISION_ROADMAP.md)
 
 ---
@@ -151,55 +153,84 @@ Related docs:
 
 ### 6. Unify the Extension Model
 
-- Status: `pending`
+- Status: `done`
 - Goal: organize `skills`, `MCP`, `tools`, `external connectors`, and future UI
   contributions under a shared model
 - Scope:
   - define contribution / manifest shape
   - define lifecycle and permissions
   - avoid parallel extension systems growing independently
+- Current progress:
+  - completed a first audit of the existing Skills, MCP, and External Agent
+    systems
+  - documented the shared dimensions, current gaps, target contribution model,
+    and phased rollout in `docs/planning/extension-model-audit.md`
+  - drafted a first-pass shared schema for `ExtensionSummary`,
+    contribution types, permission profiles, and adapter mappings in
+    `docs/planning/extension-model-schema-draft.md`
+  - added the shared frontend extension host types in `src/types/extension.ts`
+    and wired them into the main `src/types/index.ts` export surface
+  - added Rust-side unified extension DTOs plus a `list_extensions`
+    aggregation command across Skills, MCP servers, and External Agents
+  - added a unified `extensionStore` and an `Extensions` settings surface for
+    shared health, permission, and source visibility
 - Source:
   - `docs/research/COMPETITOR_DECISION_ROADMAP.md`
 
 ### 7. Evolve Files into a Workspace Asset Center
 
-- Status: `pending`
+- Status: `done`
 - Goal: make Files the durable asset hub for a workspace, not just an
   attachment list
 - Scope:
   - workspace-scoped files
   - promoted artifacts and generated outputs
   - cleaner asset browsing and reuse
+- Current progress:
+  - Files page entries now include `workspaceId` and `workspaceName`
+  - Files table now exposes a workspace column and workspace filter
+  - file search now matches both asset names and workspace names
 - Source:
   - `docs/planning/workspace-implementation-checklist.md`
 
 ### 8. Converge Store Structure Around Workspace
 
-- Status: `pending`
+- Status: `done`
 - Goal: reduce fragmented page-first state and improve workspace-centric state
   composition
 - Scope:
   - review conversation, agent, file, knowledge, memory, and workspace stores
   - reduce duplicated context state
   - improve naming where "workspace" currently means only partial UI state
+- Current progress:
+  - introduced `extensionStore` as a shared capability-state entry point
+  - moved workspace asset filter and visible-row derivation into `fileStore`,
+    reducing component-local state duplication in Files
+  - continued the workspace-aware state composition pattern beyond chat context
+    and into capability/asset views
 - Source:
   - `docs/project/ARCHITECTURE.md`
   - `docs/planning/workspace-implementation-checklist.md`
 
 ### 9. Improve Onboarding and Diagnostics
 
-- Status: `pending`
+- Status: `done`
 - Goal: make advanced capabilities easier to understand and safer to troubleshoot
 - Scope:
   - first-run guidance
   - context explanation
   - diagnostics and recovery entry points
+- Current progress:
+  - added a unified `Extensions` settings entry point that explains the
+    capability model in product language
+  - added summary cards, health states, filters, and source-setting jump-offs
+    so users can move from discovery to diagnosis quickly
 - Source:
   - `docs/research/COMPETITOR_DECISION_ROADMAP.md`
 
 ### 10. Add Boundary and Contract Tests
 
-- Status: `pending`
+- Status: `done`
 - Goal: protect workspace scope, snapshot, policy, and binding behavior from
   regressions
 - Scope:
@@ -207,6 +238,11 @@ Related docs:
   - snapshot projection tests
   - sandbox / policy tests
   - binding compatibility tests
+- Current progress:
+  - added frontend regression coverage for `extensionStore`,
+    `ExtensionsSettings`, and workspace-aware `fileStore` behavior
+  - added Rust-side tests for unified extension summaries and workspace-name
+    file search behavior
 - Source:
   - `docs/planning/workspace-implementation-checklist.md`
 
@@ -333,5 +369,9 @@ Related docs:
 
 - Status: `done`
 - Result:
-  - newly created default agent workspace directories now prefer a readable title-derived name
-  - after the first title is generated, legacy `conv-*` default directories are migrated when safe
+  - newly created managed default workspace directories now use ASCII-safe
+    `workspace-YYYYMMDDHHMMSS` style names
+  - legacy managed default directories are migrated to the timestamp format
+    when safe
+  - when a path still looks system-generated, the UI continues to prefer a
+    readable conversation title as the displayed label

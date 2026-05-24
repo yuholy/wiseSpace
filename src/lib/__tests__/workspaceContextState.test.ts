@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { buildWorkspaceContextSources, deriveWorkspaceContextState } from '../workspaceContextState';
+import {
+  buildWorkspaceContextSources,
+  deriveToolApprovalModeFromAgentPermission,
+  deriveWorkspaceContextState,
+  resolveEffectiveToolApprovalMode,
+} from '../workspaceContextState';
 
 describe('workspaceContextState', () => {
   it('prefers workspace snapshot over legacy conversation fields', () => {
@@ -130,5 +135,25 @@ describe('workspaceContextState', () => {
     expect(buildWorkspaceContextSources(state)).toEqual([
       { type: 'search', title: 'research-mode' },
     ]);
+  });
+
+  it('maps agent permissions to effective tool approval mode', () => {
+    expect(deriveToolApprovalModeFromAgentPermission('default')).toBe('ask');
+    expect(deriveToolApprovalModeFromAgentPermission('accept_edits')).toBe('allow_safe');
+    expect(deriveToolApprovalModeFromAgentPermission('full_access')).toBe('allow_safe');
+  });
+
+  it('prefers local agent permission for tool approval in agent mode', () => {
+    expect(resolveEffectiveToolApprovalMode({
+      currentMode: 'agent',
+      agentPermissionMode: 'full_access',
+      workspaceToolApprovalMode: 'ask',
+    })).toBe('allow_safe');
+
+    expect(resolveEffectiveToolApprovalMode({
+      currentMode: 'chat',
+      agentPermissionMode: 'full_access',
+      workspaceToolApprovalMode: 'ask',
+    })).toBe('ask');
   });
 });

@@ -15,7 +15,11 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useConversationStore, useArtifactStore, useAgentStore } from '@/stores';
-import { buildWorkspaceContextSources, deriveWorkspaceContextState } from '@/lib/workspaceContextState';
+import {
+  buildWorkspaceContextSources,
+  deriveWorkspaceContextState,
+  resolveEffectiveToolApprovalMode,
+} from '@/lib/workspaceContextState';
 
 const EMPTY_AGENT_RUNS: readonly [] = [];
 const EMPTY_AGENT_RUN_EVENTS: readonly [] = [];
@@ -86,16 +90,26 @@ export function ChatInspector({
     [contextState],
   );
 
+  const effectiveToolApprovalMode = useMemo(() => resolveEffectiveToolApprovalMode({
+    currentMode,
+    agentPermissionMode: agentProfile?.permissionMode,
+    workspaceToolApprovalMode: contextState.toolApprovalMode,
+  }), [agentProfile?.permissionMode, contextState.toolApprovalMode, currentMode]);
+
   const toolApprovalLabel = useMemo(() => {
-    switch (contextState.toolApprovalMode) {
+    switch (effectiveToolApprovalMode) {
       case 'allow_safe':
-        return t('chat.inspector.toolApprovalAllowSafe', 'Allow safe tools');
+        return currentMode === 'agent'
+          ? t('chat.inspector.toolApprovalFollowLocalRelaxed', 'Follow local permission')
+          : t('chat.inspector.toolApprovalAllowSafe', 'Allow safe tools');
       case 'inherit':
         return t('chat.inspector.toolApprovalInherit', 'Inherit from tool policy');
       default:
-        return t('chat.inspector.toolApprovalAsk', 'Ask before tool use');
+        return currentMode === 'agent'
+          ? t('chat.inspector.toolApprovalFollowLocalStrict', 'Follow local permission')
+          : t('chat.inspector.toolApprovalAsk', 'Ask before tool use');
     }
-  }, [contextState.toolApprovalMode, t]);
+  }, [currentMode, effectiveToolApprovalMode, t]);
 
   const agentPermissionSummary = useMemo(() => {
     switch (agentProfile?.permissionMode) {
@@ -263,9 +277,9 @@ export function ChatInspector({
             <Descriptions.Item label={t('chat.inspector.toolApproval', 'Tool approval')}>
               <Tag
                 color={
-                  contextState.toolApprovalMode === 'allow_safe'
+                  effectiveToolApprovalMode === 'allow_safe'
                     ? 'green'
-                    : contextState.toolApprovalMode === 'inherit'
+                    : effectiveToolApprovalMode === 'inherit'
                       ? 'blue'
                       : 'default'
                 }
@@ -380,7 +394,7 @@ export function ChatInspector({
       latestRun,
       agentPermissionSummary,
       contextState.researchMode,
-      contextState.toolApprovalMode,
+      effectiveToolApprovalMode,
       toolApprovalLabel,
       agentProfile?.workspaceRoot,
       runTimeline,

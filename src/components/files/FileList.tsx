@@ -112,11 +112,21 @@ export function FileList({
       ),
     },
     {
+      title: t('files.columnWorkspace', 'Workspace'),
+      dataIndex: 'workspaceName',
+      key: 'workspaceName',
+      width: 180,
+      sorter: { compare: (a, b) => (a.workspaceName ?? '').localeCompare(b.workspaceName ?? ''), multiple: 2 },
+      render: (workspaceName: string | undefined | null) => (
+        workspaceName ? <Tag bordered={false}>{workspaceName}</Tag> : <span style={{ color: token.colorTextQuaternary }}>-</span>
+      ),
+    },
+    {
       title: t('files.columnSize'),
       dataIndex: 'size',
       key: 'size',
       width: 100,
-      sorter: { compare: (a, b) => (a.size ?? 0) - (b.size ?? 0), multiple: 2 },
+      sorter: { compare: (a, b) => (a.size ?? 0) - (b.size ?? 0), multiple: 3 },
       render: (size: number | undefined) => (
         <span className="text-xs" style={{ color: token.colorTextSecondary }}>{formatSize(size)}</span>
       ),
@@ -126,7 +136,7 @@ export function FileList({
       dataIndex: 'createdAt',
       key: 'createdAt',
       width: 180,
-      sorter: { compare: (a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''), multiple: 3 },
+      sorter: { compare: (a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''), multiple: 4 },
       defaultSortOrder: 'descend',
       render: (date: string | undefined) => (
         <span className="text-xs" style={{ color: token.colorTextSecondary }}>{date ?? '-'}</span>

@@ -238,6 +238,47 @@ function categoryTemplateUpdateFromCategory(
   };
 }
 
+function selectReplacementConversationAfterDeletion(
+  conversations: Conversation[],
+  deletedConversationId: string,
+  activeConversationId: string | null,
+): string | null {
+  if (activeConversationId !== deletedConversationId) {
+    return activeConversationId;
+  }
+
+  const deletedIndex = conversations.findIndex((conversation) => conversation.id === deletedConversationId);
+  if (deletedIndex === -1) {
+    return null;
+  }
+
+  const deletedConversation = conversations[deletedIndex];
+  const sameCategoryConversations = conversations.filter(
+    (conversation) => conversation.id !== deletedConversationId
+      && conversation.category_id === deletedConversation.category_id,
+  );
+
+  if (sameCategoryConversations.length === 0) {
+    return null;
+  }
+
+  for (let index = deletedIndex + 1; index < conversations.length; index += 1) {
+    const candidate = conversations[index];
+    if (candidate.id !== deletedConversationId && candidate.category_id === deletedConversation.category_id) {
+      return candidate.id;
+    }
+  }
+
+  for (let index = deletedIndex - 1; index >= 0; index -= 1) {
+    const candidate = conversations[index];
+    if (candidate.id !== deletedConversationId && candidate.category_id === deletedConversation.category_id) {
+      return candidate.id;
+    }
+  }
+
+  return sameCategoryConversations[0]?.id ?? null;
+}
+
 function nextConversationPreferenceSaveSeq(conversationId: string): number {
   const next = (_conversationPreferenceSaveSeq.get(conversationId) ?? 0) + 1;
   _conversationPreferenceSaveSeq.set(conversationId, next);
@@ -1798,9 +1839,14 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     try {
       await invoke('delete_conversation', { id });
       const state = get();
+      const nextActiveConversationId = selectReplacementConversationAfterDeletion(
+        state.conversations,
+        id,
+        state.activeConversationId,
+      );
       set({
         conversations: state.conversations.filter((c) => c.id !== id),
-        activeConversationId: state.activeConversationId === id ? null : state.activeConversationId,
+        activeConversationId: nextActiveConversationId,
         messages: state.activeConversationId === id ? [] : state.messages,
         error: null,
       });

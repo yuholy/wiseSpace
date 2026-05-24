@@ -32,7 +32,11 @@ import {
   getAgentExecutorStorageKey,
   type AgentExecutorId,
 } from '@/lib/agentExecutors';
-import { deriveWorkspaceContextState } from '@/lib/workspaceContextState';
+import {
+  deriveToolApprovalModeFromAgentPermission,
+  deriveWorkspaceContextState,
+  resolveEffectiveToolApprovalMode,
+} from '@/lib/workspaceContextState';
 
 async function fileToAttachmentInput(file: File): Promise<AttachmentInput> {
   return new Promise((resolve) => {
@@ -137,6 +141,7 @@ export function InputArea() {
   const setSearchEnabled = useConversationStore((s) => s.setSearchEnabled);
   const setSearchProviderId = useConversationStore((s) => s.setSearchProviderId);
   const workspaceSnapshot = useConversationStore((s) => s.workspaceSnapshot);
+  const updateWorkspaceSnapshot = useConversationStore((s) => s.updateWorkspaceSnapshot);
   const searchProviders = useSearchStore((s) => s.providers);
   const loadSearchProviders = useSearchStore((s) => s.loadProviders);
 
@@ -217,17 +222,31 @@ export function InputArea() {
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId);
   const currentMode = activeConversation?.mode || 'chat';
-  const toolApprovalMode = workspaceContextState.toolApprovalMode;
+  const toolApprovalMode = resolveEffectiveToolApprovalMode({
+    currentMode,
+    agentPermissionMode: resolvedAgentPermissionMode,
+    workspaceToolApprovalMode: workspaceContextState.toolApprovalMode,
+  });
   const toolApprovalSummary = useMemo(() => {
     switch (toolApprovalMode) {
       case 'allow_safe':
-        return { label: t('chat.toolApprovalAllowSafe', 'Safe tools auto-run'), color: 'green' as const };
+        return {
+          label: currentMode === 'agent'
+            ? t('chat.toolApprovalFollowLocalRelaxed', 'Follow local permission')
+            : t('chat.toolApprovalAllowSafe', 'Safe tools auto-run'),
+          color: 'green' as const,
+        };
       case 'inherit':
         return { label: t('chat.toolApprovalInherit', 'Use server policy'), color: 'blue' as const };
       default:
-        return { label: t('chat.toolApprovalAsk', 'Ask before tools'), color: 'default' as const };
+        return {
+          label: currentMode === 'agent'
+            ? t('chat.toolApprovalFollowLocalStrict', 'Follow local permission')
+            : t('chat.toolApprovalAsk', 'Ask before tools'),
+          color: 'default' as const,
+        };
     }
-  }, [t, toolApprovalMode]);
+  }, [currentMode, t, toolApprovalMode]);
   const modeBoundarySummary = currentMode === 'agent'
     ? t('chat.agentBoundarySummary', 'Agent mode can execute inside the workspace.')
     : t('chat.chatBoundarySummary', 'Chat mode stays in conversation flow only.');
@@ -474,6 +493,14 @@ export function InputArea() {
     const applyChange = async () => {
       try {
         await updateAgentPermissionMode(activeConversationId, mode);
+        if (workspaceSnapshot) {
+          await updateWorkspaceSnapshot(activeConversationId, {
+            toolBinding: {
+              ...workspaceSnapshot.toolBinding,
+              approvalMode: deriveToolApprovalModeFromAgentPermission(mode),
+            },
+          });
+        }
         setAgentPermissionMode(mode);
       } catch (e) {
         console.warn('Failed to update permission mode:', e);
@@ -497,7 +524,7 @@ export function InputArea() {
     } else {
       await applyChange();
     }
-  }, [activeConversationId, modal, t, updateAgentPermissionMode]);
+  }, [activeConversationId, modal, t, updateAgentPermissionMode, updateWorkspaceSnapshot, workspaceSnapshot]);
 
   const permissionModeIcon = useMemo(() => {
     switch (resolvedAgentPermissionMode) {
@@ -1683,7 +1710,7 @@ export function InputArea() {
             </Dropdown>
           )}
           {currentMode === 'agent' && (
-            <Tooltip title={t('chat.toolApprovalHelp', 'Workspace-level MCP approval policy used for tool calls.')}>
+            <Tooltip title={t('chat.toolApprovalFollowLocalHelp', 'In agent mode, tool approval follows the current local permission mode.')}>
               <Tag color={toolApprovalSummary.color} bordered={false} style={{ marginInlineEnd: 0, cursor: 'help' }}>
                 {toolApprovalSummary.label}
               </Tag>

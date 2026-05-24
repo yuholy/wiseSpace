@@ -10,6 +10,7 @@ import {
   MessageSquare,
   Palette,
   Plug,
+  Puzzle,
   Search,
   Settings,
   Zap,
@@ -34,6 +35,7 @@ const MENU_ICONS: Record<SettingsSection, React.ReactNode> = {
   mcpServers: <Plug size={16} />,
   agentExecutors: <Bot size={16} />,
   backup: <CloudUpload size={16} />,
+  extensions: <Puzzle size={16} />,
 };
 
 const SECTION_KEYS: SettingsSection[] = [
@@ -44,6 +46,7 @@ const SECTION_KEYS: SettingsSection[] = [
   'defaultModel',
   'mcpServers',
   'agentExecutors',
+  'extensions',
   'proxy',
   'dataStorage',
   'backup',

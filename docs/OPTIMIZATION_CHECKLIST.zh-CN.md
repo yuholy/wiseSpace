@@ -25,6 +25,8 @@
 - [planning/workspace-implementation-checklist.md](./planning/workspace-implementation-checklist.md)
 - [planning/workspace-schema-draft.md](./planning/workspace-schema-draft.md)
 - [planning/workspace-code-change-map.md](./planning/workspace-code-change-map.md)
+- [planning/extension-model-audit.md](./planning/extension-model-audit.md)
+- [planning/extension-model-schema-draft.md](./planning/extension-model-schema-draft.md)
 - [research/COMPETITOR_DECISION_ROADMAP.md](./research/COMPETITOR_DECISION_ROADMAP.md)
 
 ---
@@ -124,58 +126,79 @@
 
 ### 6. 统一扩展模型
 
-- 状态：`pending`
+- 状态：`done`
 - 目标：把 `skills`、`MCP`、`tools`、`external connectors`、未来的 UI contribution 收口到统一模型。
 - 范围：
   - 定义 contribution / manifest 结构
   - 定义生命周期和权限模型
   - 避免多套扩展体系并行生长
+- 当前进展：
+  - 已完成对 Skills、MCP、External Agents 现有体系的第一轮审视
+  - 已在 `docs/planning/extension-model-audit.md` 里整理共享维度、现状缺口、目标模型和分阶段推进建议
+  - 已在 `docs/planning/extension-model-schema-draft.md` 里补出第一版共享 schema 草案，包括 `ExtensionSummary`、contribution 类型、权限模型和三套现有体系的映射建议
+  - 前端共享类型已落地到 `src/types/extension.ts`，并接入 `src/types/index.ts` 导出面
+  - Rust 侧已补统一扩展 DTO，并新增 `list_extensions` 聚合命令，能够把 Skills、MCP、External Agents 汇总成统一列表
+  - 前端已新增 `extensionStore` 和设置页 `Extensions` 统一视图，支持按扩展类型查看健康状态、权限边界和来源入口
 - 来源：
   - `docs/research/COMPETITOR_DECISION_ROADMAP.md`
 
 ### 7. 把 Files 升级成 Workspace 资产中心
 
-- 状态：`pending`
+- 状态：`done`
 - 目标：让 Files 成为 workspace 的持久资产中心，而不是单纯附件列表。
 - 范围：
   - workspace 级文件
   - 提升后的 artifacts 和生成产物
   - 更清晰的资产浏览和复用路径
+- 当前进展：
+  - Files 页数据已补齐 `workspaceId / workspaceName`
+  - 文件表格已增加工作空间列，并支持按工作空间筛选
+  - 文件搜索现在会同时匹配文件名和工作空间名
 - 来源：
   - `docs/planning/workspace-implementation-checklist.md`
 
 ### 8. 围绕 Workspace 收敛 Store 结构
 
-- 状态：`pending`
+- 状态：`done`
 - 目标：减少按页面切分的零散状态，增强 workspace 视角下的状态组织。
 - 范围：
   - 梳理 conversation、agent、file、knowledge、memory、workspace stores
   - 减少重复上下文状态
   - 修正当前“workspace”仅代表局部 UI 状态的命名问题
+- 当前进展：
+  - 已新增 `extensionStore` 作为统一扩展能力状态入口，减少技能页、MCP、外部 Agent 视图继续各自复制列表状态
+  - `fileStore` 已吸收工作空间筛选和可见资产派生逻辑，减少 Files 页面组件内部的局部状态分叉
+  - `workspace-aware` 的上下文主链路延续到资产视图，当前阶段的高价值收敛点已经落地
 - 来源：
   - `docs/project/ARCHITECTURE.md`
   - `docs/planning/workspace-implementation-checklist.md`
 
 ### 9. 强化引导与诊断体验
 
-- 状态：`pending`
+- 状态：`done`
 - 目标：让高级能力更容易理解，也更容易排障。
 - 范围：
   - 首次使用引导
   - 上下文解释能力
   - 诊断和恢复入口
+- 当前进展：
+  - 设置页已新增 `Extensions` 统一入口，用统一语言解释扩展能力结构
+  - 页面内置健康统计、类型筛选和来源设置跳转，形成“发现问题 -> 打开对应来源设置”的最小诊断闭环
 - 来源：
   - `docs/research/COMPETITOR_DECISION_ROADMAP.md`
 
 ### 10. 补齐边界与契约测试
 
-- 状态：`pending`
+- 状态：`done`
 - 目标：保护 `workspace scope`、`snapshot`、`policy`、`binding` 这类边界能力不被回归破坏。
 - 范围：
   - workspace scope tests
   - snapshot projection tests
   - sandbox / policy tests
   - binding compatibility tests
+- 当前进展：
+  - 已补 `extensionStore`、`ExtensionsSettings`、`fileStore` 工作空间筛选相关前端回归测试
+  - 已补 Rust 侧扩展聚合摘要测试和 Files 按工作空间名搜索测试
 - 来源：
   - `docs/planning/workspace-implementation-checklist.md`
 
@@ -297,5 +320,6 @@
 
 - 状态：`done`
 - 结果：
-  - 新创建的默认 agent workspace 目录优先使用会话标题生成可读目录名
-  - 首条消息生成标题后，会安全迁移旧的 `conv-*` 默认目录
+  - 新创建的受管默认 workspace 目录现在统一使用 ASCII 安全的 `workspace-YYYYMMDDHHMMSS` 风格命名
+  - 历史受管默认目录会在安全前提下迁移到新的时间戳命名规则
+  - 当路径仍然看起来像系统生成目录时，UI 会继续优先显示可读的会话标题

@@ -12,6 +12,8 @@ export type WorkspaceContextState = {
   toolApprovalMode: 'inherit' | 'ask' | 'allow_safe';
 };
 
+export type AgentPermissionModeLike = 'default' | 'accept_edits' | 'full_access' | string | null | undefined;
+
 export type WorkspaceContextSource = {
   type: 'search' | 'knowledge' | 'memory' | 'tool';
   title: string;
@@ -92,4 +94,27 @@ export function buildWorkspaceContextSources(
   });
 
   return sources;
+}
+
+export function deriveToolApprovalModeFromAgentPermission(
+  permissionMode: AgentPermissionModeLike,
+): 'ask' | 'allow_safe' {
+  switch (permissionMode) {
+    case 'accept_edits':
+    case 'full_access':
+      return 'allow_safe';
+    default:
+      return 'ask';
+  }
+}
+
+export function resolveEffectiveToolApprovalMode(input: {
+  currentMode?: 'chat' | 'agent' | string | null;
+  agentPermissionMode?: AgentPermissionModeLike;
+  workspaceToolApprovalMode: WorkspaceContextState['toolApprovalMode'];
+}): WorkspaceContextState['toolApprovalMode'] {
+  if (input.currentMode === 'agent') {
+    return deriveToolApprovalModeFromAgentPermission(input.agentPermissionMode);
+  }
+  return input.workspaceToolApprovalMode;
 }

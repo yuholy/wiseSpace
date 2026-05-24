@@ -10,6 +10,7 @@ describe('workspaceDisplay', () => {
     expect(looksLikeGeneratedWorkspaceName('conv_abc123')).toBe(true);
     expect(looksLikeGeneratedWorkspaceName('conversation-xyz')).toBe(true);
     expect(looksLikeGeneratedWorkspaceName('550e8400-e29b-41d4-a716-446655440000')).toBe(true);
+    expect(looksLikeGeneratedWorkspaceName('workspace-20260524134410')).toBe(true);
   });
 
   it('does not treat normal folder names as generated workspace names', () => {

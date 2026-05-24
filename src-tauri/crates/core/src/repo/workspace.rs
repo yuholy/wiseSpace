@@ -30,13 +30,35 @@ fn workspace_name_from_title(title: &str) -> String {
     }
 }
 
-fn managed_workspace_root_path(title: &str, conversation_id: &str) -> String {
-    let path = if title.trim().is_empty() {
-        crate::storage_paths::conversation_workspace_dir(conversation_id)
-    } else {
-        crate::storage_paths::titled_conversation_workspace_dir(title, conversation_id)
-    };
-    path.to_string_lossy().to_string()
+fn managed_workspace_root_path_from_slug(slug: &str) -> String {
+    crate::storage_paths::workspace_dir_path_from_slug(slug)
+        .to_string_lossy()
+        .to_string()
+}
+
+async fn unique_managed_workspace_slug(
+    db: &DatabaseConnection,
+    timestamp_source: &str,
+    current_workspace_id: Option<&str>,
+) -> Result<String> {
+    let base_slug = crate::storage_paths::workspace_dir_name_from_timestamp(timestamp_source);
+    let mut candidate = base_slug.clone();
+    let mut suffix = 2usize;
+
+    loop {
+        let existing = workspaces::Entity::find()
+            .filter(workspaces::Column::Slug.eq(&candidate))
+            .one(db)
+            .await?;
+
+        match existing {
+            Some(model) if current_workspace_id != Some(model.id.as_str()) => {
+                candidate = format!("{base_slug}-{suffix}");
+                suffix += 1;
+            }
+            _ => return Ok(candidate),
+        }
+    }
 }
 
 pub async fn get_workspace(db: &DatabaseConnection, id: &str) -> Result<Workspace> {
@@ -74,10 +96,6 @@ pub async fn rename_workspace(
 
     let mut am: workspaces::ActiveModel = model.into();
     am.name = Set(trimmed.to_string());
-    am.slug = Set(crate::storage_paths::workspace_dir_name_from_title(
-        trimmed,
-        workspace_id,
-    ));
     // A user rename should take precedence over future conversation-title sync.
     am.source = Set("manual".to_string());
     am.updated_at = Set(chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string());
@@ -160,13 +178,29 @@ pub async fn ensure_canonical_workspace_for_conversation(
 
     if let Some(workspace_id) = conversation.workspace_id.clone() {
         if let Some(existing) = workspaces::Entity::find_by_id(&workspace_id).one(db).await? {
+            let expected_slug =
+                unique_managed_workspace_slug(db, &existing.created_at, Some(&existing.id)).await?;
+            let expected_root_path = managed_workspace_root_path_from_slug(&expected_slug);
+
+            if existing.source == "conversation"
+                && (existing.slug != expected_slug || existing.root_path != expected_root_path)
+            {
+                let mut am: workspaces::ActiveModel = existing.clone().into();
+                am.slug = Set(expected_slug);
+                am.root_path = Set(expected_root_path);
+                am.updated_at = Set(chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string());
+                let updated = am.update(db).await?;
+                return Ok(workspace_from_model(updated));
+            }
+
             return Ok(workspace_from_model(existing));
         }
     }
 
     let name = workspace_name_from_title(&conversation.title);
-    let slug = crate::storage_paths::workspace_dir_name_from_title(&name, conversation_id);
-    let root_path = managed_workspace_root_path(&conversation.title, conversation_id);
+    let slug =
+        unique_managed_workspace_slug(db, &conversation.created_at.to_string(), None).await?;
+    let root_path = managed_workspace_root_path_from_slug(&slug);
     let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let workspace_id = gen_id();
 
@@ -218,13 +252,9 @@ pub async fn sync_workspace_metadata_from_conversation(
         .ok_or_else(|| WiseSpaceError::NotFound(format!("Conversation {}", conversation_id)))?;
 
     let next_name = workspace_name_from_title(&conversation.title);
-    let next_slug = crate::storage_paths::workspace_dir_name_from_title(&next_name, conversation_id);
-    let next_root_path = managed_workspace_root_path(&conversation.title, conversation_id);
 
     let mut am: workspaces::ActiveModel = workspace_model.into();
     am.name = Set(next_name);
-    am.slug = Set(next_slug);
-    am.root_path = Set(next_root_path);
     am.updated_at = Set(chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string());
     let updated = am.update(db).await?;
     Ok(Some(workspace_from_model(updated)))

@@ -1,3 +1,4 @@
+use chrono::TimeZone;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 
@@ -57,54 +58,54 @@ pub fn conversation_workspace_dir(conversation_id: &str) -> PathBuf {
     workspace_root().join(conversation_id)
 }
 
-/// Builds a readable workspace directory name from a title plus a short
-/// conversation suffix for deterministic uniqueness.
-pub fn workspace_dir_name_from_title(title: &str, conversation_id: &str) -> String {
-    let sanitized: String = title
-        .trim()
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() {
-                c.to_ascii_lowercase()
-            } else if c.is_whitespace() || matches!(c, '-' | '_' | '.') {
-                '-'
-            } else {
-                '-'
-            }
-        })
-        .collect();
-
-    let compacted = sanitized
-        .split('-')
-        .filter(|segment| !segment.is_empty())
-        .collect::<Vec<_>>()
-        .join("-");
-
-    let base = if compacted.is_empty() {
-        "workspace".to_string()
-    } else {
-        compacted.chars().take(40).collect::<String>()
-    };
-
-    let suffix: String = conversation_id
-        .chars()
-        .rev()
-        .take(6)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect();
-
-    if suffix.is_empty() {
-        base
-    } else {
-        format!("{}-{}", base, suffix)
-    }
+fn fallback_workspace_timestamp() -> String {
+    chrono::Local::now().format("%Y%m%d%H%M%S").to_string()
 }
 
-/// Returns the readable per-conversation workspace directory under workspace root.
-pub fn titled_conversation_workspace_dir(title: &str, conversation_id: &str) -> PathBuf {
-    workspace_root().join(workspace_dir_name_from_title(title, conversation_id))
+/// Builds a stable ASCII-safe workspace directory name from a timestamp-like
+/// string. Falls back to the current local time when the input cannot be parsed.
+pub fn workspace_dir_name_from_timestamp(timestamp_source: &str) -> String {
+    let parsed = chrono::NaiveDateTime::parse_from_str(timestamp_source, "%Y-%m-%d %H:%M:%S")
+        .map(|dt| dt.format("%Y%m%d%H%M%S").to_string())
+        .ok()
+        .or_else(|| {
+            let digits = timestamp_source.trim();
+            match digits.len() {
+                10 => digits.parse::<i64>().ok().and_then(|seconds| {
+                    chrono::Local
+                        .timestamp_opt(seconds, 0)
+                        .single()
+                        .map(|dt| dt.format("%Y%m%d%H%M%S").to_string())
+                }),
+                13 => digits.parse::<i64>().ok().and_then(|millis| {
+                    chrono::Local
+                        .timestamp_millis_opt(millis)
+                        .single()
+                        .map(|dt| dt.format("%Y%m%d%H%M%S").to_string())
+                }),
+                _ => None,
+            }
+        })
+        .or_else(|| {
+            let digits: String = timestamp_source
+                .chars()
+                .filter(|c| c.is_ascii_digit())
+                .collect();
+            (digits.len() >= 14).then(|| digits[..14].to_string())
+        })
+        .unwrap_or_else(fallback_workspace_timestamp);
+
+    format!("workspace-{}", parsed)
+}
+
+pub fn workspace_dir_path_from_slug(slug: &str) -> PathBuf {
+    workspace_root().join(slug)
+}
+
+/// Returns the managed per-conversation workspace directory under workspace
+/// root using an ASCII-safe timestamp-based slug.
+pub fn managed_workspace_dir(timestamp_source: &str) -> PathBuf {
+    workspace_dir_path_from_slug(&workspace_dir_name_from_timestamp(timestamp_source))
 }
 
 /// Returns the typed subdirectory for a given MIME type.
@@ -305,28 +306,39 @@ mod tests {
     }
 
     #[test]
-    fn workspace_dir_name_from_title_builds_readable_name() {
+    fn workspace_dir_name_from_timestamp_builds_ascii_safe_name() {
         assert_eq!(
-            workspace_dir_name_from_title("My Project Workspace", "conv-abcdef"),
-            "my-project-workspace-abcdef"
+            workspace_dir_name_from_timestamp("2026-05-24 13:44:10"),
+            "workspace-20260524134410"
         );
     }
 
     #[test]
-    fn workspace_dir_name_from_title_falls_back_when_title_empty() {
+    fn workspace_dir_name_from_timestamp_accepts_digit_string() {
         assert_eq!(
-            workspace_dir_name_from_title("   ", "conv-abcdef"),
-            "workspace-abcdef"
+            workspace_dir_name_from_timestamp("20260524134410"),
+            "workspace-20260524134410"
         );
     }
 
     #[test]
-    fn titled_conversation_workspace_dir_is_under_workspace_root() {
+    fn workspace_dir_name_from_timestamp_accepts_unix_millis() {
+        let millis = chrono::Local
+            .with_ymd_and_hms(2026, 5, 24, 13, 44, 10)
+            .single()
+            .unwrap()
+            .timestamp_millis();
         assert_eq!(
-            titled_conversation_workspace_dir("Project Alpha", "conv-123456"),
-            documents_root()
-                .join("workspace")
-                .join("project-alpha-123456")
+            workspace_dir_name_from_timestamp(&millis.to_string()),
+            "workspace-20260524134410"
+        );
+    }
+
+    #[test]
+    fn managed_workspace_dir_is_under_workspace_root() {
+        assert_eq!(
+            managed_workspace_dir("2026-05-24 13:44:10"),
+            documents_root().join("workspace").join("workspace-20260524134410")
         );
     }
 

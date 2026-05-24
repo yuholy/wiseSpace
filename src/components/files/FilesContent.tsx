@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Alert, Button, Input, App, Popconfirm, Space } from 'antd';
+import { Alert, Button, Input, App, Popconfirm, Select, Space } from 'antd';
 import { Search, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { FILE_CATEGORIES, type FileCategory } from './fileCategories';
@@ -18,7 +18,21 @@ export function FilesContent({ activeCategory }: FilesContentProps) {
     throw new Error(`Unhandled file category: ${activeCategory}`);
   }
 
-  const { rows, search, error, loadCategory, setSearch, setSortKey, clearError, openEntry, revealEntry, cleanupMissingEntry } =
+  const {
+    search,
+    error,
+    loadCategory,
+    setSearch,
+    setSortKey,
+    clearError,
+    openEntry,
+    revealEntry,
+    cleanupMissingEntry,
+    workspaceFilter,
+    setWorkspaceFilter,
+    getWorkspaceOptions,
+    getVisibleRows,
+  } =
     useFileStore();
 
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
@@ -27,6 +41,7 @@ export function FilesContent({ activeCategory }: FilesContentProps) {
     setSearch('');
     setSortKey('createdAt');
     setSelectedRowKeys([]);
+    setWorkspaceFilter('all');
     void loadCategory(activeCategory);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -61,6 +76,9 @@ export function FilesContent({ activeCategory }: FilesContentProps) {
     }
   }, [activeCategory, loadCategory, cleanupMissingEntry, message, t]);
 
+  const workspaceOptions = getWorkspaceOptions();
+  const filteredRows = getVisibleRows();
+
   return (
     <div
       data-testid="files-content"
@@ -78,7 +96,7 @@ export function FilesContent({ activeCategory }: FilesContentProps) {
       )}
 
       {/* Toolbar: batch delete (left) + search (right) */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
         <Space>
           <Popconfirm
             title={t('files.batchDeleteConfirm', { count: selectedRowKeys.length })}
@@ -96,21 +114,33 @@ export function FilesContent({ activeCategory }: FilesContentProps) {
             </Button>
           </Popconfirm>
         </Space>
-        <div data-testid="category-search" data-category={activeCategory} style={{ maxWidth: 300 }}>
-          <Input
-            prefix={<Search size={14} />}
-            placeholder={t('files.searchPlaceholder', { category: t(meta.labelKey) })}
-            value={search}
-            onChange={(e) => {
-              handleSearchChange(e.target.value);
-            }}
-            allowClear
+        <Space wrap>
+          <Select
+            value={workspaceFilter}
+            onChange={setWorkspaceFilter}
+            style={{ minWidth: 180 }}
+            options={[
+              { value: 'all', label: t('files.allWorkspaces', { defaultValue: 'All workspaces' }) },
+              ...workspaceOptions,
+            ]}
+            disabled={workspaceOptions.length === 0}
           />
-        </div>
+          <div data-testid="category-search" data-category={activeCategory} style={{ maxWidth: 300 }}>
+            <Input
+              prefix={<Search size={14} />}
+              placeholder={t('files.searchPlaceholder', { category: t(meta.labelKey) })}
+              value={search}
+              onChange={(e) => {
+                handleSearchChange(e.target.value);
+              }}
+              allowClear
+            />
+          </div>
+        </Space>
       </div>
 
       <FileList
-        rows={rows}
+        rows={filteredRows}
         category={activeCategory}
         selectedRowKeys={selectedRowKeys}
         onSelectionChange={setSelectedRowKeys}

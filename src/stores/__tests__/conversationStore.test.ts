@@ -1859,4 +1859,29 @@ describe('conversationStore pagination', () => {
     expect(conversation.temperature).toBe(0.2);
     expect(conversation.max_tokens).toBe(8192);
   });
+
+  it('keeps selection inside the same category after deleting the active conversation', async () => {
+    invokeMock.mockResolvedValue(undefined);
+    const { useConversationStore } = await import('../conversationStore');
+
+    useConversationStore.setState({
+      conversations: [
+        makeConversation('conv-a', { category_id: 'cat-1', updated_at: 30 }),
+        makeConversation('conv-b', { category_id: 'cat-1', updated_at: 20 }),
+        makeConversation('conv-c', { category_id: 'cat-2', updated_at: 10 }),
+      ] as never[],
+      activeConversationId: 'conv-a',
+      messages: [makeMessage(1, 'conv-a')] as never[],
+    });
+
+    await useConversationStore.getState().deleteConversation('conv-a');
+
+    expect(invokeMock).toHaveBeenCalledWith('delete_conversation', { id: 'conv-a' });
+    expect(useConversationStore.getState().conversations.map((conversation) => conversation.id)).toEqual([
+      'conv-b',
+      'conv-c',
+    ]);
+    expect(useConversationStore.getState().activeConversationId).toBe('conv-b');
+    expect(useConversationStore.getState().messages).toEqual([]);
+  });
 });

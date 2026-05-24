@@ -1845,6 +1845,74 @@ pub struct MarketplaceSkill {
     pub installed: bool,
 }
 
+// === Unified Extension Host Model ===
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionHealth {
+    pub status: String,
+    pub summary: Option<String>,
+    pub checked_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionScope {
+    pub availability: String,
+    pub attached_workspace_ids: Option<Vec<String>>,
+    pub default_enabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionPermissionProfile {
+    pub trust_level: String,
+    pub approval_mode: String,
+    pub requires_filesystem_access: Option<bool>,
+    pub requires_network_access: Option<bool>,
+    pub requires_secrets: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionContributionSummary {
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub user_invocable: Option<bool>,
+    pub runtime_label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionSourceInfo {
+    pub kind: String,
+    pub label: Option<String>,
+    pub path: Option<String>,
+    pub r#ref: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionSummary {
+    pub id: String,
+    pub kind: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub version: Option<String>,
+    pub enabled: bool,
+    pub source: ExtensionSourceInfo,
+    pub health: ExtensionHealth,
+    pub scope: ExtensionScope,
+    pub permissions: ExtensionPermissionProfile,
+    pub contributions: Vec<ExtensionContributionSummary>,
+    pub tags: Vec<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
 // === External Agent Platform ===
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

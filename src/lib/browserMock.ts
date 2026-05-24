@@ -1668,6 +1668,9 @@ export async function handleCommand<T>(cmd: string, args?: Record<string, unknow
     case 'list_skills':
       return [] as T;
 
+    case 'list_extensions':
+      return [] as T;
+
     case 'get_skill':
       return {
         info: {

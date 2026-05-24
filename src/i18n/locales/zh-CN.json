@@ -162,7 +162,23 @@
       "artifacts": "制品",
       "toggle": "切换检查器",
       "toolInput": "输入参数",
-      "toolOutput": "执行结果"
+      "toolOutput": "执行结果",
+      "mode": "模式",
+      "boundary": "边界",
+      "agentBoundary": "Agent 模式可以调用工具、写入文件，并遵循工作空间执行策略。",
+      "chatBoundary": "问答模式只在对话流中运行，不进入 Agent 执行链路。",
+      "toolApproval": "工具审批",
+      "toolApprovalAsk": "调用前确认",
+      "toolApprovalAllowSafe": "安全工具自动放行",
+      "toolApprovalInherit": "继承工具策略",
+      "toolApprovalFollowLocalStrict": "跟随本地权限",
+      "toolApprovalFollowLocalRelaxed": "跟随本地权限",
+      "researchMode": "研究模式",
+      "workspace": "工作空间",
+      "workspaceBindings": "当前会话的工作空间绑定",
+      "permissionDefault": "逐次确认",
+      "permissionAcceptEdits": "允许编辑",
+      "permissionFullAccess": "完全访问"
     },
     "context": {
       "app": "应用",
@@ -211,6 +227,16 @@
       "noServers": "请先在设置中配置并启用 MCP 服务器",
       "goConfig": "前往配置 →"
     },
+    "agentBoundarySummary": "Agent 模式可在当前工作空间内执行操作。",
+    "chatBoundarySummary": "问答模式只在当前对话流中进行。",
+    "agentBoundaryShort": "工作区执行",
+    "chatBoundaryShort": "仅对话",
+    "toolApprovalAsk": "工具调用前确认",
+    "toolApprovalAllowSafe": "安全工具自动放行",
+    "toolApprovalInherit": "使用服务端策略",
+    "toolApprovalFollowLocalStrict": "跟随本地权限",
+    "toolApprovalFollowLocalRelaxed": "跟随本地权限",
+    "toolApprovalFollowLocalHelp": "在 Agent 模式下，工具审批会跟随当前本地权限模式。",
     "contextCleared": "上下文已从此处重置",
     "knowledge": {
       "title": "知识库",
@@ -416,6 +442,27 @@
     "shortcuts": "快捷键",
     "data": "数据管理",
     "dataStorage": "数据与存储",
+    "extensions": {
+      "title": "扩展能力",
+      "description": "这是总览页，不是具体配置页。你可以在这里统一查看 Skills、MCP 服务器和外部 Agents 的状态，再跳转到对应设置页进行修改。",
+      "overviewHint": "这里主要用于看状态和快速跳转，不直接编辑具体配置。详细修改仍然在 Skills、MCP 服务和 Agent Executors 页面完成。",
+      "openSource": "前往对应设置",
+      "empty": "暂无扩展能力",
+      "noDescription": "暂无描述信息。",
+      "noHealthSummary": "暂时没有诊断摘要。",
+      "filter": {
+        "all": "全部",
+        "skills": "Skills",
+        "mcp": "MCP",
+        "externalAgents": "外部 Agents"
+      },
+      "summary": {
+        "total": "总数",
+        "healthy": "健康",
+        "warning": "警告",
+        "error": "错误"
+      }
+    },
     "about": "关于",
     "language": "语言",
     "theme": "主题",
@@ -1233,6 +1280,7 @@
     "files": "文件",
     "backups": "备份",
     "columnName": "文件名",
+    "columnWorkspace": "工作空间",
     "columnSize": "大小",
     "columnCreatedAt": "创建时间",
     "columnActions": "操作",
@@ -1249,6 +1297,7 @@
     "delete": "删除",
     "deleteConfirm": "确定要删除此文件吗？",
     "deleteSuccess": "文件已删除",
+    "allWorkspaces": "全部工作空间",
     "confirmYes": "确定",
     "confirmNo": "取消"
   },

@@ -19,6 +19,10 @@ export function looksLikeGeneratedWorkspaceName(segment: string): boolean {
     return true;
   }
 
+  if (/^workspace-\d{14}(?:-\d+)?$/i.test(value)) {
+    return true;
+  }
+
   return false;
 }
 
