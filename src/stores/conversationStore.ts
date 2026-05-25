@@ -680,6 +680,49 @@ function rememberPendingLocalVersionSelection(
   });
 }
 
+function remapPendingLocalVersionSelectionParentId(
+  previousParentMessageId: string,
+  nextParentMessageId: string,
+) {
+  if (previousParentMessageId === nextParentMessageId) return;
+  const pendingSelection = _pendingLocalVersionSelections.get(previousParentMessageId);
+  if (!pendingSelection) return;
+
+  _pendingLocalVersionSelections.delete(previousParentMessageId);
+  if (_pendingLocalVersionSelections.has(nextParentMessageId)) return;
+
+  _pendingLocalVersionSelections.set(nextParentMessageId, {
+    ...pendingSelection,
+    parentMessageId: nextParentMessageId,
+  });
+}
+
+function remapUserMessageReferences(
+  state: ConversationState,
+  previousUserMessageId: string,
+  nextUserMessageId: string,
+  replacementUserMessage?: Message | null,
+): Partial<ConversationState> {
+  if (previousUserMessageId === nextUserMessageId) {
+    return {};
+  }
+
+  return {
+    messages: state.messages.map((message) => {
+      if (message.id === previousUserMessageId) {
+        return replacementUserMessage ?? { ...message, id: nextUserMessageId };
+      }
+      if (message.parent_message_id === previousUserMessageId) {
+        return { ...message, parent_message_id: nextUserMessageId };
+      }
+      return message;
+    }),
+    multiModelParentId: state.multiModelParentId === previousUserMessageId
+      ? nextUserMessageId
+      : state.multiModelParentId,
+  };
+}
+
 function findResolvedVersionForPendingSelection(
   pending: PendingLocalVersionSelection,
   versions: Message[],
@@ -2094,18 +2137,8 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       });
 
       // Replace optimistic user msg with real one, update placeholder parent
-      set((s) => ({
-        messages: s.messages.map(m => {
-          if (m.id === optimisticUserMsg.id) return userMessage;
-          if (
-            m.id === tempAssistantId
-            || (m.role === 'assistant' && m.parent_message_id === optimisticUserMsg.id && m.status === 'partial')
-          ) {
-            return { ...m, parent_message_id: userMessage.id };
-          }
-          return m;
-        }),
-      }));
+      remapPendingLocalVersionSelectionParentId(optimisticUserMsg.id, userMessage.id);
+      set((s) => remapUserMessageReferences(s, optimisticUserMsg.id, userMessage.id, userMessage));
 
       // In browser mode, simulate brief loading then fetch the mock AI response
       if (!isTauri()) {
@@ -2386,17 +2419,8 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         listen<{ conversationId: string; userMessageId: string }>('agent-user-message-id', (event) => {
           if (event.payload.conversationId !== conversationId || !isCurrentAgentRun()) return;
           const realUserId = event.payload.userMessageId;
-          set((s) => ({
-            messages: s.messages.map((message) => {
-              if (message.id === optimisticUserMsg.id) {
-                return { ...message, id: realUserId };
-              }
-              if (message.parent_message_id === optimisticUserMsg.id) {
-                return { ...message, parent_message_id: realUserId };
-              }
-              return message;
-            }),
-          }));
+          remapPendingLocalVersionSelectionParentId(optimisticUserMsg.id, realUserId);
+          set((s) => remapUserMessageReferences(s, optimisticUserMsg.id, realUserId));
         }).then(keepAgentUnlisten((fn) => { unlistenUserMessageId = fn; }));
 
         // Listen for incremental text chunks — buffer and flush periodically

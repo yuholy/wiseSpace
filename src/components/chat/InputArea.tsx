@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { Button, Tooltip, App, theme, Dropdown, Tag, Popover, Checkbox, Badge, Popconfirm } from 'antd';
+import { Button, Tooltip, App, theme, Dropdown, Tag, Popover, Checkbox, Badge, Popconfirm, Image as AntImage } from 'antd';
 import type { MenuProps } from 'antd';
-import { Paperclip, Trash2, Mic, Eraser, Scissors, Globe, Brain, Atom, Plug, SlidersHorizontal, ArrowUp, Square, Check, Zap, ZapOff, Shrink, Upload, GitCompareArrows, X, BookOpen, GripHorizontal, CircleOff, SignalLow, SignalMedium, SignalHigh, Signal, Bot, MessageSquare, Shield, ShieldCheck, ShieldAlert, FolderOpen, ExternalLink } from 'lucide-react';
+import { Paperclip, Trash2, Mic, Eraser, Scissors, Globe, Brain, Atom, Plug, SlidersHorizontal, ArrowUp, Square, Check, Zap, ZapOff, Shrink, Upload, GitCompareArrows, X, BookOpen, GripHorizontal, CircleOff, SignalLow, SignalMedium, SignalHigh, Signal, Bot, MessageSquare, Shield, ShieldCheck, ShieldAlert, FolderOpen, ExternalLink, FileImage } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAgentStore, useConversationStore, useProviderStore, useSettingsStore, useSearchStore, useMcpStore, useMemoryStore, useKnowledgeStore } from '@/stores';
 import { useUIStore } from '@/stores/uiStore';
@@ -24,7 +24,7 @@ import { ModelSelector } from './ModelSelector';
 import { SearchProviderTypeIcon, PROVIDER_TYPE_LABELS } from '@/components/shared/SearchProviderIcon';
 import { ModelIcon } from '@lobehub/icons';
 import type { AttachmentInput, ProviderType, RealtimeConfig } from '@/types';
-import { invoke } from '@/lib/invoke';
+import { invoke, isTauri } from '@/lib/invoke';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
   AGENT_EXECUTORS,
@@ -74,6 +74,8 @@ export function InputArea() {
     return convId ? _draftCache.get(convId) || '' : '';
   });
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const [attachedImageUrls, setAttachedImageUrls] = useState<string[]>([]);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [voiceCallVisible, setVoiceCallVisible] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [mcpPopoverOpen, setMcpPopoverOpen] = useState(false);
@@ -339,6 +341,19 @@ export function InputArea() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    const objectUrls = attachedFiles.map((file) => (
+      file.type.startsWith('image/') ? URL.createObjectURL(file) : ''
+    ));
+    setAttachedImageUrls(objectUrls);
+
+    return () => {
+      for (const url of objectUrls) {
+        if (url) URL.revokeObjectURL(url);
+      }
+    };
+  }, [attachedFiles]);
 
   // Persist companion models per conversation in localStorage
   const companionStorageKey = activeConversationId ? `wisespace:companion-models:${activeConversationId}` : null;
@@ -805,6 +820,9 @@ export function InputArea() {
     hasReasoning: supportsReasoning(currentModel),
     hasVision: modelHasCapability(currentModel, 'Vision'),
   }), [activeConversation, currentModel, providers]);
+  const hasImageAttachmentSupport = currentMode === 'agent'
+    ? (hasVision || settings.multimodal_fallback_enabled)
+    : hasVision;
 
   // Current model key for excluding from multi-select (no longer used - users can select any model)
 
@@ -1000,7 +1018,7 @@ export function InputArea() {
   }, []);
 
   const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    if (!hasVision) return;
+    if (!hasImageAttachmentSupport) return;
     const items = e.clipboardData?.items;
     if (!items) return;
     const files: File[] = [];
@@ -1014,62 +1032,66 @@ export function InputArea() {
       e.preventDefault();
       setAttachedFiles((prev) => [...prev, ...files]);
     }
-  }, [hasVision]);
+  }, [hasImageAttachmentSupport]);
 
   // Drag-and-drop overlay (Tauri native)
   const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
-    if (!hasVision) return;
+    if (!hasImageAttachmentSupport || !isTauri()) return;
 
     let unlisten: (() => void) | undefined;
 
     (async () => {
-      const { getCurrentWebview } = await import('@tauri-apps/api/webview');
-      const { readFile } = await import('@tauri-apps/plugin-fs');
+      try {
+        const { getCurrentWebview } = await import('@tauri-apps/api/webview');
+        const { readFile } = await import('@tauri-apps/plugin-fs');
 
-      unlisten = await getCurrentWebview().onDragDropEvent(async (event) => {
-        const { type } = event.payload;
-        if (type === 'enter') {
-          setIsDragging(true);
-        } else if (type === 'leave') {
-          setIsDragging(false);
-        } else if (type === 'drop') {
-          setIsDragging(false);
-          const { paths } = event.payload;
-          const files: File[] = [];
-          for (const filePath of paths) {
-            try {
-              const fileName = filePath.split(/[\\/]/).pop() || 'file';
-              const ext = fileName.split('.').pop()?.toLowerCase() || '';
-              const mimeMap: Record<string, string> = {
-                png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
-                gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
-                bmp: 'image/bmp', ico: 'image/x-icon',
-                pdf: 'application/pdf', txt: 'text/plain',
-                json: 'application/json', csv: 'text/csv',
-                md: 'text/markdown', html: 'text/html',
-                js: 'text/javascript', ts: 'text/typescript',
-                zip: 'application/zip',
-              };
-              const mimeType = mimeMap[ext] || 'application/octet-stream';
-              const bytes = await readFile(filePath);
-              files.push(new File([bytes], fileName, { type: mimeType }));
-            } catch (err) {
-              console.error('[drag-drop] Failed to read file:', filePath, err);
+        unlisten = await getCurrentWebview().onDragDropEvent(async (event) => {
+          const { type } = event.payload;
+          if (type === 'enter') {
+            setIsDragging(true);
+          } else if (type === 'leave') {
+            setIsDragging(false);
+          } else if (type === 'drop') {
+            setIsDragging(false);
+            const { paths } = event.payload;
+            const files: File[] = [];
+            for (const filePath of paths) {
+              try {
+                const fileName = filePath.split(/[\\/]/).pop() || 'file';
+                const ext = fileName.split('.').pop()?.toLowerCase() || '';
+                const mimeMap: Record<string, string> = {
+                  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+                  gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
+                  bmp: 'image/bmp', ico: 'image/x-icon',
+                  pdf: 'application/pdf', txt: 'text/plain',
+                  json: 'application/json', csv: 'text/csv',
+                  md: 'text/markdown', html: 'text/html',
+                  js: 'text/javascript', ts: 'text/typescript',
+                  zip: 'application/zip',
+                };
+                const mimeType = mimeMap[ext] || 'application/octet-stream';
+                const bytes = await readFile(filePath);
+                files.push(new File([bytes], fileName, { type: mimeType }));
+              } catch (err) {
+                console.error('[drag-drop] Failed to read file:', filePath, err);
+              }
+            }
+            if (files.length > 0) {
+              setAttachedFiles((prev) => [...prev, ...files]);
             }
           }
-          if (files.length > 0) {
-            setAttachedFiles((prev) => [...prev, ...files]);
-          }
-        }
-      });
+        });
+      } catch (err) {
+        console.warn('[drag-drop] Failed to register Tauri drag-drop handler:', err);
+      }
     })();
 
     return () => {
       unlisten?.();
     };
-  }, [hasVision]);
+  }, [hasImageAttachmentSupport]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1229,9 +1251,31 @@ export function InputArea() {
               style={{
                 backgroundColor: token.colorFillTertiary,
                 borderRadius: token.borderRadius,
+                maxWidth: 220,
               }}
             >
-              {file.name}
+              {file.type.startsWith('image/')
+                ? <FileImage size={14} style={{ color: token.colorPrimary, flexShrink: 0 }} />
+                : <Paperclip size={14} style={{ color: token.colorTextSecondary, flexShrink: 0 }} />}
+              <span
+                style={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  maxWidth: 180,
+                  cursor: file.type.startsWith('image/') && attachedImageUrls[idx] ? 'pointer' : 'default',
+                  color: file.type.startsWith('image/') && attachedImageUrls[idx]
+                    ? token.colorPrimary
+                    : token.colorText,
+                }}
+                onClick={() => {
+                  if (file.type.startsWith('image/') && attachedImageUrls[idx]) {
+                    setPreviewImageUrl(attachedImageUrls[idx]);
+                  }
+                }}
+              >
+                {file.name}
+              </span>
               <Trash2
                 size={14}
                 className="cursor-pointer"
@@ -1241,6 +1285,21 @@ export function InputArea() {
             </span>
           ))}
         </div>
+      )}
+      {previewImageUrl && (
+        <AntImage
+          src={previewImageUrl}
+          alt="attachment-preview"
+          style={{ display: 'none' }}
+          preview={{
+            visible: true,
+            onVisibleChange: (visible) => {
+              if (!visible) setPreviewImageUrl(null);
+            },
+            mask: { blur: true },
+            scaleStep: 0.5,
+          }}
+        />
       )}
 
       {/* Main input container */}
@@ -1413,7 +1472,7 @@ export function InputArea() {
                 </Tooltip>
               </Dropdown>
             )}
-            {hasVision && (
+            {hasImageAttachmentSupport && (
               <Tooltip title={t('chat.attachFile')}>
                 <Button
                   type="text"

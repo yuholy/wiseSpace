@@ -67,6 +67,44 @@ const openExternalUrl = async (url: string) => {
     window.open(url, '_blank', 'noopener,noreferrer');
   }
 };
+
+async function attachmentToInput(att: Attachment): Promise<AttachmentInput> {
+  let base64Data = att.data ?? '';
+  if (!base64Data) {
+    const previewDataUrl = await invoke<string>('read_attachment_preview', { filePath: att.file_path });
+    const [, extractedBase64 = ''] = previewDataUrl.split(',', 2);
+    base64Data = extractedBase64;
+  }
+
+  if (!base64Data) {
+    throw new Error(`Failed to reload attachment data for ${att.file_name}`);
+  }
+
+  return {
+    file_name: att.file_name,
+    file_type: att.file_type,
+    file_size: att.file_size,
+    data: base64Data,
+  };
+}
+const AGENT_RUN_STOP_TIMEOUT_MS = 10000;
+const AGENT_RUN_STOP_POLL_MS = 250;
+
+async function waitForAgentRunToStop(conversationId: string, timeoutMs = AGENT_RUN_STOP_TIMEOUT_MS): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  const agentStore = useAgentStore.getState();
+
+  while (Date.now() < deadline) {
+    await agentStore.refreshConversationState(conversationId);
+    const activeRun = useAgentStore.getState().getActiveRun(conversationId);
+    if (!activeRun || !isAgentRunStatus(activeRun.status) || !AGENT_ACTIVE_RUN_STATUSES.has(activeRun.status)) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, AGENT_RUN_STOP_POLL_MS));
+  }
+
+  return false;
+}
 import { buildAssistantDisplayContent, shouldHideAssistantBubble } from './toolCallDisplay';
 import { ChatScrollIndicator } from './ChatScrollIndicator';
 import { ChatMinimap, MinimapScrollProvider } from './ChatMinimap';
@@ -76,12 +114,12 @@ import AskUserCard from './AskUserCard';
 import { ChatImageNode } from './ChatImageNode';
 import { formatChatTime } from './chatTime';
 import { buildDisplayAttrAlternation } from '@/lib/legacyCompat';
-import { getAgentRunStatusLabel } from '@/lib/agentRunStatus';
+import { AGENT_ACTIVE_RUN_STATUSES, getAgentRunStatusLabel, isAgentRunStatus } from '@/lib/agentRunStatus';
+import type { Attachment, AttachmentInput, Message, ConversationStats, ConversationSummaryDraft, SavedConversationSummaryFile } from '@/types';
 
 import { invoke } from '@/lib/invoke';
 import { registerHighlight } from 'stream-markdown';
 import { useResolvedAvatarSrc } from '@/hooks/useResolvedAvatarSrc';
-import type { Message, Attachment, ConversationStats, ConversationSummaryDraft, SavedConversationSummaryFile } from '@/types';
 import type { AskUserEvent, PermissionRequestEvent } from '@/types/agent';
 import { getAgentExecutorMeta } from '@/lib/agentExecutors';
 import { composeSystemPromptWithRole, getRolePresetById, parseRolePromptSections, ROLE_PRESETS } from '@/lib/rolePresets';
@@ -233,7 +271,11 @@ function AttachmentPreview({ att, themeColor }: { att: Attachment; themeColor: s
 
   // Check file existence for all attachments
   React.useEffect(() => {
-    if (!att.file_path) { setFileExists(false); return; }
+    // Optimistic attachments may have inline base64 data before a persisted file_path exists.
+    if (!att.file_path) {
+      setFileExists(Boolean(att.data));
+      return;
+    }
     let cancelled = false;
     invoke<boolean>('check_attachment_exists', { filePath: att.file_path })
       .then((exists) => { if (!cancelled) setFileExists(exists); })
@@ -1908,6 +1950,7 @@ function AssistantFooter({
   assistantCopyText,
   getModelDisplayInfo,
   onEditMessage,
+  onRegenerate,
   isStreaming = false,
   displayMode,
   onDisplayModeChange,
@@ -1918,6 +1961,7 @@ function AssistantFooter({
   assistantCopyText: string;
   getModelDisplayInfo: (modelId?: string | null, providerId?: string | null) => { modelName: string; providerName: string };
   onEditMessage: (messageId: string, content: string, role: 'user' | 'assistant') => void;
+  onRegenerate: (messageId: string) => Promise<void>;
   isStreaming?: boolean;
   displayMode?: MultiModelDisplayMode;
   onDisplayModeChange?: (parentMsgId: string, mode: MultiModelDisplayMode) => void;
@@ -1929,7 +1973,6 @@ function AssistantFooter({
   const [allVersions, setAllVersions] = useState<Message[]>([]);
   const listMessageVersions = useConversationStore((s) => s.listMessageVersions);
   const hydrateMessageVersions = useConversationStore((s) => s.hydrateMessageVersions);
-  const regenerateMessage = useConversationStore((s) => s.regenerateMessage);
   const regenerateWithModel = useConversationStore((s) => s.regenerateWithModel);
   const deleteMessageGroup = useConversationStore((s) => s.deleteMessageGroup);
   const deleteMessage = useConversationStore((s) => s.deleteMessage);
@@ -1941,11 +1984,15 @@ function AssistantFooter({
   const [branchTitle, setBranchTitle] = useState('');
   const conversations = useConversationStore((s) => s.conversations);
   const currentConvTitle = conversations.find((c) => c.id === conversationId)?.title ?? '';
+  const isAgentConversation = conversations.find((c) => c.id === conversationId)?.mode === 'agent';
+  const activeAgentRun = useAgentStore((s) => s.getActiveRun(conversationId));
+  const isAgentBusy = isAgentConversation
+    && Boolean(activeAgentRun && ACTIVE_AGENT_FOOTER_BLOCKING_STATUSES.has(activeAgentRun.status));
   const storeMessages = useConversationStore((s) => s.messages);
 
   useEffect(() => {
     const parentMessageId = msg.parent_message_id;
-    if (!parentMessageId || !conversationId) {
+    if (!parentMessageId || !conversationId || parentMessageId.startsWith('temp-')) {
       setAllVersions([]);
       return;
     }
@@ -2008,7 +2055,7 @@ function AssistantFooter({
     try {
       if (providerId === msg.provider_id && modelId === msg.model_id) {
         // Same model → regular regenerate
-        await regenerateMessage(msg.id);
+        await onRegenerate(msg.id);
       } else {
         // Different model → generate with new model
         await regenerateWithModel(msg.id, providerId, modelId);
@@ -2016,7 +2063,7 @@ function AssistantFooter({
     } catch (e) {
       messageApi.error(String(e));
     }
-  }, [msg.id, msg.provider_id, msg.model_id, regenerateMessage, regenerateWithModel, messageApi]);
+  }, [msg.id, msg.provider_id, msg.model_id, onRegenerate, regenerateWithModel, messageApi]);
   const totalTokens = (msg.prompt_tokens ?? 0) + (msg.completion_tokens ?? 0);
   const isActionable = !isStreaming && msg.status === 'complete';
 
@@ -2058,7 +2105,9 @@ function AssistantFooter({
       )}
       {isActionable && (
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          <VersionPagination msg={msg} conversationId={conversationId} allVersions={mergedVersions} />
+          {!isAgentConversation && (
+            <VersionPagination msg={msg} conversationId={conversationId} allVersions={mergedVersions} />
+          )}
           <Actions
           items={[
             {
@@ -2076,8 +2125,9 @@ function AssistantFooter({
               icon: <RotateCcw size={14} />,
               label: t('chat.regenerate'),
               onItemClick: async () => {
+                if (isAgentBusy) return;
                 try {
-                  await regenerateMessage(msg.id);
+                  await onRegenerate(msg.id);
                 } catch (e) {
                   messageApi.error(String(e));
                 }
@@ -2091,7 +2141,7 @@ function AssistantFooter({
                 onEditMessage(msg.id, msg.content, 'assistant');
               },
             }] : []),
-            {
+            ...(!isAgentConversation ? [{
               key: 'model',
               actionRender: () => (
                 <ModelSelector
@@ -2105,7 +2155,7 @@ function AssistantFooter({
                   </Tooltip>
                 </ModelSelector>
               ),
-            },
+            }] : []),
             {
               key: 'branch',
               actionRender: () => (
@@ -2366,6 +2416,8 @@ export function ChatView() {
   const thinkingActiveMessageIds = useConversationStore((s) => s.thinkingActiveMessageIds);
   const activeAgentExecutorId = useConversationStore((s) => s.activeAgentExecutorId);
   const activeAgentExecutorModel = useConversationStore((s) => s.activeAgentExecutorModel);
+  const sendAgentMessage = useConversationStore((s) => s.sendAgentMessage);
+  const agentProfiles = useAgentStore((s) => s.profilesByConversation);
   const activeAgentRunStatus = useAgentStore((s) => (
     activeConversationId ? s.getActiveRun(activeConversationId)?.status ?? null : null
   ));
@@ -2436,6 +2488,12 @@ export function ChatView() {
   }, []);
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId);
+  const currentAgentProfile = activeConversationId ? agentProfiles[activeConversationId] : undefined;
+  const agentRunBusy = Boolean(
+    activeConversation?.mode === 'agent'
+    && activeAgentRunStatus
+    && ACTIVE_AGENT_FOOTER_BLOCKING_STATUSES.has(activeAgentRunStatus),
+  );
   const skills = useSkillStore((s) => s.skills);
   const loadSkills = useSkillStore((s) => s.loadSkills);
   const setActivePage = useUIStore((s) => s.setActivePage);
@@ -3615,6 +3673,61 @@ export function ChatView() {
     setEditingContent(content);
   }, []);
 
+  const handleRegenerateMessage = useCallback(async (targetMessageId?: string) => {
+    if (!targetMessageId) return;
+    if (!activeConversationId) return;
+
+    if (activeConversation?.mode !== 'agent') {
+      await regenerateMessage(targetMessageId);
+      return;
+    }
+
+    await useAgentStore.getState().refreshConversationState(activeConversationId);
+    const activeRun = useAgentStore.getState().getActiveRun(activeConversationId);
+    if (activeRun && isAgentRunStatus(activeRun.status) && AGENT_ACTIVE_RUN_STATUSES.has(activeRun.status)) {
+      await useAgentStore.getState().cancelRun(activeConversationId);
+      const stopped = await waitForAgentRunToStop(activeConversationId);
+      if (!stopped) {
+        throw new Error('Agent is still stopping. Please try again in a moment.');
+      }
+    }
+
+    const msgs = useConversationStore.getState().messages;
+    const targetMsg = msgs.find((message) => message.id === targetMessageId);
+    if (!targetMsg) {
+      throw new Error('Message not found');
+    }
+
+    const userMsg = targetMsg.role === 'user'
+      ? targetMsg
+      : (targetMsg.parent_message_id
+        ? msgs.find((message) => message.id === targetMsg.parent_message_id)
+        : undefined);
+    if (!userMsg) {
+      throw new Error('User message not found');
+    }
+
+    const attachments = await Promise.all((userMsg.attachments ?? []).map(attachmentToInput));
+    await sendAgentMessage(userMsg.content, attachments, {
+      executorId: activeAgentExecutor.id,
+      executorModel: activeAgentExecutorModel,
+      cwd: currentAgentProfile?.workspaceRoot ?? null,
+      permissionMode: activeAgentExecutor.supportsPermissionMode
+        ? (currentAgentProfile?.permissionMode ?? null)
+        : null,
+    });
+  }, [
+    activeConversationId,
+    activeAgentExecutor.id,
+    activeAgentExecutor.supportsPermissionMode,
+    activeAgentExecutorModel,
+    activeConversation?.mode,
+    currentAgentProfile?.permissionMode,
+    currentAgentProfile?.workspaceRoot,
+    regenerateMessage,
+    sendAgentMessage,
+  ]);
+
   const handleEditSaveOnly = useCallback(async () => {
     if (!editingMessageId) return;
     setEditSaving(true);
@@ -3641,13 +3754,13 @@ export function ChatView() {
       setEditingMessageId(null);
       setEditingMessageRole(null);
       setEditingContent('');
-      await regenerateMessage(aiMsg?.id);
+      await handleRegenerateMessage(aiMsg?.id);
     } catch (e) {
       messageApi.error(String(e));
     } finally {
       setEditSaving(false);
     }
-  }, [editingMessageId, editingContent, updateMessageContent, regenerateMessage, messageApi]);
+  }, [editingMessageId, editingContent, updateMessageContent, handleRegenerateMessage, messageApi]);
 
   // ── Roles ──────────────────────────────────────────────────────────
   const userRole = useCallback((bubbleData: BubbleItemType) => {
@@ -3742,8 +3855,9 @@ export function ChatView() {
               icon: <RotateCcw size={14} />,
               label: t('chat.regenerate'),
               onItemClick: async () => {
+                if (agentRunBusy) return;
                 try {
-                  await regenerateMessage(msg?.id);
+                  await handleRegenerateMessage(msg?.id);
                 } catch (e) {
                   messageApi.error(String(e));
                 }
@@ -3778,7 +3892,7 @@ export function ChatView() {
         />
       ),
     };
-  }, [activeConversationId, codeBlockDarkTheme, codeBlockLightTheme, codeBlockThemes, deleteMessageGroup, formatTime, getBubbleVariant, handleEditMessage, isDarkMode, messageApi, messageById, profile.name, regenerateMessage, settings.code_font_family, settings.render_user_markdown, t, token.colorError, token.colorPrimary, userAvatar]);
+  }, [activeConversationId, codeBlockDarkTheme, codeBlockLightTheme, codeBlockThemes, deleteMessageGroup, formatTime, getBubbleVariant, handleEditMessage, handleRegenerateMessage, isDarkMode, messageApi, messageById, profile.name, settings.code_font_family, settings.render_user_markdown, t, token.colorError, token.colorPrimary, userAvatar]);
 
   const aiRole = useCallback((bubbleData: BubbleItemType) => {
     // bubbleData.key is parent_message_id for stable rendering
@@ -4039,6 +4153,7 @@ export function ChatView() {
             assistantCopyText={assistantCopyText}
             getModelDisplayInfo={getModelDisplayInfo}
             onEditMessage={handleEditMessage}
+            onRegenerate={handleRegenerateMessage}
             isStreaming={isStreaming}
             displayMode={effectiveDisplayMode}
             onDisplayModeChange={handleDisplayModeOverride}

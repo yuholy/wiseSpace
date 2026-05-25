@@ -59,14 +59,14 @@ pub fn conversation_workspace_dir(conversation_id: &str) -> PathBuf {
 }
 
 fn fallback_workspace_timestamp() -> String {
-    chrono::Local::now().format("%Y%m%d%H%M%S").to_string()
+    chrono::Local::now().format("%Y%m%d%H%M").to_string()
 }
 
 /// Builds a stable ASCII-safe workspace directory name from a timestamp-like
 /// string. Falls back to the current local time when the input cannot be parsed.
 pub fn workspace_dir_name_from_timestamp(timestamp_source: &str) -> String {
     let parsed = chrono::NaiveDateTime::parse_from_str(timestamp_source, "%Y-%m-%d %H:%M:%S")
-        .map(|dt| dt.format("%Y%m%d%H%M%S").to_string())
+        .map(|dt| dt.format("%Y%m%d%H%M").to_string())
         .ok()
         .or_else(|| {
             let digits = timestamp_source.trim();
@@ -75,13 +75,13 @@ pub fn workspace_dir_name_from_timestamp(timestamp_source: &str) -> String {
                     chrono::Local
                         .timestamp_opt(seconds, 0)
                         .single()
-                        .map(|dt| dt.format("%Y%m%d%H%M%S").to_string())
+                        .map(|dt| dt.format("%Y%m%d%H%M").to_string())
                 }),
                 13 => digits.parse::<i64>().ok().and_then(|millis| {
                     chrono::Local
                         .timestamp_millis_opt(millis)
                         .single()
-                        .map(|dt| dt.format("%Y%m%d%H%M%S").to_string())
+                        .map(|dt| dt.format("%Y%m%d%H%M").to_string())
                 }),
                 _ => None,
             }
@@ -91,7 +91,7 @@ pub fn workspace_dir_name_from_timestamp(timestamp_source: &str) -> String {
                 .chars()
                 .filter(|c| c.is_ascii_digit())
                 .collect();
-            (digits.len() >= 14).then(|| digits[..14].to_string())
+            (digits.len() >= 12).then(|| digits[..12].to_string())
         })
         .unwrap_or_else(fallback_workspace_timestamp);
 
@@ -309,7 +309,7 @@ mod tests {
     fn workspace_dir_name_from_timestamp_builds_ascii_safe_name() {
         assert_eq!(
             workspace_dir_name_from_timestamp("2026-05-24 13:44:10"),
-            "workspace-20260524134410"
+            "workspace-202605241344"
         );
     }
 
@@ -317,7 +317,7 @@ mod tests {
     fn workspace_dir_name_from_timestamp_accepts_digit_string() {
         assert_eq!(
             workspace_dir_name_from_timestamp("20260524134410"),
-            "workspace-20260524134410"
+            "workspace-202605241344"
         );
     }
 
@@ -330,7 +330,7 @@ mod tests {
             .timestamp_millis();
         assert_eq!(
             workspace_dir_name_from_timestamp(&millis.to_string()),
-            "workspace-20260524134410"
+            "workspace-202605241344"
         );
     }
 
@@ -338,7 +338,7 @@ mod tests {
     fn managed_workspace_dir_is_under_workspace_root() {
         assert_eq!(
             managed_workspace_dir("2026-05-24 13:44:10"),
-            documents_root().join("workspace").join("workspace-20260524134410")
+            documents_root().join("workspace").join("workspace-202605241344")
         );
     }
 

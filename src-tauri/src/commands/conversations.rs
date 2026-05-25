@@ -68,7 +68,7 @@ fn provider_type_to_registry_key(pt: &ProviderType) -> &'static str {
     }
 }
 
-async fn resolve_command_provider_id(
+pub async fn resolve_command_provider_id(
     db: &DatabaseConnection,
     provider_id: &str,
 ) -> Result<String, String> {
@@ -655,18 +655,22 @@ fn chat_message_from_message(
 }
 
 fn model_supports_vision(model: Option<&wisespace_core::types::Model>) -> bool {
-    model
-        .map(|m| m.capabilities.contains(&ModelCapability::Vision))
-        .unwrap_or(false)
+    let Some(model) = model else {
+        return false;
+    };
+
+    model.capabilities.contains(&ModelCapability::Vision) && model_probably_supports_vision(model)
 }
 
 fn model_probably_supports_vision(model: &wisespace_core::types::Model) -> bool {
-    if model.capabilities.contains(&ModelCapability::Vision) {
-        return true;
-    }
-
     let id_lower = model.model_id.to_lowercase();
     id_lower.contains("vision")
+        || id_lower.contains("gpt-4o")
+        || id_lower.contains("gpt-4.1")
+        || id_lower.contains("claude-3")
+        || id_lower.contains("claude-sonnet-4")
+        || id_lower.contains("gemini")
+        || id_lower.contains("glm-4v")
         || id_lower.contains("-vl")
         || id_lower.contains("vl-")
         || id_lower.contains("multimodal")
@@ -683,10 +687,11 @@ fn image_attachments_for_message<'a>(message: &'a Message) -> Vec<&'a Attachment
 
 fn build_multimodal_fallback_augmented_text(original: &str, analysis: &str) -> String {
     let header = "[Attached image analysis]";
+    let guidance = "Use this analysis as the authoritative visual description for the uploaded image(s). Do not claim that you cannot inspect the image, and only inspect the raw file if the user explicitly asks for file-level verification.";
     if original.trim().is_empty() {
-        format!("{header}\n{analysis}")
+        format!("{header}\n{guidance}\n\n{analysis}")
     } else {
-        format!("{original}\n\n{header}\n{analysis}")
+        format!("{original}\n\n{header}\n{guidance}\n\n{analysis}")
     }
 }
 
@@ -742,6 +747,8 @@ async fn resolve_multimodal_fallback_target(
         })
     };
 
+    let mut preferred_failure: Option<String> = None;
+
     if let (Some(provider_id), Some(model_id)) = (
         settings.multimodal_fallback_provider_id.as_deref(),
         settings.multimodal_fallback_model_id.as_deref(),
@@ -761,7 +768,21 @@ async fn resolve_multimodal_fallback_target(
                     model_id, provider.name
                 )
             })?;
-        return select_target(provider, model).await.map(Some);
+        match select_target(provider.clone(), model.clone()).await {
+            Ok(target) => return Ok(Some(target)),
+            Err(err) => {
+                tracing::warn!(
+                    "[conversation multimodal fallback] configured provider/model unavailable: provider={} model={} error={}",
+                    provider.name,
+                    model.model_id,
+                    err
+                );
+                preferred_failure = Some(format!(
+                    "Configured multimodal fallback model {} under provider {} is unavailable: {}",
+                    model.model_id, provider.name, err
+                ));
+            }
+        }
     }
 
     let providers = wisespace_core::repo::provider::list_providers_merged(&state.sea_db)
@@ -781,6 +802,13 @@ async fn resolve_multimodal_fallback_target(
         if let Ok(target) = select_target(provider, model).await {
             return Ok(Some(target));
         }
+    }
+
+    if let Some(message) = preferred_failure {
+        return Err(format!(
+            "{}. No alternative enabled vision model with an active key was found.",
+            message
+        ));
     }
 
     Ok(None)

@@ -280,6 +280,15 @@ fn extract_primary_content(
         }
     }
 
+    // Some OpenAI-compatible gateways place the primary assistant text under
+    // custom top-level keys instead of `content`. As a final fallback, scan all
+    // extra payload values and return the first non-empty text we can recover.
+    for value in extra.values() {
+        if let Some(text) = extract_text_from_json(value) {
+            return Some(text);
+        }
+    }
+
     None
 }
 
@@ -766,6 +775,26 @@ mod tests {
                     "image_url": { "url": "data:image/png;base64,YWJj" }
                 }
             ]))
+        );
+    }
+
+    #[test]
+    fn extract_primary_content_falls_back_to_unknown_extra_fields() {
+        let mut extra = std::collections::BTreeMap::new();
+        extra.insert(
+            "answer".to_string(),
+            json!({
+                "parts": [
+                    { "text": "Detected a login page screenshot." }
+                ]
+            }),
+        );
+
+        let extracted = extract_primary_content(&None, &extra);
+
+        assert_eq!(
+            extracted.as_deref(),
+            Some("Detected a login page screenshot.")
         );
     }
 

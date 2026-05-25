@@ -60,6 +60,9 @@ function makeConversation(id: string, overrides: Record<string, unknown> = {}) {
     enabled_mcp_server_ids: [],
     enabled_knowledge_base_ids: [],
     enabled_memory_namespace_ids: [],
+    context_compression: false,
+    category_id: null,
+    parent_conversation_id: null,
     is_pinned: false,
     is_archived: false,
     message_count: 0,
@@ -1765,6 +1768,105 @@ describe('conversationStore pagination', () => {
     });
 
     vi.useRealTimers();
+  });
+
+  it('remaps the optimistic agent user id before later message actions use it', async () => {
+    isTauriMock = true;
+    const listeners = new Map<string, (event: unknown) => void>();
+    listenMock.mockImplementation(async (eventName: string, handler: (event: unknown) => void) => {
+      listeners.set(eventName, handler);
+      return () => {};
+    });
+
+    const { useConversationStore } = await import('../conversationStore');
+    const realUser = {
+      ...makeMessage(1),
+      id: 'user-real',
+      role: 'user' as const,
+      content: 'look at this image',
+      provider_id: null,
+      model_id: null,
+      parent_message_id: null,
+    };
+    const realAssistant = {
+      ...makeMessage(2),
+      id: 'assistant-real',
+      role: 'assistant' as const,
+      content: 'done',
+      provider_id: 'provider-1',
+      model_id: 'model-1',
+      parent_message_id: realUser.id,
+      status: 'complete' as const,
+    };
+
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === 'agent_start_run') return Promise.resolve(undefined);
+      if (cmd === 'list_messages_page') return Promise.resolve(makePage([realUser, realAssistant], false));
+      if (cmd === 'regenerate_message') return Promise.resolve(undefined);
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+
+    useConversationStore.setState({
+      activeConversationId: 'conv-1',
+      conversations: [makeConversation('conv-1')],
+      messages: [],
+      enabledMcpServerIds: [],
+      enabledKnowledgeBaseIds: [],
+      enabledMemoryNamespaceIds: [],
+      thinkingBudget: null,
+    });
+
+    const pending = useConversationStore.getState().sendAgentMessage(
+      'look at this image',
+      [{
+        file_name: 'image.png',
+        file_type: 'image/png',
+        file_size: 128,
+        data: 'data:image/png;base64,AAAA',
+      }],
+      { executorId: 'wisespace-local' },
+    );
+    await flushPromises();
+
+    const tempUser = useConversationStore.getState().messages.find((message) => message.role === 'user');
+    expect(tempUser?.id.startsWith('temp-user-')).toBe(true);
+
+    listeners.get('agent-user-message-id')?.({
+      payload: { conversationId: 'conv-1', userMessageId: realUser.id },
+    });
+    listeners.get('agent-message-id')?.({
+      payload: { conversationId: 'conv-1', assistantMessageId: realAssistant.id },
+    });
+    listeners.get('agent-done')?.({
+      payload: {
+        conversationId: 'conv-1',
+        assistantMessageId: realAssistant.id,
+        text: realAssistant.content,
+        thinking: null,
+        usage: null,
+      },
+    });
+
+    await flushPromises();
+    await pending;
+
+    const idsAfterResolution = useConversationStore.getState().messages.map((message) => message.id);
+    expect(idsAfterResolution).not.toContain(tempUser?.id);
+    expect(useConversationStore.getState().messages.find((message) => message.id === realAssistant.id)?.parent_message_id)
+      .toBe(realUser.id);
+
+    invokeMock.mockClear();
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === 'regenerate_message') return Promise.resolve(undefined);
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+
+    await useConversationStore.getState().regenerateMessage(realAssistant.id);
+
+    expect(invokeMock).toHaveBeenCalledWith('regenerate_message', expect.objectContaining({
+      conversationId: 'conv-1',
+      userMessageId: realUser.id,
+    }));
   });
 
   it('creates a new conversation from a category template when a category id is supplied', async () => {

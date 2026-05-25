@@ -5,6 +5,7 @@ use super::cli_runner::{
 use super::compat::{
     ensure_agent_assistant_message, AgentCancelTokenGuard, RunningAgentGuard, RUNNING_AGENTS,
 };
+use super::context::{maybe_augment_prompt_with_multimodal_fallback, model_id_probably_supports_vision};
 use super::payloads::{
     AgentErrorPayload, AgentPermissionRequestPayload, AgentStatusPayload,
 };
@@ -23,7 +24,7 @@ use tokio::process::Child;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::{sleep, Duration};
 use wisespace_agent::permission::{decide_permission, PermissionAction, PermissionMode, RiskLevel};
-use wisespace_core::repo::{agent_run, agent_session, conversation, message};
+use wisespace_core::repo::{agent_run, agent_session, conversation, message, settings};
 use wisespace_core::types::{Attachment, AttachmentInput, MessageRole};
 
 const DEEPSEEK_RUNTIME_HOST: &str = "127.0.0.1";
@@ -768,48 +769,71 @@ pub async fn start_deepseek_tui_run(
     .await?
     .1;
 
-    let persisted_attachments = crate::commands::conversations::persist_attachments(
-        state,
-        &input.conversation_id,
-        &input.attachments,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-
-    let execution_prompt = build_attachment_execution_prompt(&input.prompt, &persisted_attachments);
-
-    let user_message = message::create_message(
-        &state.sea_db,
-        &input.conversation_id,
-        MessageRole::User,
-        &input.prompt,
-        &persisted_attachments,
-        None,
-        0,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-    conversation::increment_message_count(&state.sea_db, &input.conversation_id)
+    let prepared = async {
+        let persisted_attachments = crate::commands::conversations::persist_attachments(
+            state,
+            &input.conversation_id,
+            &input.attachments,
+        )
         .await
         .map_err(|e| e.to_string())?;
 
-    let _ = app.emit(
-        "agent-user-message-id",
-        serde_json::json!({
-            "conversationId": input.conversation_id.clone(),
-            "userMessageId": user_message.id.clone(),
-        }),
-    );
+        let global_settings = settings::get_settings(&state.sea_db)
+            .await
+            .unwrap_or_default();
+        let agent_prompt = maybe_augment_prompt_with_multimodal_fallback(
+            state,
+            &global_settings,
+            &input.prompt,
+            &persisted_attachments,
+            model_id_probably_supports_vision(input.model_id.as_deref().or(thread.model.as_deref())),
+        )
+        .await?;
+        let execution_prompt =
+            build_attachment_execution_prompt(&agent_prompt, &persisted_attachments);
 
-    let turn_response = create_turn_with_recovery(
-        &client,
-        &thread.id,
-        &effective_cwd,
-        input.model_id.as_deref().or(thread.model.as_deref()),
-        should_auto_approve,
-        &execution_prompt,
-    )
-    .await?;
+        let user_message = message::create_message(
+            &state.sea_db,
+            &input.conversation_id,
+            MessageRole::User,
+            &input.prompt,
+            &persisted_attachments,
+            None,
+            0,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        conversation::increment_message_count(&state.sea_db, &input.conversation_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let _ = app.emit(
+            "agent-user-message-id",
+            serde_json::json!({
+                "conversationId": input.conversation_id.clone(),
+                "userMessageId": user_message.id.clone(),
+            }),
+        );
+
+        let turn_response = create_turn_with_recovery(
+            &client,
+            &thread.id,
+            &effective_cwd,
+            input.model_id.as_deref().or(thread.model.as_deref()),
+            should_auto_approve,
+            &execution_prompt,
+        )
+        .await?;
+        Ok::<_, String>((persisted_attachments, global_settings, user_message, execution_prompt, turn_response))
+    }
+    .await;
+
+    if let Err(error) = &prepared {
+        let summary = format!("Agent setup failed before execution: {}", error);
+        let _ = agent_run::update_run_status(&state.sea_db, &run.id, "failed", Some(&summary)).await;
+    }
+
+    let (_persisted_attachments, _global_settings, user_message, _execution_prompt, turn_response) = prepared?;
     let resume_context_json = serialize_runtime_context(
         &context,
         &turn_response.thread.id,
