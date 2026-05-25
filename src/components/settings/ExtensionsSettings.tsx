@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, App, Button, Card, Descriptions, Empty, List, Modal, Segmented, Space, Tag, Typography } from 'antd';
-import { Blocks, Bot, Cable, PlugZap, RefreshCw, Wrench } from 'lucide-react';
+import { Alert, App, Button, Card, Descriptions, Dropdown, Empty, List, Modal, Segmented, Space, Tag, Tooltip, Typography } from 'antd';
+import type { MenuProps } from 'antd';
+import { ArrowRight, Blocks, Bot, Cable, MoreHorizontal, PlugZap, RefreshCw, Wrench } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
   getExternalBridgeFamilyLabel,
@@ -58,6 +59,91 @@ function healthColor(status: string): string {
       return 'error';
     default:
       return 'default';
+  }
+}
+
+function healthLabel(status: string, t: ReturnType<typeof useTranslation>['t']) {
+  switch (status) {
+    case 'healthy':
+      return t('settings.extensions.health.healthy', { defaultValue: 'Healthy' });
+    case 'warning':
+      return t('settings.extensions.health.warning', { defaultValue: 'Warning' });
+    case 'error':
+      return t('settings.extensions.health.error', { defaultValue: 'Error' });
+    default:
+      return status;
+  }
+}
+
+function kindLabel(kind: ExtensionKind, t: ReturnType<typeof useTranslation>['t']) {
+  switch (kind) {
+    case 'skill':
+      return t('settings.extensions.kind.skill', { defaultValue: 'Skill' });
+    case 'mcp_server':
+      return t('settings.extensions.kind.mcpServer', { defaultValue: 'MCP Server' });
+    case 'external_agent':
+      return t('settings.extensions.kind.externalAgent', { defaultValue: 'External Agent' });
+    case 'tool_bundle':
+      return t('settings.extensions.kind.toolBundle', { defaultValue: 'Tool Bundle' });
+    case 'ui_panel':
+      return t('settings.extensions.kind.uiPanel', { defaultValue: 'UI Panel' });
+    default:
+      return kind;
+  }
+}
+
+function trustLevelLabel(level: string, t: ReturnType<typeof useTranslation>['t']) {
+  switch (level) {
+    case 'networked':
+      return t('settings.extensions.labels.networked', { defaultValue: 'Network Access' });
+    case 'elevated':
+      return t('settings.extensions.labels.elevated', { defaultValue: 'Local Elevated Access' });
+    case 'privileged':
+      return t('settings.extensions.labels.privileged', { defaultValue: 'Privileged Access' });
+    default:
+      return level;
+  }
+}
+
+function availabilityLabel(value: string, t: ReturnType<typeof useTranslation>['t']) {
+  switch (value) {
+    case 'workspace_attachable':
+      return t('settings.extensions.labels.workspaceAttachable', { defaultValue: 'Workspace Attachable' });
+    default:
+      return value;
+  }
+}
+
+function hostKindLabel(value: string, t: ReturnType<typeof useTranslation>['t']) {
+  switch (value) {
+    case 'mcp_host':
+      return t('settings.extensions.labels.mcpHost', { defaultValue: 'MCP Host' });
+    case 'external_agent_connector':
+      return t('settings.extensions.labels.externalAgentConnector', { defaultValue: 'External Agent Connector' });
+    default:
+      return value;
+  }
+}
+
+function isolationLabel(value: string, t: ReturnType<typeof useTranslation>['t']) {
+  switch (value) {
+    case 'subprocess':
+      return t('settings.extensions.labels.subprocess', { defaultValue: 'Local Subprocess' });
+    case 'remote':
+      return t('settings.extensions.labels.remote', { defaultValue: 'Remote Runtime' });
+    default:
+      return value;
+  }
+}
+
+function contributionLabel(value: string, t: ReturnType<typeof useTranslation>['t']) {
+  switch (value) {
+    case 'tool_provider':
+      return t('settings.extensions.labels.toolProvider', { defaultValue: 'Tool Provider' });
+    case 'task_executor':
+      return t('settings.extensions.labels.taskExecutor', { defaultValue: 'Task Executor' });
+    default:
+      return value;
   }
 }
 
@@ -192,20 +278,11 @@ export default function ExtensionsSettings() {
           </Button>
         )}
       >
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
           {t('settings.extensions.description', {
             defaultValue: 'This is an overview, not the detailed configuration page. Use it to review Skills, MCP servers, and External Agents in one place, then jump to the corresponding settings to edit them.',
           })}
         </Typography.Paragraph>
-
-        <Alert
-          type="info"
-          showIcon
-          style={{ marginBottom: 16 }}
-          message={t('settings.extensions.overviewHint', {
-            defaultValue: 'This page only summarizes status and provides quick navigation. Detailed changes still happen in the original Skills, MCP, or External Agents pages.',
-          })}
-        />
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
           <Card size="small">
@@ -255,51 +332,51 @@ export default function ExtensionsSettings() {
                       kindDetail: detailsById[extension.id]?.kindDetail,
                     } as ExtensionDetail)
                   : null;
+                const extraTags = [
+                  availabilityLabel(extension.scope.availability, t),
+                  trustLevelLabel(extension.permissions.trustLevel, t),
+                  extension.runtime ? hostKindLabel(extension.runtime.hostKind, t) : null,
+                  extension.runtime ? isolationLabel(extension.runtime.isolation, t) : null,
+                  bridgeProfile ? getExternalBridgeFamilyLabel(bridgeProfile.family) : null,
+                  bridgeProfile ? getExternalBridgeNetworkScopeLabel(bridgeProfile.networkScope) : null,
+                ].filter(Boolean) as string[];
+                const quickMetaTags = extraTags.slice(0, 3);
+                const moreActions: MenuProps['items'] = [
+                  extension.runtime?.supportsConnectionTest
+                    ? {
+                        key: 'test',
+                        label: t('settings.extensions.testConnection', {
+                          defaultValue: localizedDefault('测试连接', 'Test connection'),
+                        }),
+                      }
+                    : null,
+                  extension.runtime?.supportsEnableToggle
+                    ? {
+                        key: 'toggle',
+                        label: extension.enabled
+                          ? t('settings.extensions.disable', {
+                              defaultValue: localizedDefault('停用', 'Disable'),
+                            })
+                          : t('settings.extensions.enable', {
+                              defaultValue: localizedDefault('启用', 'Enable'),
+                            }),
+                      }
+                    : null,
+                  {
+                    key: 'detail',
+                    label: t('settings.extensions.viewDetail', {
+                      defaultValue: localizedDefault('查看运行时详情', 'View runtime detail'),
+                    }),
+                  },
+                ].filter(Boolean);
                 return (
                   <List.Item
                     actions={[
-                      extension.runtime?.supportsConnectionTest ? (
-                        <Button
-                          key="test"
-                          size="small"
-                          loading={Boolean(testingById[extension.id])}
-                          onClick={() => {
-                            void runConnectionTest(extension);
-                          }}
-                        >
-                          {t('settings.extensions.testConnection', { defaultValue: localizedDefault('测试连接', 'Test connection') })}
-                        </Button>
-                      ) : null,
-                      extension.runtime?.supportsEnableToggle ? (
-                        <Button
-                          key="toggle"
-                          size="small"
-                          loading={Boolean(togglingById[extension.id])}
-                          onClick={() => {
-                            void toggleExtension(extension);
-                          }}
-                        >
-                          {extension.enabled
-                            ? t('settings.extensions.disable', {
-                                defaultValue: localizedDefault('停用', 'Disable'),
-                              })
-                            : t('settings.extensions.enable', {
-                                defaultValue: localizedDefault('启用', 'Enable'),
-                              })}
-                        </Button>
-                      ) : null,
-                      <Button
-                        key="detail"
-                        size="small"
-                        onClick={() => {
-                          void openDetail(extension);
-                        }}
-                      >
-                        {t('settings.extensions.viewDetail', { defaultValue: localizedDefault('查看运行时详情', 'View runtime detail') })}
-                      </Button>,
                       <Button
                         key="open"
+                        type="primary"
                         size="small"
+                        icon={<ArrowRight size={14} />}
                         onClick={() => {
                           if (actionTarget.page === 'skills') {
                             setActivePage('skills');
@@ -311,6 +388,35 @@ export default function ExtensionsSettings() {
                       >
                         {t('settings.extensions.openSource', { defaultValue: 'Open corresponding settings' })}
                       </Button>,
+                      <Dropdown
+                        key="more"
+                        menu={{
+                          items: moreActions,
+                          onClick: ({ key }) => {
+                            if (key === 'test') {
+                              void runConnectionTest(extension);
+                            } else if (key === 'toggle') {
+                              void toggleExtension(extension);
+                            } else if (key === 'detail') {
+                              void openDetail(extension);
+                            }
+                          },
+                        }}
+                        trigger={['click']}
+                      >
+                        <Button
+                          size="small"
+                          icon={<MoreHorizontal size={14} />}
+                          loading={
+                            Boolean(testingById[extension.id])
+                            || Boolean(togglingById[extension.id])
+                          }
+                        >
+                          {t('settings.extensions.moreActions', {
+                            defaultValue: localizedDefault('更多', 'More'),
+                          })}
+                        </Button>
+                      </Dropdown>,
                     ]}
                   >
                     <List.Item.Meta
@@ -318,26 +424,44 @@ export default function ExtensionsSettings() {
                       title={(
                         <Space size={8} wrap>
                           <span>{extension.name}</span>
-                          <Tag color={kindColor(extension.kind)} bordered={false}>{extension.kind}</Tag>
-                          <Tag color={healthColor(extension.health.status)} bordered={false}>{extension.health.status}</Tag>
+                          <Tag color={kindColor(extension.kind)} bordered={false}>
+                            {kindLabel(extension.kind, t)}
+                          </Tag>
+                          <Tag color={healthColor(extension.health.status)} bordered={false}>
+                            {healthLabel(extension.health.status, t)}
+                          </Tag>
                           <Tag bordered={false}>
                             {extension.enabled
                               ? t('common.enabled', { defaultValue: localizedDefault('已启用', 'Enabled') })
                               : t('common.disabled', { defaultValue: localizedDefault('已停用', 'Disabled') })}
                           </Tag>
-                          <Tag bordered={false}>{extension.permissions.approvalMode}</Tag>
+                          <Typography.Text type="secondary">
+                            {extension.permissions.approvalMode}
+                          </Typography.Text>
                         </Space>
                       )}
                       description={(
-                        <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                          <Typography.Text type="secondary">
-                            {extension.description || t('settings.extensions.noDescription', { defaultValue: 'No description provided.' })}
-                          </Typography.Text>
-                          <Typography.Text type="secondary">
-                            {extension.health.summary || t('settings.extensions.noHealthSummary', { defaultValue: 'No diagnostic summary available yet.' })}
-                          </Typography.Text>
+                        <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                          <Tooltip title={extension.description || t('settings.extensions.noDescription', { defaultValue: 'No description provided.' })}>
+                            <Typography.Paragraph
+                              type="secondary"
+                              ellipsis={{ rows: 2, tooltip: false }}
+                              style={{ marginBottom: 0 }}
+                            >
+                              {extension.description || t('settings.extensions.noDescription', { defaultValue: 'No description provided.' })}
+                            </Typography.Paragraph>
+                          </Tooltip>
+                          <Tooltip title={extension.health.summary || t('settings.extensions.noHealthSummary', { defaultValue: 'No diagnostic summary available yet.' })}>
+                            <Typography.Paragraph
+                              type="secondary"
+                              ellipsis={{ rows: 1, tooltip: false }}
+                              style={{ marginBottom: 0, fontSize: 12 }}
+                            >
+                              {extension.health.summary || t('settings.extensions.noHealthSummary', { defaultValue: 'No diagnostic summary available yet.' })}
+                            </Typography.Paragraph>
+                          </Tooltip>
                           {connectionCheck ? (
-                            <Typography.Text type={connectionCheck.ok ? 'success' : 'danger'}>
+                            <Typography.Text style={{ fontSize: 12 }} type={connectionCheck.ok ? 'success' : 'danger'}>
                               {connectionCheck.ok
                                 ? t('settings.extensions.connectionTest.lastSuccess', {
                                     defaultValue: localizedDefault('最近一次连接测试：可达', 'Last connection test: reachable'),
@@ -348,20 +472,11 @@ export default function ExtensionsSettings() {
                             </Typography.Text>
                           ) : null}
                           <Space size={[6, 6]} wrap>
-                            <Tag>{extension.scope.availability}</Tag>
-                            <Tag>{extension.permissions.trustLevel}</Tag>
-                            {extension.runtime ? (
-                              <>
-                                <Tag>{extension.runtime.hostKind}</Tag>
-                                <Tag>{extension.runtime.isolation}</Tag>
-                              </>
-                            ) : null}
+                            {quickMetaTags.map((tag) => (
+                              <Tag key={tag}>{tag}</Tag>
+                            ))}
                             {bridgeProfile ? (
                               <>
-                                <Tag>{getExternalBridgeFamilyLabel(bridgeProfile.family)}</Tag>
-                                <Tag color={getExternalBridgeRiskColor(bridgeProfile.riskLevel)}>
-                                  {getExternalBridgeNetworkScopeLabel(bridgeProfile.networkScope)}
-                                </Tag>
                                 <Tag color={bridgeProfile.authConfigured ? 'success' : 'warning'}>
                                   {bridgeProfile.authConfigured
                                     ? t('settings.extensions.authConfigured', {
@@ -373,8 +488,10 @@ export default function ExtensionsSettings() {
                                 </Tag>
                               </>
                             ) : null}
-                            {extension.contributions.map((contribution) => (
-                              <Tag key={contribution.id}>{contribution.type}</Tag>
+                            {extension.contributions.slice(0, 2).map((contribution) => (
+                              <Tag key={contribution.id}>
+                                {contributionLabel(contribution.type, t)}
+                              </Tag>
                             ))}
                           </Space>
                         </Space>

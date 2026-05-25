@@ -29,7 +29,7 @@ export function FilesPage() {
         .h-full > .ant-tabs > .ant-tabs-content-holder {
           flex: 1;
           overflow-y: auto;
-          overflow-x: hidden;
+          overflow-x: auto;
           min-height: 0;
         }
       `}</style>

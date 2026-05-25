@@ -1,7 +1,7 @@
 /** FileList renders file rows in an antd Table with built-in multi-column sorting. */
 
 import { useEffect, useState } from 'react';
-import { Button, Empty, Image, Popconfirm, Table, Tag, theme } from 'antd';
+import { Button, Empty, Image, Popconfirm, Table, Tag, Tooltip, Typography, theme } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { ExternalLink, FolderOpen, Image as ImageIcon, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -66,13 +66,16 @@ function ImageThumbnail({ record }: { record: FileRow }) {
   );
 }
 
-function sourceKindLabel(sourceKind?: string) {
+function sourceKindLabel(
+  sourceKind: string | undefined,
+  labels: { attachment: string; backup: string },
+) {
   switch (sourceKind) {
     case 'backup_manifest':
-      return 'Backup';
+      return labels.backup;
     case 'attachment':
     default:
-      return 'Attachment';
+      return labels.attachment;
   }
 }
 
@@ -88,6 +91,11 @@ export function FileList({
   const { token } = theme.useToken();
   const { t } = useTranslation();
   const showThumbnails = category === 'images';
+  const tableMinWidth = showThumbnails ? 1180 : 1120;
+  const sourceLabels = {
+    attachment: t('files.sourceAttachment', 'Attachment'),
+    backup: t('files.sourceBackup', 'Backup'),
+  };
 
   const columns: ColumnsType<FileRow> = [];
 
@@ -105,6 +113,7 @@ export function FileList({
       title: t('files.columnName'),
       dataIndex: 'name',
       key: 'name',
+      width: 260,
       sorter: { compare: (a, b) => a.name.localeCompare(b.name), multiple: 1 },
       ellipsis: true,
       render: (name: string) => (
@@ -115,10 +124,30 @@ export function FileList({
       title: t('files.columnWorkspace', 'Workspace'),
       dataIndex: 'workspaceName',
       key: 'workspaceName',
-      width: 180,
+      width: 220,
       sorter: { compare: (a, b) => (a.workspaceName ?? '').localeCompare(b.workspaceName ?? ''), multiple: 2 },
       render: (workspaceName: string | undefined | null) => (
-        workspaceName ? <Tag bordered={false}>{workspaceName}</Tag> : <span style={{ color: token.colorTextQuaternary }}>-</span>
+        workspaceName ? (
+          <Tooltip title={workspaceName}>
+            <div style={{ minWidth: 0 }}>
+              <Typography.Text
+                ellipsis={{ tooltip: false }}
+                style={{
+                  display: 'inline-block',
+                  maxWidth: '100%',
+                  padding: '2px 8px',
+                  borderRadius: 6,
+                  background: token.colorFillSecondary,
+                  color: token.colorText,
+                  fontSize: 12,
+                  lineHeight: '20px',
+                }}
+              >
+                {workspaceName}
+              </Typography.Text>
+            </div>
+          </Tooltip>
+        ) : <span style={{ color: token.colorTextQuaternary }}>-</span>
       ),
     },
     {
@@ -146,20 +175,20 @@ export function FileList({
       title: t('files.columnSource', 'Source'),
       dataIndex: 'sourceKind',
       key: 'sourceKind',
-      width: 120,
+      width: 96,
       render: (sourceKind: string | undefined) => (
-        <Tag bordered={false}>{sourceKindLabel(sourceKind)}</Tag>
+        <Tag bordered={false}>{sourceKindLabel(sourceKind, sourceLabels)}</Tag>
       ),
     },
     {
       title: t('files.columnActions'),
       key: 'actions',
-      width: 220,
+      width: 132,
+      fixed: 'right',
       render: (_: unknown, record: FileRow) => {
         if (record.missing) {
           return (
             <span className="flex items-center gap-1">
-              <Tag color="error" bordered={false}>{t('files.missing')}</Tag>
               {onDelete && (
                 <Popconfirm
                   title={t('files.deleteConfirm')}
@@ -167,43 +196,44 @@ export function FileList({
                   okText={t('files.confirmYes')}
                   cancelText={t('files.confirmNo')}
                 >
-                  <Button
-                    type="text"
-                    size="small"
-                    danger
-                    icon={<Trash2 size={14} />}
-                    aria-label={`${t('files.delete')} ${record.name}`}
-                  >
-                    {t('files.delete')}
-                  </Button>
+                  <Tooltip title={t('files.delete')}>
+                    <Button
+                      type="text"
+                      size="small"
+                      danger
+                      icon={<Trash2 size={14} />}
+                      aria-label={`${t('files.delete')} ${record.name}`}
+                    />
+                  </Tooltip>
                 </Popconfirm>
               )}
+              <Tag color="error" bordered={false}>{t('files.missing')}</Tag>
             </span>
           );
         }
         return (
-          <span className="flex items-center gap-1">
+          <span className="flex items-center gap-0.5">
             {onOpen && record.path && (
-              <Button
-                type="text"
-                size="small"
-                icon={<ExternalLink size={14} />}
-                onClick={() => onOpen(record.path)}
-                aria-label={`${t('files.open')} ${record.name}`}
-              >
-                {t('files.open')}
-              </Button>
+              <Tooltip title={t('files.open')}>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<ExternalLink size={14} />}
+                  onClick={() => onOpen(record.path)}
+                  aria-label={`${t('files.open')} ${record.name}`}
+                />
+              </Tooltip>
             )}
             {onReveal && record.path && (
-              <Button
-                type="text"
-                size="small"
-                icon={<FolderOpen size={14} />}
-                onClick={() => onReveal(record.path)}
-                aria-label={`${t('files.openOriginalDirectory', 'Open folder')} ${record.name}`}
-              >
-                {t('files.openOriginalDirectory', 'Open folder')}
-              </Button>
+              <Tooltip title={t('files.openOriginalDirectory', 'Open folder')}>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<FolderOpen size={14} />}
+                  onClick={() => onReveal(record.path)}
+                  aria-label={`${t('files.openOriginalDirectory', 'Open folder')} ${record.name}`}
+                />
+              </Tooltip>
             )}
             {onDelete && (
               <Popconfirm
@@ -212,15 +242,15 @@ export function FileList({
                 okText={t('files.confirmYes')}
                 cancelText={t('files.confirmNo')}
               >
-                <Button
-                  type="text"
-                  size="small"
-                  danger
-                  icon={<Trash2 size={14} />}
-                  aria-label={`${t('files.delete')} ${record.name}`}
-                >
-                  {t('files.delete')}
-                </Button>
+                <Tooltip title={t('files.delete')}>
+                  <Button
+                    type="text"
+                    size="small"
+                    danger
+                    icon={<Trash2 size={14} />}
+                    aria-label={`${t('files.delete')} ${record.name}`}
+                  />
+                </Tooltip>
               </Popconfirm>
             )}
           </span>
@@ -231,10 +261,12 @@ export function FileList({
 
   return (
     <Table<FileRow>
+      data-testid="file-list"
       dataSource={rows}
       columns={columns}
       rowKey="id"
       size="small"
+      scroll={{ x: tableMinWidth }}
       rowSelection={{
         selectedRowKeys,
         onChange: (keys) => onSelectionChange?.(keys as string[]),

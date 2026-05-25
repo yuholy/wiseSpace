@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { useConversationStore, useProviderStore, useSettingsStore, useCategoryStore, useUIStore } from '@/stores'
 import { getShortcutBinding, formatShortcutForDisplay } from '@/lib/shortcuts'
 import type { ShortcutAction } from '@/lib/shortcuts'
-import type { Conversation, Message, ConversationCategory } from '@/types'
+import type { Conversation, ConversationCategory, Message } from '@/types'
 import { useResolvedAvatarSrc } from '@/hooks/useResolvedAvatarSrc'
 import type { AvatarType } from '@/stores/userProfileStore'
 import { CategoryEditModal, type CategoryEditFormData } from './CategoryEditModal'
@@ -591,7 +591,20 @@ export function ChatSidebar() {
     let filtered = conversations
     if (searchText.trim()) {
       const query = searchText.toLowerCase()
-      filtered = filtered.filter((c: Conversation) => c.title.toLowerCase().includes(query))
+      const matchedIds = new Set(
+        conversations
+          .filter((c: Conversation) => c.title.toLowerCase().includes(query))
+          .map((c) => c.id),
+      )
+
+      const includedIds = new Set(matchedIds)
+      conversations.forEach((conversation) => {
+        if (matchedIds.has(conversation.id) && conversation.parent_conversation_id) {
+          includedIds.add(conversation.parent_conversation_id)
+        }
+      })
+
+      filtered = filtered.filter((c: Conversation) => includedIds.has(c.id))
     }
     // Categorized conversations first (by category sort_order), then uncategorized
     const categorized = filtered.filter((c) => c.category_id)
@@ -616,14 +629,25 @@ export function ChatSidebar() {
   )
 
   const visibleCategories = useMemo(() => {
-    if (showAllCategoryGroups || showArchived || searchText.trim() || multiSelectMode || archivedMultiSelect) {
+    if (showArchived || multiSelectMode || archivedMultiSelect) {
+      return categories
+    }
+    if (searchText.trim()) {
+      const matchedCategoryIds = new Set(
+        filteredConversations
+          .map((conversation) => conversation.category_id)
+          .filter((categoryId): categoryId is string => Boolean(categoryId)),
+      )
+      return categories.filter((cat) => matchedCategoryIds.has(cat.id))
+    }
+    if (showAllCategoryGroups) {
       return categories
     }
     if (!activeCategoryId) {
       return []
     }
     return categories.filter((cat) => cat.id === activeCategoryId)
-  }, [activeCategoryId, archivedMultiSelect, categories, multiSelectMode, searchText, showAllCategoryGroups, showArchived])
+  }, [activeCategoryId, archivedMultiSelect, categories, filteredConversations, multiSelectMode, searchText, showAllCategoryGroups, showArchived])
 
   const hiddenCategoryCount = Math.max(categories.length - visibleCategories.length, 0)
 
@@ -869,7 +893,7 @@ export function ChatSidebar() {
         const childCount = childrenMap.get(conv.id)?.length ?? 0
         const expanded = isExpanded(conv.id)
 
-        let label: React.ReactNode
+        let titleNode: React.ReactNode
         const modeTag = conv.mode === 'agent'
           ? (
             <Tag
@@ -890,7 +914,7 @@ export function ChatSidebar() {
           : null
 
         if (conv.is_pinned && !isChild) {
-          label = (
+          titleNode = (
             <span className="flex items-center gap-1">
               <span className="truncate">{conv.title}</span>
               {modeTag}
@@ -898,7 +922,7 @@ export function ChatSidebar() {
             </span>
           )
         } else {
-          label = modeTag ? (
+          titleNode = modeTag ? (
             <span className="flex items-center gap-1">
               <span className="truncate">{conv.title}</span>
               {modeTag}
@@ -908,7 +932,7 @@ export function ChatSidebar() {
 
         // Wrap label with expand/collapse toggle for parents with children
         if (childCount > 0) {
-          label = (
+          titleNode = (
             <span className="flex items-center gap-1" style={{ overflow: 'hidden' }}>
               <span
                 onClick={(e) => {
@@ -931,10 +955,12 @@ export function ChatSidebar() {
                   }}
                 />
               </span>
-              <span className="truncate">{typeof label === 'string' ? label : label}</span>
+              <span className="truncate">{typeof titleNode === 'string' ? titleNode : titleNode}</span>
             </span>
           )
         }
+
+        const label = titleNode
 
         if (multiSelectMode) {
           return {
@@ -993,9 +1019,9 @@ export function ChatSidebar() {
         const catConvs = convsByCatId.get(cat.id)
         if (catConvs && catConvs.length > 0) {
           const expanded = expandedCategoryContentIds.has(cat.id)
-          const visibleConvs = expanded ? catConvs : catConvs.slice(0, CATEGORY_PREVIEW_LIMIT)
+          const visibleConvs = searchText.trim() ? catConvs : (expanded ? catConvs : catConvs.slice(0, CATEGORY_PREVIEW_LIMIT))
           visibleConvs.forEach((conv) => pushConvWithChildren(conv, `cat:${cat.id}`))
-          if (catConvs.length > CATEGORY_PREVIEW_LIMIT) {
+          if (!searchText.trim() && catConvs.length > CATEGORY_PREVIEW_LIMIT) {
             items.push(buildCategoryToggleItem(cat.id, catConvs.length - CATEGORY_PREVIEW_LIMIT, expanded))
           }
         } else {
@@ -1023,7 +1049,7 @@ export function ChatSidebar() {
 
       return items
     },
-    [filteredConversations, multiSelectMode, selectedIds, buildIcon, toggleSelect, token.colorTextQuaternary, visibleCategories, t, expandedParentIds, expandedCategoryContentIds],
+    [filteredConversations, multiSelectMode, searchText, selectedIds, buildIcon, toggleSelect, token.colorTextQuaternary, visibleCategories, t, expandedParentIds, expandedCategoryContentIds],
   )
 
   const groupLabels: Record<string, string> = useMemo(
@@ -1113,6 +1139,51 @@ export function ChatSidebar() {
     if (showArchived || searchText.trim() || multiSelectMode || archivedMultiSelect) return
     setShowAllCategoryGroups(false)
   }, [activeConversationId, archivedMultiSelect, multiSelectMode, searchText, showArchived])
+
+  useEffect(() => {
+    if (!searchText.trim()) {
+      return
+    }
+
+    const categoryIdsToExpand = new Set<string>()
+    const parentIdsToExpand = new Set<string>()
+
+    filteredConversations.forEach((conversation) => {
+      if (conversation.category_id) {
+        categoryIdsToExpand.add(conversation.category_id)
+      }
+      if (conversation.parent_conversation_id) {
+        parentIdsToExpand.add(conversation.parent_conversation_id)
+      }
+    })
+
+    setExpandedCategoryContentIds((prev) => {
+      let changed = false
+      const next = new Set(prev)
+      categoryIdsToExpand.forEach((id) => {
+        if (!next.has(id)) {
+          next.add(id)
+          changed = true
+        }
+      })
+      return changed ? next : prev
+    })
+
+    setExpandedParentIds((prev) => {
+      let changed = false
+      const next = new Set(prev)
+      parentIdsToExpand.forEach((id) => {
+        if (!next.has(id)) {
+          next.add(id)
+          changed = true
+        }
+      })
+      return changed ? next : prev
+    })
+
+    const nextExpandedKeys = Array.from(categoryIdsToExpand, (id) => `cat:${id}`)
+    setExpandedKeys(nextExpandedKeys)
+  }, [filteredConversations, searchText])
 
   // Guard to prevent menu clicks from triggering expand/collapse
   const menuActionRef = useRef(false)
@@ -1522,9 +1593,18 @@ export function ChatSidebar() {
         .wisespace-chat-sidebar .chat-sidebar-search .ant-input-affix-wrapper {
           border-radius: 9px;
           padding-inline: 10px;
+          min-height: 32px;
           background: var(--wisespace-sidebar-soft-bg);
           border: 0;
           box-shadow: none;
+        }
+        .wisespace-chat-sidebar .chat-sidebar-search .ant-input-affix-wrapper .ant-input {
+          font-size: 13px;
+          line-height: 1.35;
+        }
+        .wisespace-chat-sidebar .chat-sidebar-search .ant-input-affix-wrapper .ant-input-prefix,
+        .wisespace-chat-sidebar .chat-sidebar-search .ant-input-affix-wrapper .ant-input-suffix {
+          font-size: 13px;
         }
         .wisespace-chat-sidebar .chat-sidebar-search .ant-input-affix-wrapper:hover,
         .wisespace-chat-sidebar .chat-sidebar-search .ant-input-affix-wrapper-focused {

@@ -49,7 +49,7 @@ export default function AgentExecutorSettings() {
                         borderColor: token.colorPrimaryBorder,
                       }}
                     >
-                      Local
+                      {t('settings.agentExecutors.localTag', { defaultValue: 'Local' })}
                     </Tag>
                   </Space>
                 )}

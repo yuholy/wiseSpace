@@ -38,19 +38,26 @@ const MENU_ICONS: Record<SettingsSection, React.ReactNode> = {
   extensions: <Puzzle size={16} />,
 };
 
-const SECTION_KEYS: SettingsSection[] = [
-  'general',
-  'display',
-  'providers',
-  'conversationSettings',
-  'defaultModel',
-  'mcpServers',
-  'agentExecutors',
-  'extensions',
-  'proxy',
-  'dataStorage',
-  'backup',
-  'about',
+const SECTION_GROUPS: Array<{
+  key: string;
+  titleKey: string;
+  sections: SettingsSection[];
+}> = [
+  {
+    key: 'core',
+    titleKey: 'settings.groups.core',
+    sections: ['general', 'display', 'providers', 'conversationSettings', 'defaultModel'],
+  },
+  {
+    key: 'extensions',
+    titleKey: 'settings.groups.extensions',
+    sections: ['mcpServers', 'agentExecutors', 'extensions'],
+  },
+  {
+    key: 'system',
+    titleKey: 'settings.groups.system',
+    sections: ['proxy', 'dataStorage', 'backup', 'about'],
+  },
 ];
 
 export function SettingsSidebar() {
@@ -60,10 +67,15 @@ export function SettingsSidebar() {
   const setSettingsSection = useUIStore((s) => s.setSettingsSection);
   const exitSettings = useUIStore((s) => s.exitSettings);
 
-  const items = SECTION_KEYS.map((key) => ({
-    key,
-    icon: MENU_ICONS[key],
-    label: t([`settings.${key}.title`, `settings.${key}`]),
+  const items = SECTION_GROUPS.map((group) => ({
+    type: 'group' as const,
+    label: t(group.titleKey, { defaultValue: group.key }),
+    key: group.key,
+    children: group.sections.map((key) => ({
+      key,
+      icon: MENU_ICONS[key],
+      label: t([`settings.${key}.title`, `settings.${key}`]),
+    })),
   }));
 
   return (

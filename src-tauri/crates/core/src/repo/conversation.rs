@@ -1,5 +1,6 @@
 use sea_orm::*;
 use serde_json;
+use std::collections::HashSet;
 
 use crate::entity::{conversation_summaries, conversations, messages};
 use crate::error::{Result, WiseSpaceError};
@@ -761,15 +762,18 @@ pub async fn search_conversations(
          FROM messages_fts \
          JOIN messages m ON m.rowid = messages_fts.rowid \
          WHERE messages_fts MATCH ? \
-         GROUP BY m.conversation_id \
          ORDER BY rank",
         [query.into()],
     ))
     .all(db)
     .await?;
 
+    let mut seen_conversation_ids = HashSet::new();
     let mut results = Vec::with_capacity(fts_rows.len());
     for fts in fts_rows {
+        if !seen_conversation_ids.insert(fts.conversation_id.clone()) {
+            continue;
+        }
         if let Ok(conv) = get_conversation(db, &fts.conversation_id).await {
             results.push(ConversationSearchResult {
                 conversation: conv,

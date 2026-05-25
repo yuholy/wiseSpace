@@ -459,21 +459,51 @@
     "shortcuts": "快捷键",
     "data": "数据管理",
     "dataStorage": "数据与存储",
+    "groups": {
+      "core": "基础设置",
+      "extensions": "扩展与集成",
+      "system": "数据与系统"
+    },
     "agentExecutors": {
       "title": "外部 Agent",
       "description": "wiseSpace 当前主要在这里展示可接入的 Agent 运行时与外部 Agent 连接器。内置本地 Agent 的工作目录和权限模式仍可在对话页配置。",
       "localRuntime": "本地运行时",
+      "localTag": "本地",
       "cwd": "工作目录",
       "permissionMode": "权限模式"
     },
     "extensions": {
       "title": "扩展能力",
       "description": "这是总览页，不是具体配置页。你可以在这里统一查看 Skills、MCP 服务器和外部 Agent 的状态，再跳转到对应设置页进行修改。",
-      "overviewHint": "这里主要用于看状态和快速跳转，不直接编辑具体配置。详细修改仍然在 Skills、MCP 服务和外部 Agent 页面完成。",
       "openSource": "前往对应设置",
+      "moreActions": "更多",
       "empty": "暂无扩展能力",
       "noDescription": "暂无描述信息。",
       "noHealthSummary": "暂时没有诊断摘要。",
+      "kind": {
+        "skill": "Skill",
+        "mcpServer": "MCP 服务",
+        "externalAgent": "外部 Agent",
+        "toolBundle": "工具集",
+        "uiPanel": "界面面板"
+      },
+      "health": {
+        "healthy": "健康",
+        "warning": "警告",
+        "error": "错误"
+      },
+      "labels": {
+        "networked": "需要网络访问",
+        "elevated": "本地高权限访问",
+        "privileged": "特权访问",
+        "workspaceAttachable": "可绑定到工作空间",
+        "mcpHost": "MCP 宿主",
+        "externalAgentConnector": "外部 Agent 连接器",
+        "subprocess": "本地子进程",
+        "remote": "远程运行时",
+        "toolProvider": "工具提供方",
+        "taskExecutor": "任务执行器"
+      },
       "filter": {
         "all": "全部",
         "skills": "Skills",
@@ -1307,7 +1337,10 @@
     "columnWorkspace": "工作空间",
     "columnSize": "大小",
     "columnCreatedAt": "创建时间",
+    "columnSource": "来源",
     "columnActions": "操作",
+    "sourceAttachment": "附件",
+    "sourceBackup": "备份",
     "missing": "缺失",
     "cleanup": "清理",
     "open": "打开",
