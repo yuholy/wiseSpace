@@ -459,10 +459,17 @@
     "shortcuts": "Shortcuts",
     "data": "Data Management",
     "dataStorage": "Data & Storage",
+    "agentExecutors": {
+      "title": "External Agents",
+      "description": "wiseSpace currently shows available agent runtimes and external agent connectors here. Working directory and permission mode for the built-in local agent can still be configured from the conversation page.",
+      "localRuntime": "Local Runtime",
+      "cwd": "Working Directory",
+      "permissionMode": "Permission Mode"
+    },
     "extensions": {
       "title": "Extensions",
       "description": "This is an overview, not the detailed configuration page. Use it to review Skills, MCP servers, and External Agents in one place, then jump to the corresponding settings to edit them.",
-      "overviewHint": "This page only summarizes status and provides quick navigation. Detailed changes still happen in the original Skills, MCP, or Agent Executors pages.",
+      "overviewHint": "This page only summarizes status and provides quick navigation. Detailed changes still happen in the original Skills, MCP, or External Agents pages.",
       "openSource": "Open corresponding settings",
       "testConnection": "Test connection",
       "viewDetail": "View runtime detail",

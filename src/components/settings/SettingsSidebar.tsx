@@ -63,9 +63,7 @@ export function SettingsSidebar() {
   const items = SECTION_KEYS.map((key) => ({
     key,
     icon: MENU_ICONS[key],
-    label: key === 'agentExecutors'
-      ? 'Agent Executors'
-      : t([`settings.${key}.title`, `settings.${key}`]),
+    label: t([`settings.${key}.title`, `settings.${key}`]),
   }));
 
   return (

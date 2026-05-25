@@ -459,10 +459,17 @@
     "shortcuts": "快捷键",
     "data": "数据管理",
     "dataStorage": "数据与存储",
+    "agentExecutors": {
+      "title": "外部 Agent",
+      "description": "wiseSpace 当前主要在这里展示可接入的 Agent 运行时与外部 Agent 连接器。内置本地 Agent 的工作目录和权限模式仍可在对话页配置。",
+      "localRuntime": "本地运行时",
+      "cwd": "工作目录",
+      "permissionMode": "权限模式"
+    },
     "extensions": {
       "title": "扩展能力",
-      "description": "这是总览页，不是具体配置页。你可以在这里统一查看 Skills、MCP 服务器和外部 Agents 的状态，再跳转到对应设置页进行修改。",
-      "overviewHint": "这里主要用于看状态和快速跳转，不直接编辑具体配置。详细修改仍然在 Skills、MCP 服务和 Agent Executors 页面完成。",
+      "description": "这是总览页，不是具体配置页。你可以在这里统一查看 Skills、MCP 服务器和外部 Agent 的状态，再跳转到对应设置页进行修改。",
+      "overviewHint": "这里主要用于看状态和快速跳转，不直接编辑具体配置。详细修改仍然在 Skills、MCP 服务和外部 Agent 页面完成。",
       "openSource": "前往对应设置",
       "empty": "暂无扩展能力",
       "noDescription": "暂无描述信息。",
@@ -471,7 +478,7 @@
         "all": "全部",
         "skills": "Skills",
         "mcp": "MCP",
-        "externalAgents": "外部 Agents"
+        "externalAgents": "外部 Agent"
       },
       "summary": {
         "total": "总数",

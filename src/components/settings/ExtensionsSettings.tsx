@@ -203,7 +203,7 @@ export default function ExtensionsSettings() {
           showIcon
           style={{ marginBottom: 16 }}
           message={t('settings.extensions.overviewHint', {
-            defaultValue: 'This page only summarizes status and provides quick navigation. Detailed changes still happen in the original Skills, MCP, or Agent Executors pages.',
+            defaultValue: 'This page only summarizes status and provides quick navigation. Detailed changes still happen in the original Skills, MCP, or External Agents pages.',
           })}
         />
 
