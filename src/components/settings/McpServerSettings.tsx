@@ -160,6 +160,7 @@ function McpServerDetail({
   onToggle: (enable: boolean) => void;
 }) {
   const { t } = useTranslation();
+  const { token } = theme.useToken();
   const { updateServer, deleteServer, toolDescriptors, loadToolDescriptors, discoverTools } = useMcpStore();
   const [discovering, setDiscovering] = useState(false);
 
@@ -255,7 +256,16 @@ function McpServerDetail({
           )}
           <span style={{ fontWeight: 600, fontSize: 16 }}>{displayName}</span>
           {isBuiltin && (
-            <Tag color="blue" style={{ margin: 0 }}>{t('settings.mcpServers.builtin')}</Tag>
+            <Tag
+              style={{
+                margin: 0,
+                color: token.colorPrimary,
+                backgroundColor: token.colorPrimaryBg,
+                borderColor: token.colorPrimaryBorder,
+              }}
+            >
+              {t('settings.mcpServers.builtin')}
+            </Tag>
           )}
         </div>
         {!isBuiltin && (

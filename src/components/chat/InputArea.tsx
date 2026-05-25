@@ -60,6 +60,15 @@ const _draftCache = new Map<string, string>();
 export function InputArea() {
   const { t } = useTranslation();
   const { token } = theme.useToken();
+  const primaryTagStyle = useMemo(
+    () => ({
+      marginInlineEnd: 0,
+      color: token.colorPrimary,
+      backgroundColor: token.colorPrimaryBg,
+      borderColor: token.colorPrimaryBorder,
+    }),
+    [token.colorPrimary, token.colorPrimaryBg, token.colorPrimaryBorder],
+  );
   const [value, setValue] = useState(() => {
     const convId = useConversationStore.getState().activeConversationId;
     return convId ? _draftCache.get(convId) || '' : '';
@@ -1625,7 +1634,14 @@ export function InputArea() {
             </Button>
           </Dropdown>
           <Tooltip title={modeBoundarySummary}>
-            <Tag bordered={false} color={currentMode === 'agent' ? 'blue' : 'default'} style={{ marginInlineEnd: 0, cursor: 'help' }}>
+            <Tag
+              bordered={false}
+              style={
+                currentMode === 'agent'
+                  ? { ...primaryTagStyle, cursor: 'help' }
+                  : { marginInlineEnd: 0, cursor: 'help' }
+              }
+            >
               {currentMode === 'agent'
                 ? t('chat.agentBoundaryShort', 'Workspace execution')
                 : t('chat.chatBoundaryShort', 'Conversation only')}
@@ -1640,7 +1656,7 @@ export function InputArea() {
               }}
               trigger={['click']}
             >
-              <Tag color="blue" bordered={false} style={{ marginInlineEnd: 0, cursor: 'pointer' }}>
+              <Tag bordered={false} style={{ ...primaryTagStyle, cursor: 'pointer' }}>
                 {activeAgentExecutor.name}
               </Tag>
             </Dropdown>

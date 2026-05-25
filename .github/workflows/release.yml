@@ -184,32 +184,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ matrix.os == 'macos-latest' && '-' || '' }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'wiseSpace ${{ github.ref_name }}'
-          releaseBody: ${{ needs.draft-release-notes.outputs.body }}
-          releaseDraft: true
-          prerelease: ${{ contains(github.ref_name, '-rc') }}
           tauriScript: pnpm tauri
           args: --target ${{ matrix.target }}
           includeUpdaterJson: true
-
-      - name: Package Windows portable (zip)
-        if: contains(matrix.target, 'windows')
-        shell: pwsh
-        run: |
-          $exe = "src-tauri/target/${{ matrix.target }}/release/wiseSpace.exe"
-          $arch = if ("${{ matrix.target }}" -match "aarch64") { "arm64" } else { "x64" }
-          $zipName = "wiseSpace_${{ github.ref_name }}_windows-${arch}-portable.zip"
-          Compress-Archive -Path $exe -DestinationPath $zipName
-
-      - name: Upload Windows portable to release
-        if: contains(matrix.target, 'windows')
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          draft: true
-          token: ${{ secrets.GITHUB_TOKEN }}
-          files: wiseSpace_${{ github.ref_name }}_windows-*-portable.zip
 
   # ── Build for Linux ARM64 (cross-compile) ──────────────
   release-linux-arm:
@@ -320,18 +297,6 @@ jobs:
           AR_aarch64_unknown_linux_gnu: aarch64-linux-gnu-ar
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-
-      - name: Upload Linux ARM64 artifacts
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: 'wiseSpace ${{ github.ref_name }}'
-          draft: true
-          prerelease: ${{ contains(github.ref_name, '-rc') }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-          files: |
-            src-tauri/target/aarch64-unknown-linux-gnu/release/bundle/deb/*.deb
-            src-tauri/target/aarch64-unknown-linux-gnu/release/bundle/rpm/*.rpm
 
   # ── Publish draft release as latest ────────────────────
   publish-release:

@@ -872,7 +872,18 @@ export function ChatSidebar() {
         let label: React.ReactNode
         const modeTag = conv.mode === 'agent'
           ? (
-            <Tag color="blue" bordered={false} style={{ marginInlineEnd: 0, fontSize: 10, lineHeight: '16px', paddingInline: 6 }}>
+            <Tag
+              bordered={false}
+              style={{
+                marginInlineEnd: 0,
+                fontSize: 10,
+                lineHeight: '16px',
+                paddingInline: 6,
+                color: token.colorPrimary,
+                backgroundColor: token.colorPrimaryBg,
+                borderColor: token.colorPrimaryBorder,
+              }}
+            >
               {t('common.agentMode')}
             </Tag>
           )

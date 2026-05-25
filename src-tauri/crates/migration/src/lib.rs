@@ -38,6 +38,7 @@ mod m20260510_000001_sdk_only_agent_runtime;
 mod m20260512_000001_add_conversation_source;
 mod m20260523_000001_workspace_identity_foundation;
 mod m20260524_000001_add_workspace_binding_tables;
+mod m20260524_000002_add_agent_task_delegation_fields;
 
 pub struct Migrator;
 
@@ -83,6 +84,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260512_000001_add_conversation_source::Migration),
             Box::new(m20260523_000001_workspace_identity_foundation::Migration),
             Box::new(m20260524_000001_add_workspace_binding_tables::Migration),
+            Box::new(m20260524_000002_add_agent_task_delegation_fields::Migration),
         ]
     }
 }
@@ -267,6 +269,32 @@ mod tests {
             assert!(
                 manager.has_table(table).await.expect("check binding table"),
                 "missing table {table}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn migrator_up_adds_agent_task_delegation_columns_on_sqlite() {
+        let db = sqlite_test_db().await;
+
+        Migrator::up(&db, None)
+            .await
+            .expect("run sqlite migrations");
+
+        let manager = SchemaManager::new(&db);
+        for column in [
+            "parent_run_id",
+            "parent_task_id",
+            "assignee_kind",
+            "assignee_label",
+            "delegation_depth",
+        ] {
+            assert!(
+                manager
+                    .has_column("agent_tasks", column)
+                    .await
+                    .expect("check delegation column"),
+                "missing agent_tasks.{column}"
             );
         }
     }

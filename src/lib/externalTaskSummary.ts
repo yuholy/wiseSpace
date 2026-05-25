@@ -1,5 +1,22 @@
 import type { AgentTask } from '@/types';
 
+export function getAgentTaskTypeLabel(taskType: string): string {
+  switch (taskType) {
+    case 'review':
+      return 'Review';
+    case 'research':
+      return 'Research';
+    case 'scan_files':
+      return 'Scan Files';
+    case 'summarize':
+      return 'Summarize';
+    case 'plan':
+      return 'Plan';
+    default:
+      return taskType;
+  }
+}
+
 function toDisplayString(value: unknown): string | null {
   if (typeof value === 'string') {
     const trimmed = value.trim();
@@ -57,5 +74,5 @@ export function getExternalTaskSummary(task: AgentTask): string {
     }
   }
 
-  return task.kind;
+  return task.inputText?.trim() || task.taskType || task.kind;
 }

@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, Empty, List, Segmented, Space, Tag, Typography } from 'antd';
+import { Alert, App, Button, Card, Descriptions, Empty, List, Modal, Segmented, Space, Tag, Typography } from 'antd';
 import { Blocks, Bot, Cable, PlugZap, RefreshCw, Wrench } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import {
+  getExternalBridgeFamilyLabel,
+  getExternalBridgeNetworkScopeLabel,
+  getExternalBridgeRiskColor,
+  readExternalBridgeProfile,
+} from '@/lib/externalBridgeProfile';
 import { useExtensionStore, useUIStore } from '@/stores';
-import type { ExtensionKind, ExtensionSummary } from '@/types';
+import type { ExtensionDetail, ExtensionKind, ExtensionSummary } from '@/types';
 import { SettingsGroup } from './SettingsGroup';
 
 type KindFilter = 'all' | ExtensionKind;
@@ -66,15 +72,30 @@ function sourceActionTarget(extension: ExtensionSummary): { page?: 'skills' | 's
 }
 
 export default function ExtensionsSettings() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const { message } = App.useApp();
+  const isZh = (i18n.resolvedLanguage ?? i18n.language ?? '').toLowerCase().startsWith('zh');
+  const localizedDefault = (zh: string, en: string) => (isZh ? zh : en);
   const extensions = useExtensionStore((s) => s.extensions);
   const loading = useExtensionStore((s) => s.loading);
   const error = useExtensionStore((s) => s.error);
   const loadExtensions = useExtensionStore((s) => s.loadExtensions);
+  const loadExtensionDetail = useExtensionStore((s) => s.loadExtensionDetail);
+  const refreshExtensionRuntime = useExtensionStore((s) => s.refreshExtensionRuntime);
+  const testExtensionConnection = useExtensionStore((s) => s.testExtensionConnection);
+  const setExtensionEnabled = useExtensionStore((s) => s.setExtensionEnabled);
+  const detailsById = useExtensionStore((s) => s.detailsById);
+  const connectionChecksById = useExtensionStore((s) => s.connectionChecksById);
+  const testingById = useExtensionStore((s) => s.testingById);
+  const togglingById = useExtensionStore((s) => s.togglingById);
+  const refreshingById = useExtensionStore((s) => s.refreshingById);
   const clearError = useExtensionStore((s) => s.clearError);
   const setActivePage = useUIStore((s) => s.setActivePage);
   const setSettingsSection = useUIStore((s) => s.setSettingsSection);
   const [kindFilter, setKindFilter] = useState<KindFilter>('all');
+  const [selectedExtensionId, setSelectedExtensionId] = useState<string | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   useEffect(() => {
     void loadExtensions();
@@ -92,6 +113,65 @@ export default function ExtensionsSettings() {
     const errorCount = extensions.filter((item) => item.health.status === 'error').length;
     return { total, healthy, warning, errorCount };
   }, [extensions]);
+
+  const selectedExtensionDetail: ExtensionDetail | null = selectedExtensionId
+    ? detailsById[selectedExtensionId] ?? null
+    : null;
+
+  const openDetail = async (extension: ExtensionSummary) => {
+    setSelectedExtensionId(extension.id);
+    setDetailOpen(true);
+    if (detailsById[extension.id]) {
+      return;
+    }
+    setDetailLoading(true);
+    try {
+      await loadExtensionDetail(extension.id);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const refreshRuntime = async (extensionId: string) => {
+    await refreshExtensionRuntime(extensionId);
+    message.success(
+      t('settings.extensions.runtimeRefreshed', {
+        defaultValue: localizedDefault('运行时状态已刷新。', 'Runtime state refreshed.'),
+      }),
+    );
+  };
+
+  const runConnectionTest = async (extension: ExtensionSummary) => {
+    const result = await testExtensionConnection(extension);
+    if (result.ok) {
+      message.success(
+        t('settings.extensions.connectionTest.success', {
+          defaultValue: localizedDefault('连接测试成功。', 'Connection test succeeded.'),
+        }),
+      );
+    } else {
+      message.error(
+        result.message ??
+          t('settings.extensions.connectionTest.failed', {
+            defaultValue: localizedDefault('连接测试失败。', 'Connection test failed.'),
+          }),
+      );
+    }
+  };
+
+  const toggleExtension = async (extension: ExtensionSummary) => {
+    const nextEnabled = !extension.enabled;
+    await setExtensionEnabled(extension.id, nextEnabled);
+    message.success(
+      nextEnabled
+        ? t('settings.extensions.enableSuccess', {
+            defaultValue: localizedDefault('扩展已启用。', 'Extension enabled.'),
+          })
+        : t('settings.extensions.disableSuccess', {
+            defaultValue: localizedDefault('扩展已停用。', 'Extension disabled.'),
+          }),
+    );
+  };
 
   return (
     <div className="p-6 flex flex-col gap-4">
@@ -168,9 +248,55 @@ export default function ExtensionsSettings() {
               dataSource={filtered}
               renderItem={(extension) => {
                 const actionTarget = sourceActionTarget(extension);
+                const connectionCheck = connectionChecksById[extension.id];
+                const bridgeProfile = extension.kind === 'external_agent'
+                  ? readExternalBridgeProfile({
+                      ...extension,
+                      kindDetail: detailsById[extension.id]?.kindDetail,
+                    } as ExtensionDetail)
+                  : null;
                 return (
                   <List.Item
                     actions={[
+                      extension.runtime?.supportsConnectionTest ? (
+                        <Button
+                          key="test"
+                          size="small"
+                          loading={Boolean(testingById[extension.id])}
+                          onClick={() => {
+                            void runConnectionTest(extension);
+                          }}
+                        >
+                          {t('settings.extensions.testConnection', { defaultValue: localizedDefault('测试连接', 'Test connection') })}
+                        </Button>
+                      ) : null,
+                      extension.runtime?.supportsEnableToggle ? (
+                        <Button
+                          key="toggle"
+                          size="small"
+                          loading={Boolean(togglingById[extension.id])}
+                          onClick={() => {
+                            void toggleExtension(extension);
+                          }}
+                        >
+                          {extension.enabled
+                            ? t('settings.extensions.disable', {
+                                defaultValue: localizedDefault('停用', 'Disable'),
+                              })
+                            : t('settings.extensions.enable', {
+                                defaultValue: localizedDefault('启用', 'Enable'),
+                              })}
+                        </Button>
+                      ) : null,
+                      <Button
+                        key="detail"
+                        size="small"
+                        onClick={() => {
+                          void openDetail(extension);
+                        }}
+                      >
+                        {t('settings.extensions.viewDetail', { defaultValue: localizedDefault('查看运行时详情', 'View runtime detail') })}
+                      </Button>,
                       <Button
                         key="open"
                         size="small"
@@ -194,6 +320,11 @@ export default function ExtensionsSettings() {
                           <span>{extension.name}</span>
                           <Tag color={kindColor(extension.kind)} bordered={false}>{extension.kind}</Tag>
                           <Tag color={healthColor(extension.health.status)} bordered={false}>{extension.health.status}</Tag>
+                          <Tag bordered={false}>
+                            {extension.enabled
+                              ? t('common.enabled', { defaultValue: localizedDefault('已启用', 'Enabled') })
+                              : t('common.disabled', { defaultValue: localizedDefault('已停用', 'Disabled') })}
+                          </Tag>
                           <Tag bordered={false}>{extension.permissions.approvalMode}</Tag>
                         </Space>
                       )}
@@ -205,9 +336,43 @@ export default function ExtensionsSettings() {
                           <Typography.Text type="secondary">
                             {extension.health.summary || t('settings.extensions.noHealthSummary', { defaultValue: 'No diagnostic summary available yet.' })}
                           </Typography.Text>
+                          {connectionCheck ? (
+                            <Typography.Text type={connectionCheck.ok ? 'success' : 'danger'}>
+                              {connectionCheck.ok
+                                ? t('settings.extensions.connectionTest.lastSuccess', {
+                                    defaultValue: localizedDefault('最近一次连接测试：可达', 'Last connection test: reachable'),
+                                  })
+                                : `${t('settings.extensions.connectionTest.lastFailure', {
+                                    defaultValue: localizedDefault('最近一次连接测试失败', 'Last connection test failed'),
+                                  })}${connectionCheck.message ? ` - ${connectionCheck.message}` : ''}`}
+                            </Typography.Text>
+                          ) : null}
                           <Space size={[6, 6]} wrap>
                             <Tag>{extension.scope.availability}</Tag>
                             <Tag>{extension.permissions.trustLevel}</Tag>
+                            {extension.runtime ? (
+                              <>
+                                <Tag>{extension.runtime.hostKind}</Tag>
+                                <Tag>{extension.runtime.isolation}</Tag>
+                              </>
+                            ) : null}
+                            {bridgeProfile ? (
+                              <>
+                                <Tag>{getExternalBridgeFamilyLabel(bridgeProfile.family)}</Tag>
+                                <Tag color={getExternalBridgeRiskColor(bridgeProfile.riskLevel)}>
+                                  {getExternalBridgeNetworkScopeLabel(bridgeProfile.networkScope)}
+                                </Tag>
+                                <Tag color={bridgeProfile.authConfigured ? 'success' : 'warning'}>
+                                  {bridgeProfile.authConfigured
+                                    ? t('settings.extensions.authConfigured', {
+                                        defaultValue: localizedDefault('已配置鉴权', 'Auth configured'),
+                                      })
+                                    : t('settings.extensions.authMissing', {
+                                        defaultValue: localizedDefault('未配置鉴权', 'No auth'),
+                                      })}
+                                </Tag>
+                              </>
+                            ) : null}
                             {extension.contributions.map((contribution) => (
                               <Tag key={contribution.id}>{contribution.type}</Tag>
                             ))}
@@ -222,6 +387,246 @@ export default function ExtensionsSettings() {
           )}
         </Space>
       </SettingsGroup>
+
+      <Modal
+        title={t('settings.extensions.detailTitle', { defaultValue: localizedDefault('扩展运行时详情', 'Extension runtime detail') })}
+        open={detailOpen}
+        onCancel={() => {
+          setDetailOpen(false);
+          setSelectedExtensionId(null);
+        }}
+        footer={null}
+        width={760}
+      >
+        {detailLoading && !selectedExtensionDetail ? (
+          <Typography.Text type="secondary">
+            {t('settings.extensions.loadingDetail', { defaultValue: localizedDefault('正在加载扩展详情...', 'Loading extension detail...') })}
+          </Typography.Text>
+        ) : selectedExtensionDetail ? (
+          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            <Alert
+              type="info"
+              showIcon
+              action={(
+                <Button
+                  size="small"
+                  loading={Boolean(selectedExtensionId && refreshingById[selectedExtensionId])}
+                  onClick={() => {
+                    if (!selectedExtensionId) return;
+                    void refreshRuntime(selectedExtensionId);
+                  }}
+                >
+                  {t('settings.extensions.refreshRuntime', {
+                    defaultValue: localizedDefault('刷新运行时', 'Refresh runtime'),
+                  })}
+                </Button>
+              )}
+              message={t('settings.extensions.runtimeHint', {
+                defaultValue: localizedDefault(
+                  '这里会显示扩展运行在哪个宿主里、如何隔离，以及最近一次健康与连接状态。',
+                  'This view shows where the extension runs, how it is isolated, and the latest runtime and connection state.',
+                ),
+              })}
+            />
+            {selectedExtensionDetail.runtime?.supportsConnectionTest && selectedExtensionId ? (
+              <Alert
+                type={
+                  connectionChecksById[selectedExtensionId]
+                    ? (connectionChecksById[selectedExtensionId].ok ? 'success' : 'warning')
+                    : 'info'
+                }
+                showIcon
+                action={(
+                  <Space size={8}>
+                    <Button
+                      size="small"
+                      loading={Boolean(refreshingById[selectedExtensionId])}
+                      onClick={() => {
+                        void refreshRuntime(selectedExtensionId);
+                      }}
+                    >
+                      {t('settings.extensions.refreshRuntime', {
+                        defaultValue: localizedDefault('刷新运行时', 'Refresh runtime'),
+                      })}
+                    </Button>
+                    {selectedExtensionDetail.runtime?.supportsEnableToggle ? (
+                      <Button
+                        size="small"
+                        loading={Boolean(togglingById[selectedExtensionId])}
+                        onClick={() => {
+                          void toggleExtension(selectedExtensionDetail);
+                        }}
+                      >
+                        {selectedExtensionDetail.enabled
+                          ? t('settings.extensions.disable', {
+                              defaultValue: localizedDefault('停用', 'Disable'),
+                            })
+                          : t('settings.extensions.enable', {
+                              defaultValue: localizedDefault('启用', 'Enable'),
+                            })}
+                      </Button>
+                    ) : null}
+                    <Button
+                      size="small"
+                      loading={Boolean(testingById[selectedExtensionId])}
+                      onClick={() => {
+                        void runConnectionTest(selectedExtensionDetail);
+                      }}
+                    >
+                      {t('settings.extensions.testConnection', { defaultValue: localizedDefault('测试连接', 'Test connection') })}
+                    </Button>
+                  </Space>
+                )}
+                message={
+                  connectionChecksById[selectedExtensionId]
+                    ? (
+                        connectionChecksById[selectedExtensionId].ok
+                          ? t('settings.extensions.connectionTest.success', {
+                              defaultValue: localizedDefault('连接测试成功。', 'Connection test succeeded.'),
+                            })
+                          : (connectionChecksById[selectedExtensionId].message ??
+                              t('settings.extensions.connectionTest.failed', {
+                                defaultValue: localizedDefault('连接测试失败。', 'Connection test failed.'),
+                              }))
+                      )
+                    : t('settings.extensions.connectionTest.hint', {
+                        defaultValue: localizedDefault('可以通过连接测试来确认这个运行时宿主是否可达。', 'Use connection test to verify whether this runtime host is reachable.'),
+                      })
+                }
+              />
+            ) : null}
+            {(() => {
+              const bridgeProfile = readExternalBridgeProfile(selectedExtensionDetail);
+              if (!bridgeProfile) return null;
+
+              return (
+                <Alert
+                  type={bridgeProfile.riskLevel === 'elevated' ? 'warning' : 'info'}
+                  showIcon
+                  message={bridgeProfile.permissionSummary}
+                  description={(
+                    <Space size={[8, 6]} wrap style={{ marginTop: 8 }}>
+                      <Tag>{getExternalBridgeFamilyLabel(bridgeProfile.family)}</Tag>
+                      <Tag color={getExternalBridgeRiskColor(bridgeProfile.riskLevel)}>
+                        {getExternalBridgeNetworkScopeLabel(bridgeProfile.networkScope)}
+                      </Tag>
+                      <Tag color={bridgeProfile.authConfigured ? 'success' : 'warning'}>
+                        {bridgeProfile.authConfigured
+                          ? t('settings.extensions.authConfigured', {
+                              defaultValue: localizedDefault('已配置鉴权', 'Auth configured'),
+                            })
+                          : t('settings.extensions.authMissing', {
+                              defaultValue: localizedDefault('未配置鉴权', 'No auth'),
+                            })}
+                      </Tag>
+                      {bridgeProfile.authType ? <Tag>{bridgeProfile.authType}</Tag> : null}
+                    </Space>
+                  )}
+                />
+              );
+            })()}
+            <Descriptions column={1} size="small" bordered>
+              <Descriptions.Item label={t('settings.extensions.detail.name', { defaultValue: localizedDefault('名称', 'Name') })}>
+                {selectedExtensionDetail.name}
+              </Descriptions.Item>
+              <Descriptions.Item label={t('settings.extensions.detail.kind', { defaultValue: localizedDefault('类型', 'Kind') })}>
+                <Space size={[8, 4]} wrap>
+                  <Tag>{selectedExtensionDetail.kind}</Tag>
+                  <Tag color={healthColor(selectedExtensionDetail.health.status)}>
+                    {selectedExtensionDetail.health.status}
+                  </Tag>
+                </Space>
+              </Descriptions.Item>
+              <Descriptions.Item label={t('settings.extensions.detail.runtimeHost', { defaultValue: localizedDefault('运行时宿主', 'Runtime host') })}>
+                {selectedExtensionDetail.runtime?.hostKind ?? '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label={t('settings.extensions.detail.isolation', { defaultValue: localizedDefault('隔离级别', 'Isolation') })}>
+                {selectedExtensionDetail.runtime?.isolation ?? '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label={t('settings.extensions.detail.approval', { defaultValue: localizedDefault('审批策略', 'Approval mode') })}>
+                {selectedExtensionDetail.permissions.approvalMode}
+              </Descriptions.Item>
+              <Descriptions.Item label={t('settings.extensions.detail.source', { defaultValue: localizedDefault('来源', 'Source') })}>
+                {selectedExtensionDetail.source.label ?? selectedExtensionDetail.source.kind}
+              </Descriptions.Item>
+              <Descriptions.Item label={t('settings.extensions.detail.path', { defaultValue: localizedDefault('路径 / 端点', 'Path / endpoint') })}>
+                {selectedExtensionDetail.source.path ?? '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label={t('settings.extensions.detail.healthSummary', { defaultValue: localizedDefault('健康摘要', 'Health summary') })}>
+                {selectedExtensionDetail.health.summary ?? '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label={t('settings.extensions.detail.lastError', { defaultValue: localizedDefault('最近一次错误', 'Last error') })}>
+                {selectedExtensionDetail.diagnostics?.lastError ?? '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label={t('settings.extensions.detail.lastConnectionTest', { defaultValue: localizedDefault('最近一次连接测试', 'Last connection test') })}>
+                {selectedExtensionId && connectionChecksById[selectedExtensionId]
+                  ? (
+                      connectionChecksById[selectedExtensionId].ok
+                        ? t('settings.extensions.connectionTest.success', {
+                            defaultValue: localizedDefault('连接测试成功。', 'Connection test succeeded.'),
+                          })
+                        : (connectionChecksById[selectedExtensionId].message ??
+                            t('settings.extensions.connectionTest.failed', {
+                              defaultValue: localizedDefault('连接测试失败。', 'Connection test failed.'),
+                            }))
+                    )
+                  : '-'}
+              </Descriptions.Item>
+            </Descriptions>
+
+            <div>
+              <Typography.Text strong>
+                {t('settings.extensions.detail.contributions', { defaultValue: localizedDefault('承载能力', 'Contributions') })}
+              </Typography.Text>
+              <Space size={[8, 6]} wrap style={{ display: 'flex', marginTop: 8 }}>
+                {selectedExtensionDetail.contributions.map((contribution) => (
+                  <Tag key={contribution.id}>
+                    {contribution.type}: {contribution.name}
+                  </Tag>
+                ))}
+              </Space>
+            </div>
+
+            {selectedExtensionDetail.diagnostics?.compatibilityNotes?.length ? (
+              <div>
+                <Typography.Text strong>
+                  {t('settings.extensions.detail.compatibilityNotes', { defaultValue: localizedDefault('兼容性说明', 'Compatibility notes') })}
+                </Typography.Text>
+                <List
+                  size="small"
+                  dataSource={selectedExtensionDetail.diagnostics.compatibilityNotes}
+                  renderItem={(note) => <List.Item>{note}</List.Item>}
+                  style={{ marginTop: 8 }}
+                />
+              </div>
+            ) : null}
+
+            {selectedExtensionDetail.kindDetail ? (
+              <div>
+                <Typography.Text strong>
+                  {t('settings.extensions.detail.kindDetail', { defaultValue: localizedDefault('类型详情', 'Kind-specific detail') })}
+                </Typography.Text>
+                <pre
+                  style={{
+                    marginTop: 8,
+                    marginBottom: 0,
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    fontSize: 12,
+                    padding: 12,
+                    borderRadius: 8,
+                    background: 'var(--surface-secondary, rgba(255,255,255,0.04))',
+                  }}
+                >
+                  {JSON.stringify(selectedExtensionDetail.kindDetail, null, 2)}
+                </pre>
+              </div>
+            ) : null}
+          </Space>
+        ) : (
+          <Empty description={t('settings.extensions.detail.empty', { defaultValue: localizedDefault('暂无详情', 'No detail available') })} />
+        )}
+      </Modal>
     </div>
   );
 }

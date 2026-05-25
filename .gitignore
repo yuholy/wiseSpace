@@ -56,3 +56,6 @@ research-*.tsv
 .autoresearch/
 
 debug/*
+
+similar-projects/*
+.deepseek/

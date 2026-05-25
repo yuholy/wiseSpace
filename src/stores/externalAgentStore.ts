@@ -3,7 +3,9 @@ import { invoke } from '@/lib/invoke';
 import type {
   AgentTask,
   AgentTaskEvent,
+  BuiltinSubagentAssignee,
   CreateExternalAgentInput,
+  CreateDelegatedSubagentTaskInput,
   DispatchExternalAgentTaskInput,
   DispatchExternalAgentTaskResult,
   ExternalAgent,
@@ -21,10 +23,19 @@ interface ExternalAgentState {
   updateAgent: (id: string, input: UpdateExternalAgentInput) => Promise<ExternalAgent>;
   deleteAgent: (id: string) => Promise<void>;
   testAgent: (id: string) => Promise<ExternalAgentConnectionTestResult>;
+  listBuiltinSubagentAssignees: () => Promise<BuiltinSubagentAssignee[]>;
+  createDelegatedSubagentTask: (input: CreateDelegatedSubagentTaskInput) => Promise<AgentTask>;
+  runDelegatedSubagentTask: (taskId: string) => Promise<DispatchExternalAgentTaskResult>;
   dispatchTask: (input: DispatchExternalAgentTaskInput) => Promise<DispatchExternalAgentTaskResult>;
   retryTask: (taskId: string) => Promise<DispatchExternalAgentTaskResult>;
   syncTask: (taskId: string) => Promise<DispatchExternalAgentTaskResult>;
-  loadTasks: (filters?: { conversationId?: string; externalAgentId?: string; limit?: number }) => Promise<void>;
+  loadTasks: (filters?: {
+    conversationId?: string;
+    parentRunId?: string;
+    parentTaskId?: string;
+    externalAgentId?: string;
+    limit?: number;
+  }) => Promise<void>;
   listTaskEvents: (taskId: string) => Promise<AgentTaskEvent[]>;
 }
 
@@ -72,6 +83,27 @@ export const useExternalAgentStore = create<ExternalAgentState>((set) => ({
     return invoke<ExternalAgentConnectionTestResult>('test_external_agent_connection', { id });
   },
 
+  listBuiltinSubagentAssignees: async () => {
+    return invoke<BuiltinSubagentAssignee[]>('list_builtin_subagent_assignees');
+  },
+
+  createDelegatedSubagentTask: async (input) => {
+    const task = await invoke<AgentTask>('create_delegated_subagent_task', { input });
+    set((state) => ({ tasks: [task, ...state.tasks], error: null }));
+    return task;
+  },
+
+  runDelegatedSubagentTask: async (taskId) => {
+    const result = await invoke<DispatchExternalAgentTaskResult>('run_delegated_subagent_task', {
+      taskId,
+    });
+    set((state) => ({
+      tasks: state.tasks.map((task) => (task.id === taskId ? result.task : task)),
+      error: null,
+    }));
+    return result;
+  },
+
   dispatchTask: async (input) => {
     const result = await invoke<DispatchExternalAgentTaskResult>('dispatch_external_agent_task', { input });
     set((state) => ({ tasks: [result.task, ...state.tasks], error: null }));
@@ -96,6 +128,8 @@ export const useExternalAgentStore = create<ExternalAgentState>((set) => ({
   loadTasks: async (filters) => {
     const tasks = await invoke<AgentTask[]>('list_agent_tasks', {
       conversationId: filters?.conversationId,
+      parentRunId: filters?.parentRunId,
+      parentTaskId: filters?.parentTaskId,
       externalAgentId: filters?.externalAgentId,
       limit: filters?.limit,
     });

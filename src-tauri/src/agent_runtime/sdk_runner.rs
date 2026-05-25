@@ -82,6 +82,7 @@ pub async fn start_sdk_run(
     let title_ctx = exec_ctx.title_context.clone();
     let is_first_message = exec_ctx.is_first_message;
     let global_settings = exec_ctx.global_settings.clone();
+    let app_state = state.clone();
 
     let _ = app.emit(
         "agent-user-message-id",
@@ -1197,6 +1198,58 @@ pub async fn start_sdk_run(
             sdk_context.as_deref(),
         )
         .await;
+
+        let review_subtask_request = format!(
+            "User request:\n{}\n\nPrimary agent result summary:\n{}",
+            raw_prompt,
+            truncate_preview(&final_content, 1600),
+        );
+        if let Err(error) = crate::commands::external_agents::maybe_auto_delegate_subtask(
+            &app_state,
+            crate::commands::external_agents::AutoDelegatedSubtaskInput {
+                conversation_id: conv_id.clone(),
+                parent_run_id: run.id.clone(),
+                source_message_id: Some(user_msg_id.clone()),
+                task_type: "review".to_string(),
+                preset_key: Some("code-reviewer".to_string()),
+                delegation_reason:
+                    "主 Agent 根据当前请求识别到审查/风险检查意图，自动创建 review 子任务。"
+                        .to_string(),
+                input_text: review_subtask_request.clone(),
+                title: "Auto review subtask".to_string(),
+            },
+        )
+        .await
+        {
+            tracing::warn!(
+                "[agent] Failed to auto-delegate review subtask for run {}: {}",
+                run.id,
+                error
+            );
+        }
+        if let Err(error) = crate::commands::external_agents::maybe_auto_delegate_subtask(
+            &app_state,
+            crate::commands::external_agents::AutoDelegatedSubtaskInput {
+                conversation_id: conv_id.clone(),
+                parent_run_id: run.id.clone(),
+                source_message_id: Some(user_msg_id.clone()),
+                task_type: "research".to_string(),
+                preset_key: Some("researcher".to_string()),
+                delegation_reason:
+                    "Primary agent recognized a research or comparison intent and drafted a focused research subtask."
+                        .to_string(),
+                input_text: review_subtask_request,
+                title: "Auto research subtask".to_string(),
+            },
+        )
+        .await
+        {
+            tracing::warn!(
+                "[agent] Failed to auto-delegate research subtask for run {}: {}",
+                run.id,
+                error
+            );
+        }
     });
 
     Ok(())

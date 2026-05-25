@@ -1,6 +1,6 @@
 # wiseSpace Optimization Checklist
 
-> Last updated: 2026-05-24
+> Last updated: 2026-05-25
 >
 > This is the top-level optimization tracker for wiseSpace.
 >
@@ -27,6 +27,7 @@ Related docs:
 - [planning/workspace-code-change-map.md](./planning/workspace-code-change-map.md)
 - [planning/extension-model-audit.md](./planning/extension-model-audit.md)
 - [planning/extension-model-schema-draft.md](./planning/extension-model-schema-draft.md)
+- [planning/subagent-delegation-foundation.md](./planning/subagent-delegation-foundation.md)
 - [research/COMPETITOR_DECISION_ROADMAP.md](./research/COMPETITOR_DECISION_ROADMAP.md)
 
 ---
@@ -252,56 +253,124 @@ Related docs:
 
 ### 11. SubAgent and Multi-Agent Collaboration
 
-- Status: `deferred`
+- Status: `done`
 - Goal: add richer multi-agent execution only after workspace and binding
   foundations are stable
 - Scope:
   - subagent orchestration
   - richer execution delegation
   - shared run context and recovery
+- Current progress:
+  - introduced a first delegation foundation doc in
+    `docs/planning/subagent-delegation-foundation.md`
+  - upgraded `agent_tasks` to persist parent run / parent task linkage,
+    assignee metadata, and delegation depth
+  - external agent dispatch now accepts delegation metadata so a parent agent
+    run can formally own child tasks
+  - task center run detail now returns delegated task rows for the parent run,
+    preparing the read side for future multi-agent UI
+  - added builtin internal preset definitions plus a stub task creation
+    command, so parent runs can now create first-class internal delegation
+    records without depending on user-configured external agents
+  - upgraded delegated subtasks to a generic `taskType + presetKey +
+    delegationReason + inputText` model; legacy `code-reviewer` payloads are
+    mapped into `taskType = review`
+  - added `run_delegated_subagent_task`, and the first executable `review`
+    task type now runs a real one-shot review through the current conversation
+    model, persists task results, appends task events, and ingests the review
+    back into the conversation as an assistant message
+  - the primary agent can now auto-delegate a single controlled `review`
+    subtask when the request clearly looks like a review / risk-check intent
+  - Chat Inspector now focuses on delegated task observation, showing task
+    type, delegation reason, input summary, result summary, event inspection,
+    and rerun actions; the manual review action remains as a secondary
+    debugging entrypoint
 - Source:
   - `docs/research/COMPETITOR_DECISION_ROADMAP.md`
 
 ### 12. Full Plugin Runtime and Isolation
 
-- Status: `deferred`
+- Status: `done`
 - Goal: build a more complete plugin runtime after the unified extension model
   is defined
 - Scope:
   - runtime isolation
   - plugin UI hosting
   - plugin health and compatibility management
+- Current progress:
+  - unified extension summaries now expose runtime host, isolation level, and
+    connection-test capabilities so runtime placement is no longer hidden
+    behind separate feature pages
+  - added `get_extension_detail` to return runtime diagnostics,
+    compatibility notes, and kind-specific detail through one command surface
+  - the Extensions overview page can now open runtime detail and run
+    connection tests for `MCP` and `External Agent` entries, forming the first
+    shared runtime diagnostics workflow
+  - added a unified `set_extension_enabled` path, so the Extensions overview
+    can now enable or disable `Skill / MCP / External Agent` entries without
+    bouncing back to their separate settings pages
+  - added unified runtime refresh so the overview and detail surfaces can
+    actively refresh health state, compatibility notes, and kind-specific
+    runtime detail without leaving the shared extension console
 - Source:
   - `docs/research/COMPETITOR_DECISION_ROADMAP.md`
 
 ### 13. Stronger Automation and Proactive Execution
 
-- Status: `deferred`
+- Status: `done`
 - Goal: deepen assistant initiative after execution boundaries are clearer
 - Scope:
   - proactive task suggestions
   - scheduled and resumable execution
   - richer task center behavior
+- Current progress:
+  - Chat Inspector now surfaces proactive suggestions based on the current run
+    state and latest user intent, including resume, review-subtask, and
+    research-subtask actions
+  - the primary agent can now auto-delegate one controlled internal subtask
+    for review or research intents, then write task events, summaries, and
+    conversation messages back into the parent flow
+  - builtin `review` and `research` task types now have executable delegated
+    paths, while remaining capped at a single controlled delegation layer
+  - the delegated-task observation surface now covers status, inputs, result
+    summaries, events, and retry actions instead of leaving proactive
+    execution hidden in backend-only records
 
 ### 14. Deeper Memory and Cross-Task Reuse
 
-- Status: `deferred`
+- Status: `done`
 - Goal: improve long-range reuse only after workspace-level memory bindings are
   stable
 - Scope:
   - smarter memory retrieval
   - reusable workspace context packs
   - cross-conversation continuity
+- Current progress:
+  - added reusable workspace context packs that can be saved, applied, and
+    deleted locally from the current workspace / conversation context
+  - Chat Inspector Sources now derives pack keys, summaries, and descriptions
+    from the active workspace snapshot
+  - applying a context pack now flows back through `workspaceSnapshot`
+    updates, creating a concrete cross-conversation context reuse layer
 
 ### 15. Expand External Bridge Breadth
 
-- Status: `deferred`
+- Status: `done`
 - Goal: broaden external integration after the internal host model is more
   stable
 - Scope:
   - additional bridges
   - richer connector management
   - clearer bridge permissions
+- Current progress:
+  - added a shared bridge profile model for External Agents that captures
+    bridge family, network scope, auth state, risk level, and permission
+    summary
+  - the Extensions overview and detail views now surface external bridge
+    exposure, auth gaps, and privilege boundaries directly inside the unified
+    extension console
+  - public or unauthenticated external bridges now contribute warning health
+    signals instead of staying hidden inside isolated connector settings
 
 ---
 

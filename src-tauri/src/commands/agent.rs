@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{Emitter, State};
 use wisespace_core::repo::{agent_profile, agent_run, agent_session, conversation};
 use wisespace_core::types::{
-    AgentProfile, AgentRun, AgentRunEvent, AgentSession, AttachmentInput, Conversation,
+    AgentProfile, AgentRun, AgentRunEvent, AgentSession, AgentTask, AttachmentInput, Conversation,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,6 +70,7 @@ pub struct TaskCenterDetail {
     pub conversation: Conversation,
     pub run: AgentRun,
     pub events: Vec<AgentRunEvent>,
+    pub delegated_tasks: Vec<AgentTask>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -301,6 +302,10 @@ pub async fn get_agent_run_detail(
     let events = agent_run::list_run_events(&state.sea_db, &run_id)
         .await
         .map_err(|e| e.to_string())?;
+    let delegated_tasks =
+        wisespace_core::repo::external_agent::list_delegated_tasks_for_run(&state.sea_db, &run_id)
+            .await
+            .map_err(|e| e.to_string())?;
     let item = build_task_center_item(&state.sea_db, &run).await?;
 
     Ok(TaskCenterDetail {
@@ -308,6 +313,7 @@ pub async fn get_agent_run_detail(
         conversation,
         run,
         events,
+        delegated_tasks,
     })
 }
 

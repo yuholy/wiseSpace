@@ -83,6 +83,7 @@ export interface TaskCenterDetail {
   conversation: import('./index').Conversation;
   run: AgentRun;
   events: AgentRunEvent[];
+  delegatedTasks: import('./externalAgent').AgentTask[];
 }
 
 export interface CreateTaskFromCenterInput {

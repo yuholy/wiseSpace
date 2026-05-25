@@ -49,6 +49,7 @@ Feature plans, implementation tracks, and backlog items.
 - [s3-backup-sync-plan.md](./planning/s3-backup-sync-plan.md)
 - [extension-model-audit.md](./planning/extension-model-audit.md)
 - [extension-model-schema-draft.md](./planning/extension-model-schema-draft.md)
+- [subagent-delegation-foundation.md](./planning/subagent-delegation-foundation.md)
 - [workspace-scope-audit.md](./planning/workspace-scope-audit.md)
 - [workspace-implementation-checklist.md](./planning/workspace-implementation-checklist.md)
 - [workspace-schema-draft.md](./planning/workspace-schema-draft.md)

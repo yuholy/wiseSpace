@@ -1875,6 +1875,17 @@ pub struct ExtensionPermissionProfile {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ExtensionRuntimeInfo {
+    pub host_kind: String,
+    pub isolation: String,
+    pub supports_hot_reload: Option<bool>,
+    pub supports_connection_test: Option<bool>,
+    pub supports_enable_toggle: Option<bool>,
+    pub health_managed_by_host: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExtensionContributionSummary {
     #[serde(rename = "type")]
     pub type_: String,
@@ -1907,10 +1918,30 @@ pub struct ExtensionSummary {
     pub health: ExtensionHealth,
     pub scope: ExtensionScope,
     pub permissions: ExtensionPermissionProfile,
+    pub runtime: Option<ExtensionRuntimeInfo>,
     pub contributions: Vec<ExtensionContributionSummary>,
     pub tags: Vec<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionDiagnostics {
+    pub can_test_connection: Option<bool>,
+    pub can_check_updates: Option<bool>,
+    pub last_error: Option<String>,
+    pub compatibility_notes: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionDetail {
+    #[serde(flatten)]
+    pub summary: ExtensionSummary,
+    pub manifest: Option<serde_json::Value>,
+    pub diagnostics: Option<ExtensionDiagnostics>,
+    pub kind_detail: Option<serde_json::Value>,
 }
 
 // === External Agent Platform ===
@@ -1960,10 +1991,19 @@ pub struct AgentTask {
     pub id: String,
     pub conversation_id: Option<String>,
     pub workspace_id: Option<String>,
+    pub parent_run_id: Option<String>,
+    pub parent_task_id: Option<String>,
     pub source_message_id: Option<String>,
     pub external_agent_id: String,
     pub external_task_id: Option<String>,
+    pub assignee_kind: String,
+    pub assignee_label: Option<String>,
+    pub delegation_depth: i32,
     pub kind: String,
+    pub task_type: String,
+    pub preset_key: Option<String>,
+    pub delegation_reason: Option<String>,
+    pub input_text: Option<String>,
     pub status: String,
     pub title: String,
     pub request_payload_json: String,
@@ -1971,6 +2011,16 @@ pub struct AgentTask {
     pub error_message: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BuiltinSubagentAssignee {
+    pub key: String,
+    pub name: String,
+    pub description: String,
+    pub prompt_hint: String,
+    pub default_task_kind: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1987,9 +2037,27 @@ pub struct AgentTaskEvent {
 #[serde(rename_all = "camelCase")]
 pub struct DispatchExternalAgentTaskInput {
     pub conversation_id: Option<String>,
+    pub parent_run_id: Option<String>,
+    pub parent_task_id: Option<String>,
     pub source_message_id: Option<String>,
     pub external_agent_id: String,
+    pub assignee_label: Option<String>,
     pub kind: Option<String>,
+    pub title: String,
+    pub input_text: String,
+    pub context_json: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateDelegatedSubagentTaskInput {
+    pub conversation_id: Option<String>,
+    pub parent_run_id: String,
+    pub parent_task_id: Option<String>,
+    pub source_message_id: Option<String>,
+    pub task_type: String,
+    pub preset_key: Option<String>,
+    pub delegation_reason: Option<String>,
     pub title: String,
     pub input_text: String,
     pub context_json: Option<String>,

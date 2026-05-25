@@ -43,6 +43,49 @@ export interface ExtensionPermissionProfile {
   requiresSecrets?: boolean;
 }
 
+export type ExtensionRuntimeHostKind =
+  | 'native_skill_loader'
+  | 'mcp_host'
+  | 'external_agent_connector'
+  | 'builtin_host';
+
+export type ExtensionIsolationLevel =
+  | 'in_process'
+  | 'subprocess'
+  | 'remote'
+  | 'none';
+
+export interface ExtensionRuntimeInfo {
+  hostKind: ExtensionRuntimeHostKind;
+  isolation: ExtensionIsolationLevel;
+  supportsHotReload?: boolean;
+  supportsConnectionTest?: boolean;
+  supportsEnableToggle?: boolean;
+  healthManagedByHost?: boolean;
+}
+
+export type ExternalBridgeFamily =
+  | 'openclaw'
+  | 'nanoclaw'
+  | 'http_bridge'
+  | 'generic_remote';
+
+export type ExternalBridgeNetworkScope =
+  | 'loopback'
+  | 'lan'
+  | 'private_network'
+  | 'public_remote'
+  | 'unknown';
+
+export interface ExternalBridgeProfile {
+  family: ExternalBridgeFamily;
+  networkScope: ExternalBridgeNetworkScope;
+  authConfigured: boolean;
+  authType?: string | null;
+  riskLevel: 'local' | 'managed' | 'elevated';
+  permissionSummary?: string | null;
+}
+
 export type ExtensionContributionType =
   | 'prompt_skill'
   | 'tool_provider'
@@ -77,6 +120,7 @@ export interface ExtensionSummary {
   health: ExtensionHealth;
   scope: ExtensionScope;
   permissions: ExtensionPermissionProfile;
+  runtime?: ExtensionRuntimeInfo;
   contributions: ExtensionContributionSummary[];
   tags?: string[];
   createdAt?: string | null;
@@ -99,12 +143,17 @@ export interface ExternalAgentContributionDetail {
   agentKind?: string;
   capabilityNames?: string[];
   baseUrl?: string | null;
+  authType?: string | null;
+  authConfigured?: boolean;
+  networkScope?: ExternalBridgeNetworkScope;
+  bridgeProfile?: ExternalBridgeProfile;
 }
 
 export interface ExtensionDiagnostics {
   canTestConnection?: boolean;
   canCheckUpdates?: boolean;
   lastError?: string | null;
+  compatibilityNotes?: string[];
 }
 
 export type ExtensionKindDetail =
