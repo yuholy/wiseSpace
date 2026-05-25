@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "wiseSpace",
-  "version": "0.1.1",
+  "version": "0.1.3",
   "identifier": "top.yuholy.wisespace",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -54,7 +54,7 @@
       }
     },
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFGOEI0QkFDRTE4RTI4MTEKUldRUktJN2hyRXVMcjNaMTJJa3hxbkpBTGpIUWVMcUdWOXpMMXdnMU5aaTdvM2c2QnNCbHh5SXUK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJCQjY4MTdEMUQ2NTNBRjAKUldUd09tVWRmWUcySytuVkZrSVVtRy9MR2hOYUdiWGIyd0dLdGJPS3RvZjhuZ1d3Z1p6UlBXU2wK",
       "endpoints": [
         "https://github.com/yuholy/wiseSpace/releases/latest/download/latest.json"
       ]

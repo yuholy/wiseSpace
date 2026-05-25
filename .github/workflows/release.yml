@@ -16,24 +16,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ── Validate tag matches package.json version ──────────
   check-version:
     name: Check Version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-      - name: Validate tag vs package.json
+      - name: Validate tag vs version files
         run: |
-          TAG="${GITHUB_REF_NAME}"
-          PKG_VERSION="v$(jq -r .version package.json)"
-          if [[ "$TAG" != "$PKG_VERSION" ]]; then
-            echo "❌ Tag $TAG does not match package.json $PKG_VERSION"
-            exit 1
-          fi
-          echo "✅ Version $TAG is consistent"
+          EXPECTED_VERSION="${GITHUB_REF_NAME#v}"
+          node scripts/bump-version.mjs --check "$EXPECTED_VERSION"
 
-  # ── Generate release notes via git-cliff ─────────────
   draft-release-notes:
     name: Generate Release Notes
     needs: [check-version]
@@ -68,7 +64,6 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-rc') }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── Build for macOS / Windows / Linux x86_64 ───────────
   release:
     name: Build (${{ matrix.target }})
     needs: [check-version, draft-release-notes]
@@ -76,17 +71,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macOS
           - os: macos-latest
             target: aarch64-apple-darwin
           - os: macos-latest
             target: x86_64-apple-darwin
-          # Windows
           - os: windows-latest
             target: x86_64-pc-windows-msvc
           - os: windows-latest
             target: aarch64-pc-windows-msvc
-          # Linux x86_64
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
 
@@ -184,11 +176,14 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ matrix.os == 'macos-latest' && '-' || '' }}
         with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'wiseSpace ${{ github.ref_name }}'
+          releaseDraft: true
+          prerelease: ${{ contains(github.ref_name, '-rc') }}
           tauriScript: pnpm tauri
           args: --target ${{ matrix.target }}
           includeUpdaterJson: true
 
-  # ── Build for Linux ARM64 (cross-compile) ──────────────
   release-linux-arm:
     name: Build (aarch64-unknown-linux-gnu)
     needs: [check-version, draft-release-notes]
@@ -298,7 +293,6 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
-  # ── Publish draft release as latest ────────────────────
   publish-release:
     name: Publish Release
     needs: [release, release-linux-arm]
@@ -315,7 +309,6 @@ jobs:
           make_latest: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── Deploy website after release ────────────────────────
   deploy-website:
     name: Deploy Website
     needs: [publish-release]

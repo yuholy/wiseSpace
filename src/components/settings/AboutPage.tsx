@@ -3,6 +3,7 @@ import { Github, Globe, Terminal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useState, useEffect, useCallback } from 'react';
 import { useResolvedDarkMode } from '@/hooks/useResolvedDarkMode';
+import { useUpdateChecker } from '@/hooks/useUpdateChecker';
 import { isTauri, invoke } from '@/lib/invoke';
 import { APP_REPO_HOST_LABEL, APP_REPO_URL } from '@/lib/repo';
 import darkLogoUrl from '@/assets/image/dark-logo.svg?url';
@@ -16,9 +17,11 @@ const OFFICIAL_WEBSITE = 'https://app.wisespace.top';
 export function AboutPage() {
   const { t } = useTranslation();
   const [appVersion, setAppVersion] = useState('...');
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
   const themeMode = useSettingsStore((s) => s.settings.theme_mode);
   const isDark = useResolvedDarkMode(themeMode);
   const logoUrl = isDark ? lightLogoUrl : darkLogoUrl;
+  const { checkForUpdate } = useUpdateChecker();
 
   useEffect(() => {
     if (isTauri()) {
@@ -51,6 +54,15 @@ export function AboutPage() {
     window.open(url, '_blank', 'noopener,noreferrer');
   }, []);
 
+  const handleCheckUpdate = useCallback(async () => {
+    setCheckingUpdate(true);
+    try {
+      await checkForUpdate();
+    } finally {
+      setCheckingUpdate(false);
+    }
+  }, [checkForUpdate]);
+
   return (
     <div className="p-6 pb-12">
       {/* Logo + App Name (macOS-style) */}
@@ -82,6 +94,17 @@ export function AboutPage() {
           <span>{t('settings.openSource')}</span>
           <Text type="secondary">AGPL-3.0</Text>
         </div>
+        {isTauri() && (
+          <>
+            <Divider style={{ margin: '4px 0' }} />
+            <div style={rowStyle} className="flex items-center justify-between">
+              <span>{t('settings.checkUpdate')}</span>
+              <Button loading={checkingUpdate} onClick={handleCheckUpdate}>
+                {t('settings.checkUpdate')}
+              </Button>
+            </div>
+          </>
+        )}
       </SettingsGroup>
       <SettingsGroup title={t('settings.groupLinks')}>
         <div style={rowStyle} className="flex items-center justify-between">

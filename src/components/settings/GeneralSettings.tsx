@@ -1,4 +1,4 @@
-import { Divider, Switch } from 'antd';
+import { Divider, InputNumber, Switch } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from '@/stores';
 import { isTauri, invoke } from '@/lib/invoke';
@@ -105,6 +105,22 @@ export function GeneralSettings() {
               if (inTauri) {
                 invoke('set_close_to_tray', { enabled: checked }).catch(() => {});
               }
+            }}
+          />
+        </div>
+      </SettingsGroup>
+
+      <SettingsGroup title={t('settings.checkUpdate')}>
+        <div style={rowStyle} className="flex items-center justify-between gap-4">
+          <span>{t('settings.updateCheckInterval')}</span>
+          <InputNumber
+            min={1}
+            max={10080}
+            value={settings.update_check_interval ?? 60}
+            addonAfter={<span style={{ whiteSpace: 'nowrap' }}>{t('settings.minutes')}</span>}
+            style={{ width: 200 }}
+            onChange={(value) => {
+              saveSettings({ update_check_interval: Math.max(1, Math.trunc(value ?? 60)) });
             }}
           />
         </div>

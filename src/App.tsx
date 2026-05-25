@@ -16,11 +16,13 @@ import { useProviderDeepLink } from '@/hooks/useProviderDeepLink';
 import { useShadcnTheme } from '@/theme/shadcnTheme';
 import { isTauri, invoke, listen } from '@/lib/invoke';
 import { preloadChatRenderers } from '@/lib/preloadChatRenderers';
+import { useUpdateChecker } from '@/hooks/useUpdateChecker';
 import { enableD2, setDefaultI18nMap } from 'markstream-react';
 import './i18n';
 
 const { Sider, Content } = Layout;
 const { useToken } = theme;
+const STARTUP_UPDATE_CHECK_DELAY_MS = 1500;
 
 /** Show the main window (it starts hidden to avoid white flash). */
 async function showWindow() {
@@ -37,7 +39,10 @@ function AppInner() {
   const { t } = useTranslation();
   const { modal, message } = AntdApp.useApp();
   const activePage = useUIStore((s) => s.activePage);
+  const settingsLoaded = useSettingsStore((s) => s._loaded);
+  const updateCheckInterval = useSettingsStore((s) => s.settings.update_check_interval ?? 60);
   const { open: cmdOpen, setOpen: setCmdOpen } = useCommandPalette();
+  const { checkForUpdate } = useUpdateChecker();
   const isInSettings = activePage === 'settings';
   useProviderDeepLink({ modal, message });
 
@@ -82,6 +87,23 @@ function AppInner() {
     startStreamListening();
     return () => stopStreamListening();
   }, [startStreamListening, stopStreamListening]);
+
+  useEffect(() => {
+    if (!isTauri() || !settingsLoaded) return;
+
+    const intervalMinutes = Math.max(1, Math.trunc(updateCheckInterval || 60));
+    const initialTimer = window.setTimeout(() => {
+      void checkForUpdate({ silent: true });
+    }, STARTUP_UPDATE_CHECK_DELAY_MS);
+    const intervalTimer = window.setInterval(() => {
+      void checkForUpdate({ silent: true });
+    }, intervalMinutes * 60 * 1000);
+
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(intervalTimer);
+    };
+  }, [settingsLoaded, updateCheckInterval, checkForUpdate]);
 
   return (
     <div className="flex flex-col h-screen" style={{ backgroundColor: token.colorBgContainer }}>
