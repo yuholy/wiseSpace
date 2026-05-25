@@ -2,7 +2,7 @@ use chrono;
 use sea_orm::DatabaseConnection;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tauri::{Emitter, Manager};
+use tauri::{image::Image, Emitter, Manager};
 use tokio::sync::Mutex;
 use wisespace_core::db;
 
@@ -536,6 +536,13 @@ pub fn run() {
             }
 
             if let Some(main_window) = app.get_webview_window("main") {
+                #[cfg(target_os = "windows")]
+                {
+                    if let Ok(icon) = Image::from_path("icons/icon.png") {
+                        let _ = main_window.set_icon(icon);
+                    }
+                }
+
                 // On Windows, hide native decorations so the custom TitleBar is
                 // the only title bar.  macOS keeps its Overlay style (traffic lights).
                 // After removing decorations, re-enable minimize/maximize capabilities
