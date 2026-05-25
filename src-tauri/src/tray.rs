@@ -2,10 +2,12 @@ use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Manager,
+    AppHandle, Manager, Theme,
 };
 
 const TRAY_ID: &str = "wisespace-tray";
+const TRAY_ICON_PATH: &str = "icons/32x32.png";
+const WINDOW_ICON_PATH: &str = "icons/icon.png";
 
 fn tray_labels(language: &str) -> (&'static str, &'static str) {
     let lang = language.to_ascii_lowercase();
@@ -45,9 +47,35 @@ fn build_menu(
     Ok(menu)
 }
 
+fn normalize_monochrome_rgba(rgba: &[u8], white: bool) -> Vec<u8> {
+    let target = if white { 255 } else { 0 };
+    let mut normalized = rgba.to_vec();
+    for pixel in normalized.chunks_exact_mut(4) {
+        if pixel[3] > 0 {
+            pixel[0] = target;
+            pixel[1] = target;
+            pixel[2] = target;
+        }
+    }
+    normalized
+}
+
+fn themed_icon(path: &str, theme: Theme) -> Result<Image<'static>, Box<dyn std::error::Error>> {
+    let base = Image::from_path(path)?;
+    let white = matches!(theme, Theme::Dark);
+    let rgba = normalize_monochrome_rgba(base.rgba(), white);
+    Ok(Image::new_owned(rgba, base.width(), base.height()))
+}
+
+fn current_system_theme(app: &AppHandle) -> Theme {
+    app.get_webview_window("main")
+        .and_then(|window| window.theme().ok())
+        .unwrap_or(Theme::Light)
+}
+
 pub fn create_tray(app: &AppHandle, language: &str) -> Result<(), Box<dyn std::error::Error>> {
     let menu = build_menu(app, language)?;
-    let icon = Image::from_path("icons/icon.png").unwrap_or_else(|_| {
+    let icon = themed_icon(TRAY_ICON_PATH, current_system_theme(app)).unwrap_or_else(|_| {
         Image::from_bytes(include_bytes!("../icons/32x32.png"))
             .expect("failed to load fallback tray icon")
     });
@@ -92,6 +120,19 @@ pub fn create_tray(app: &AppHandle, language: &str) -> Result<(), Box<dyn std::e
     Ok(())
 }
 
+pub fn sync_theme_icons(app: &AppHandle, theme: Theme) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        tray.set_icon(Some(themed_icon(TRAY_ICON_PATH, theme)?))?;
+    }
+
+    #[cfg(target_os = "windows")]
+    if let Some(window) = app.get_webview_window("main") {
+        window.set_icon(themed_icon(WINDOW_ICON_PATH, theme)?)?;
+    }
+
+    Ok(())
+}
+
 pub fn sync_tray_language(
     app: &AppHandle,
     language: &str,
@@ -103,4 +144,23 @@ pub fn sync_tray_language(
         create_tray(app, language)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_monochrome_rgba;
+
+    #[test]
+    fn normalizes_visible_pixels_to_white() {
+        let rgba = vec![12, 34, 56, 255, 200, 180, 160, 0];
+        let normalized = normalize_monochrome_rgba(&rgba, true);
+        assert_eq!(normalized, vec![255, 255, 255, 255, 200, 180, 160, 0]);
+    }
+
+    #[test]
+    fn normalizes_visible_pixels_to_black() {
+        let rgba = vec![12, 34, 56, 128, 200, 180, 160, 0];
+        let normalized = normalize_monochrome_rgba(&rgba, false);
+        assert_eq!(normalized, vec![0, 0, 0, 128, 200, 180, 160, 0]);
+    }
 }

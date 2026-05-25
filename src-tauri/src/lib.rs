@@ -2,7 +2,7 @@ use chrono;
 use sea_orm::DatabaseConnection;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tauri::{image::Image, Emitter, Manager};
+use tauri::{Emitter, Manager};
 use tokio::sync::Mutex;
 use wisespace_core::db;
 
@@ -536,13 +536,6 @@ pub fn run() {
             }
 
             if let Some(main_window) = app.get_webview_window("main") {
-                #[cfg(target_os = "windows")]
-                {
-                    if let Ok(icon) = Image::from_path("icons/icon.png") {
-                        let _ = main_window.set_icon(icon);
-                    }
-                }
-
                 // On Windows, hide native decorations so the custom TitleBar is
                 // the only title bar.  macOS keeps its Overlay style (traffic lights).
                 // After removing decorations, re-enable minimize/maximize capabilities
@@ -657,6 +650,13 @@ pub fn run() {
             if let Err(e) = tray::create_tray(handle, &tray_language) {
                 tracing::warn!("Failed to create system tray: {}", e);
             }
+            if let Some(window) = app.get_webview_window("main") {
+                if let Ok(theme) = window.theme() {
+                    if let Err(e) = tray::sync_theme_icons(handle, theme) {
+                        tracing::warn!("Failed to sync themed icons: {}", e);
+                    }
+                }
+            }
 
             Ok(())
         })
@@ -708,6 +708,12 @@ pub fn run() {
                             // Ask frontend for confirmation before quitting
                             api.prevent_close();
                             let _ = app.emit("app-close-requested", ());
+                        }
+                    }
+                    tauri::WindowEvent::ThemeChanged(theme) => {
+                        let app = window.app_handle();
+                        if let Err(e) = tray::sync_theme_icons(&app, *theme) {
+                            tracing::warn!("Failed to update themed icons: {}", e);
                         }
                     }
                     _ => {}

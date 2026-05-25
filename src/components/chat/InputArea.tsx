@@ -1232,7 +1232,7 @@ export function InputArea() {
   }, [currentMode, handleModeSwitch]);
 
   return (
-    <div className="wisespace-chat-input-shell px-6 pb-4 pt-2">
+    <div className="wisespace-chat-input-shell shrink-0 px-6 pb-4 pt-2">
       <input
         ref={fileInputRef}
         type="file"
@@ -1662,8 +1662,8 @@ export function InputArea() {
       </div>
 
       {/* Mode controls bar — below input container */}
-      <div className="flex items-center justify-between px-1.5 pt-2">
-        <div className="flex items-center gap-1">
+      <div className="flex min-w-0 items-center justify-between gap-3 px-1.5 pt-2">
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
           <Dropdown
             menu={{
               items: [
@@ -1715,7 +1715,7 @@ export function InputArea() {
               }}
               trigger={['click']}
             >
-              <Tag bordered={false} style={{ ...primaryTagStyle, cursor: 'pointer' }}>
+              <Tag bordered={false} style={{ ...primaryTagStyle, cursor: 'pointer', maxWidth: '100%' }}>
                 {activeAgentExecutor.name}
               </Tag>
             </Dropdown>
@@ -1733,7 +1733,7 @@ export function InputArea() {
                 size="small"
                 icon={<FolderOpen size={14} />}
                 onClick={handleSelectCwd}
-                style={{ display: 'flex', alignItems: 'center', gap: 4, maxWidth: 200, fontSize: 12 }}
+                style={{ display: 'flex', alignItems: 'center', gap: 4, maxWidth: 240, minWidth: 0, flexShrink: 1, fontSize: 12 }}
               >
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {resolvedAgentCwd ? `${workspaceLabelText}: ${formatWorkspacePath(resolvedAgentCwd)}` : workspaceLabelText}
@@ -1760,7 +1760,7 @@ export function InputArea() {
             </Tooltip>
           )}
         </div>
-        <div className="flex items-center gap-2 ml-auto">
+        <div className="ml-3 flex shrink-0 items-center justify-end gap-2 whitespace-nowrap">
           {currentMode === 'agent' && (
             <Dropdown
               menu={{
