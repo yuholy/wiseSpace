@@ -13,6 +13,7 @@ pub struct StoredFile {
     pub size_bytes: i64,
     pub storage_path: String,
     pub conversation_id: Option<String>,
+    pub workspace_id: Option<String>,
     pub created_at: String,
 }
 
@@ -25,6 +26,7 @@ fn model_to_stored_file(m: stored_files::Model) -> StoredFile {
         size_bytes: m.size_bytes,
         storage_path: m.storage_path,
         conversation_id: m.conversation_id,
+        workspace_id: m.workspace_id,
         created_at: m.created_at,
     }
 }
@@ -39,6 +41,14 @@ pub async fn create_stored_file(
     storage_path: &str,
     conversation_id: Option<&str>,
 ) -> Result<StoredFile> {
+    let workspace_id = match conversation_id {
+        Some(value) => Some(
+            crate::repo::workspace::ensure_canonical_workspace_for_conversation(db, value)
+                .await?
+                .id,
+        ),
+        None => None,
+    };
     let am = stored_files::ActiveModel {
         id: Set(id.to_string()),
         hash: Set(hash.to_string()),
@@ -47,6 +57,7 @@ pub async fn create_stored_file(
         size_bytes: Set(size_bytes),
         storage_path: Set(storage_path.to_string()),
         conversation_id: Set(conversation_id.map(|s| s.to_string())),
+        workspace_id: Set(workspace_id),
         ..Default::default()
     };
 

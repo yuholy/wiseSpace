@@ -29,6 +29,181 @@ function setStore<T>(key: string, value: T): void {
   localStorage.setItem(`wisespace_${key}`, JSON.stringify(value));
 }
 
+type BrowserConversation = {
+  id: string;
+  search_enabled?: boolean;
+  search_provider_id?: string | null;
+  enabled_mcp_server_ids?: string[];
+  enabled_knowledge_base_ids?: string[];
+  enabled_memory_namespace_ids?: string[];
+  updated_at?: number;
+};
+
+type BrowserWorkspaceSnapshot = {
+  searchPolicy: {
+    enabled: boolean;
+    searchProviderId?: string;
+    queryMode: 'manual' | 'auto';
+    resultLimit: number;
+  };
+  toolBinding: {
+    serverIds: string[];
+    defaultTools?: string[];
+    approvalMode: 'inherit' | 'ask' | 'allow_safe';
+  };
+  knowledgeBinding: {
+    knowledgeBaseIds: string[];
+    autoAttach: boolean;
+  };
+  memoryPolicy: {
+    enabled: boolean;
+    namespaceId?: string;
+    writeBack: boolean;
+  };
+  toggles: {
+    searchEnabled: boolean;
+    searchProviderId?: string;
+    enabledKnowledgeBaseIds: string[];
+    enabledMcpServerIds: string[];
+    enabledToolNames?: string[];
+    memoryEnabled: boolean;
+    memoryNamespaceId?: string;
+    memoryWriteBack: boolean;
+    disabledContextSourceIds?: string[];
+  };
+  researchMode: boolean;
+  pinnedArtifactIds: string[];
+};
+
+type BrowserAgentTask = {
+  id: string;
+  conversationId?: string | null;
+  workspaceId?: string | null;
+  parentRunId?: string | null;
+  parentTaskId?: string | null;
+  sourceMessageId?: string | null;
+  externalAgentId: string;
+  externalTaskId?: string | null;
+  assigneeKind: string;
+  assigneeLabel?: string | null;
+  delegationDepth: number;
+  kind: string;
+  taskType: string;
+  presetKey?: string | null;
+  delegationReason?: string | null;
+  inputText?: string | null;
+  status: string;
+  title: string;
+  requestPayloadJson: string;
+  resultPayloadJson?: string | null;
+  errorMessage?: string | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
+function getConversationById(conversationId: string): BrowserConversation | null {
+  return getStore<BrowserConversation[]>('conversations', []).find((conversation) => conversation.id === conversationId) ?? null;
+}
+
+function createWorkspaceSnapshotFromConversation(
+  conversation?: BrowserConversation | null,
+): BrowserWorkspaceSnapshot {
+  const enabledKnowledgeBaseIds = [...(conversation?.enabled_knowledge_base_ids ?? [])];
+  const enabledMcpServerIds = [...(conversation?.enabled_mcp_server_ids ?? [])];
+  const enabledMemoryNamespaceIds = [...(conversation?.enabled_memory_namespace_ids ?? [])];
+  const memoryNamespaceId = enabledMemoryNamespaceIds[0];
+  const memoryEnabled = enabledMemoryNamespaceIds.length > 0;
+  const searchEnabled = Boolean(conversation?.search_enabled);
+  const searchProviderId = conversation?.search_provider_id ?? undefined;
+
+  return {
+    searchPolicy: {
+      enabled: searchEnabled,
+      searchProviderId,
+      queryMode: 'manual',
+      resultLimit: 10,
+    },
+    toolBinding: {
+      serverIds: enabledMcpServerIds,
+      approvalMode: 'ask',
+    },
+    knowledgeBinding: {
+      knowledgeBaseIds: enabledKnowledgeBaseIds,
+      autoAttach: false,
+    },
+    memoryPolicy: {
+      enabled: memoryEnabled,
+      namespaceId: memoryNamespaceId,
+      writeBack: false,
+    },
+    toggles: {
+      searchEnabled,
+      searchProviderId,
+      enabledKnowledgeBaseIds,
+      enabledMcpServerIds,
+      memoryEnabled,
+      memoryNamespaceId,
+      memoryWriteBack: false,
+    },
+    researchMode: false,
+    pinnedArtifactIds: [],
+  };
+}
+
+function getWorkspaceSnapshotsStore(): Record<string, BrowserWorkspaceSnapshot> {
+  return getStore<Record<string, BrowserWorkspaceSnapshot>>('workspace_snapshots', {});
+}
+
+function mergeWorkspaceSnapshot(
+  base: BrowserWorkspaceSnapshot,
+  patch?: Partial<BrowserWorkspaceSnapshot>,
+): BrowserWorkspaceSnapshot {
+  if (!patch) return base;
+  return {
+    ...base,
+    ...patch,
+    searchPolicy: patch.searchPolicy ? { ...base.searchPolicy, ...patch.searchPolicy } : base.searchPolicy,
+    toolBinding: patch.toolBinding ? { ...base.toolBinding, ...patch.toolBinding } : base.toolBinding,
+    knowledgeBinding: patch.knowledgeBinding ? { ...base.knowledgeBinding, ...patch.knowledgeBinding } : base.knowledgeBinding,
+    memoryPolicy: patch.memoryPolicy ? { ...base.memoryPolicy, ...patch.memoryPolicy } : base.memoryPolicy,
+    toggles: patch.toggles ? { ...base.toggles, ...patch.toggles } : base.toggles,
+    pinnedArtifactIds: patch.pinnedArtifactIds ? [...patch.pinnedArtifactIds] : base.pinnedArtifactIds,
+  };
+}
+
+function getWorkspaceSnapshot(conversationId: string): BrowserWorkspaceSnapshot {
+  const snapshots = getWorkspaceSnapshotsStore();
+  const existing = snapshots[conversationId];
+  if (existing) return existing;
+
+  const snapshot = createWorkspaceSnapshotFromConversation(getConversationById(conversationId));
+  snapshots[conversationId] = snapshot;
+  setStore('workspace_snapshots', snapshots);
+  return snapshot;
+}
+
+function syncConversationFromWorkspaceSnapshot(
+  conversationId: string,
+  snapshot: BrowserWorkspaceSnapshot,
+): void {
+  const conversations = getStore<BrowserConversation[]>('conversations', []);
+  const index = conversations.findIndex((conversation) => conversation.id === conversationId);
+  if (index === -1) return;
+
+  conversations[index] = {
+    ...conversations[index],
+    search_enabled: snapshot.searchPolicy.enabled,
+    search_provider_id: snapshot.searchPolicy.searchProviderId ?? null,
+    enabled_mcp_server_ids: [...snapshot.toolBinding.serverIds],
+    enabled_knowledge_base_ids: [...snapshot.knowledgeBinding.knowledgeBaseIds],
+    enabled_memory_namespace_ids: snapshot.memoryPolicy.enabled && snapshot.memoryPolicy.namespaceId
+      ? [snapshot.memoryPolicy.namespaceId]
+      : [],
+    updated_at: nowTs(),
+  };
+  setStore('conversations', conversations);
+}
+
 function generateBrowserResponse(userContent: string): string {
   const greeting = /^(你好|hi|hello|hey|嗨)/i.test(userContent.trim());
   if (greeting) {
@@ -1494,9 +1669,18 @@ export async function handleCommand<T>(cmd: string, args?: Record<string, unknow
 
     // ── Phase 2: Workspace Snapshot ────────────────────────────────────
     case 'get_workspace_snapshot':
-      return { conversations: [], providers: [], settings: {}, captured_at: nowTs() } as T;
-    case 'update_workspace_snapshot':
-      return undefined as T;
+      return getWorkspaceSnapshot((args as any)?.conversation_id) as T;
+    case 'update_workspace_snapshot': {
+      const conversationId = (args as any)?.conversation_id as string;
+      const input = (args as any)?.input as Partial<BrowserWorkspaceSnapshot> | undefined;
+      const snapshots = getWorkspaceSnapshotsStore();
+      const current = getWorkspaceSnapshot(conversationId);
+      const updated = mergeWorkspaceSnapshot(current, input);
+      snapshots[conversationId] = updated;
+      setStore('workspace_snapshots', snapshots);
+      syncConversationFromWorkspaceSnapshot(conversationId, updated);
+      return updated as T;
+    }
 
     // ── Proxy Test ────────────────────────────────────────────────────────
     case 'test_proxy': {
@@ -1509,6 +1693,183 @@ export async function handleCommand<T>(cmd: string, args?: Record<string, unknow
     // ── Skills ────────────────────────────────────────────────────────
     case 'list_skills':
       return [] as T;
+
+    case 'list_extensions':
+      return [] as T;
+
+    case 'set_extension_enabled': {
+      const id = (args as any)?.id as string;
+      const enabled = Boolean((args as any)?.enabled);
+      const kind = id?.startsWith('mcp_server::')
+        ? 'mcp_server'
+        : id?.startsWith('external_agent::')
+          ? 'external_agent'
+          : 'skill';
+      return {
+        id,
+        kind,
+        name: id?.split('::')[1] ?? 'Mock extension',
+        enabled,
+        source: { kind: 'builtin' },
+        health: {
+          status: enabled ? 'healthy' : 'warning',
+          summary: enabled ? 'Mock extension enabled.' : 'Mock extension disabled.',
+        },
+        scope: { availability: 'workspace_attachable', defaultEnabled: enabled },
+        permissions: { trustLevel: 'safe', approvalMode: 'inherit' },
+        runtime: {
+          hostKind: kind === 'mcp_server' ? 'mcp_host' : kind === 'external_agent' ? 'external_agent_connector' : 'native_skill_loader',
+          isolation: kind === 'skill' ? 'in_process' : 'remote',
+          supportsConnectionTest: kind !== 'skill',
+          supportsEnableToggle: true,
+        },
+        contributions: [],
+        tags: [],
+      } as T;
+    }
+
+    case 'get_extension_detail': {
+      const id = (args as any)?.id as string;
+      const isExternalAgent = id?.startsWith('external_agent::');
+      return {
+        id,
+        kind: id?.startsWith('mcp_server::')
+          ? 'mcp_server'
+          : isExternalAgent
+            ? 'external_agent'
+            : 'skill',
+        name: id?.split('::')[1] ?? 'Mock extension',
+        enabled: true,
+        source: { kind: 'builtin', path: 'browser-mock' },
+        health: { status: 'healthy', summary: 'Mock runtime detail available in browser mode.' },
+        scope: { availability: 'workspace_attachable' },
+        permissions: { trustLevel: 'safe', approvalMode: 'inherit' },
+        runtime: {
+          hostKind: isExternalAgent ? 'external_agent_connector' : 'native_skill_loader',
+          isolation: isExternalAgent ? 'remote' : 'in_process',
+          supportsConnectionTest: id?.startsWith('mcp_server::') || isExternalAgent,
+          supportsEnableToggle: true,
+        },
+        contributions: [],
+        tags: [],
+        diagnostics: {
+          canTestConnection: id?.startsWith('mcp_server::') || isExternalAgent,
+          compatibilityNotes: ['Browser mode uses mock extension runtime diagnostics.'],
+        },
+        kindDetail: isExternalAgent
+          ? {
+              agentKind: 'custom_http',
+              baseUrl: 'https://bridge.example.com',
+              authConfigured: false,
+              networkScope: 'public_remote',
+              bridgeProfile: {
+                family: 'http_bridge',
+                networkScope: 'public_remote',
+                authConfigured: false,
+                authType: 'none',
+                riskLevel: 'elevated',
+                permissionSummary: 'Remote bridge is exposed without authentication.',
+              },
+            }
+          : {},
+      } as T;
+    }
+
+    case 'test_external_agent_connection':
+      return { ok: true, status: 200, message: 'Browser mock connector is reachable.' } as T;
+
+    case 'list_agent_tasks': {
+      const tasks = getStore<BrowserAgentTask[]>('agent_tasks', []);
+      const conversationId = (args as any)?.conversationId as string | undefined;
+      const parentRunId = (args as any)?.parentRunId as string | undefined;
+      const parentTaskId = (args as any)?.parentTaskId as string | undefined;
+      const externalAgentId = (args as any)?.externalAgentId as string | undefined;
+      const limit = ((args as any)?.limit as number | undefined) ?? 100;
+      return tasks
+        .filter((task) => !conversationId || task.conversationId === conversationId)
+        .filter((task) => !parentRunId || task.parentRunId === parentRunId)
+        .filter((task) => !parentTaskId || task.parentTaskId === parentTaskId)
+        .filter((task) => !externalAgentId || task.externalAgentId === externalAgentId)
+        .slice(0, limit) as T;
+    }
+
+    case 'create_delegated_subagent_task': {
+      const input = (args as any)?.input;
+      const tasks = getStore<BrowserAgentTask[]>('agent_tasks', []);
+      const taskType = input.taskType ?? 'review';
+      const presetKey = input.presetKey ?? (taskType === 'review' ? 'code-reviewer' : null);
+      const task: BrowserAgentTask = {
+        id: genId(),
+        conversationId: input.conversationId ?? null,
+        workspaceId: null,
+        parentRunId: input.parentRunId,
+        parentTaskId: input.parentTaskId ?? null,
+        sourceMessageId: input.sourceMessageId ?? null,
+        externalAgentId: `builtin-subagent:${presetKey ?? taskType}`,
+        externalTaskId: null,
+        assigneeKind: 'internal_subagent',
+        assigneeLabel: presetKey === 'code-reviewer' ? 'Code Reviewer' : (presetKey ?? taskType),
+        delegationDepth: input.parentTaskId ? 2 : 1,
+        kind: taskType,
+        taskType,
+        presetKey,
+        delegationReason: input.delegationReason ?? null,
+        inputText: input.inputText ?? null,
+        status: 'planned',
+        title: input.title,
+        requestPayloadJson: JSON.stringify({
+          taskType,
+          presetKey,
+          delegationReason: input.delegationReason ?? null,
+          inputText: input.inputText,
+          contextJson: input.contextJson ?? null,
+        }),
+        resultPayloadJson: null,
+        errorMessage: null,
+        createdAt: nowTs(),
+        updatedAt: nowTs(),
+      };
+      tasks.unshift(task);
+      setStore('agent_tasks', tasks);
+      return task as T;
+    }
+
+    case 'run_delegated_subagent_task': {
+      const taskId = (args as any)?.taskId as string;
+      const tasks = getStore<BrowserAgentTask[]>('agent_tasks', []);
+      const index = tasks.findIndex((task) => task.id === taskId);
+      if (index === -1) {
+        throw new Error('Delegated task not found');
+      }
+      const task = tasks[index];
+      const content = task.taskType === 'research'
+        ? '## Conclusion\n- Browser mock mode returns a canned research result.\n\n## Evidence\n- No live provider execution happens in browser mode.\n\n## Open Questions\n- None.\n\n## Suggested Next Steps\n- Run the desktop app for a real research subtask.'
+        : '## Findings\n- Browser mock mode does not run a real model-backed delegated review.\n\n## Open Questions\n- None.\n\n## Suggested Next Steps\n- Use the Tauri desktop app to execute the real delegated review task.';
+      const resultPayload = {
+        taskType: task.taskType,
+        presetKey: task.presetKey,
+        mode: 'browser_mock',
+        content,
+      };
+      tasks[index] = {
+        ...task,
+        status: 'completed',
+        resultPayloadJson: JSON.stringify(resultPayload),
+        updatedAt: nowTs(),
+      };
+      setStore('agent_tasks', tasks);
+      return {
+        task: tasks[index],
+        assistantMessage: {
+          id: genId(),
+          conversation_id: task.conversationId ?? '',
+          role: 'assistant',
+          content: resultPayload.content,
+          attachments: [],
+          created_at: nowTs(),
+        },
+      } as T;
+    }
 
     case 'get_skill':
       return {

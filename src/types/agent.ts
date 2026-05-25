@@ -17,6 +17,7 @@ export type ResumeCapability = 'none' | 'replay_only' | 'resumable';
 export interface AgentProfile {
   id: string;
   conversationId: string;
+  workspaceId?: string | null;
   workspaceRoot?: string | null;
   permissionMode: AgentPermissionMode | string;
   defaultRunnerKind: string;
@@ -29,6 +30,7 @@ export interface AgentProfile {
 export interface AgentRun {
   id: string;
   conversationId: string;
+  workspaceId?: string | null;
   profileId: string;
   runnerKind: string;
   providerId?: string | null;
@@ -81,6 +83,7 @@ export interface TaskCenterDetail {
   conversation: import('./index').Conversation;
   run: AgentRun;
   events: AgentRunEvent[];
+  delegatedTasks: import('./externalAgent').AgentTask[];
 }
 
 export interface CreateTaskFromCenterInput {
@@ -100,6 +103,7 @@ export interface CreateTaskFromCenterResult {
 export interface AgentSession {
   id: string;
   conversation_id: string;
+  workspaceId?: string | null;
   cwd?: string;
   permission_mode: AgentPermissionMode;
   runtime_status: AgentRuntimeStatus;

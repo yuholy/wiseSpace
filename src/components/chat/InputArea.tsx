@@ -17,6 +17,7 @@ import { NamespaceIcon } from '@/components/shared/NamespaceIcon';
 import { KnowledgeBaseIcon } from '@/components/shared/KnowledgeBaseIcon';
 import { getShortcutBinding, formatShortcutForDisplay, matchesShortcutEvent } from '@/lib/shortcuts';
 import type { ShortcutAction } from '@/lib/shortcuts';
+import { getReadableWorkspaceLabel } from '@/lib/workspaceDisplay';
 import { VoiceCall } from './VoiceCall';
 import { ConversationSettingsModal } from './ConversationSettingsModal';
 import { ModelSelector } from './ModelSelector';
@@ -31,6 +32,11 @@ import {
   getAgentExecutorStorageKey,
   type AgentExecutorId,
 } from '@/lib/agentExecutors';
+import {
+  deriveToolApprovalModeFromAgentPermission,
+  deriveWorkspaceContextState,
+  resolveEffectiveToolApprovalMode,
+} from '@/lib/workspaceContextState';
 
 async function fileToAttachmentInput(file: File): Promise<AttachmentInput> {
   return new Promise((resolve) => {
@@ -54,6 +60,15 @@ const _draftCache = new Map<string, string>();
 export function InputArea() {
   const { t } = useTranslation();
   const { token } = theme.useToken();
+  const primaryTagStyle = useMemo(
+    () => ({
+      marginInlineEnd: 0,
+      color: token.colorPrimary,
+      backgroundColor: token.colorPrimaryBg,
+      borderColor: token.colorPrimaryBorder,
+    }),
+    [token.colorPrimary, token.colorPrimaryBg, token.colorPrimaryBorder],
+  );
   const [value, setValue] = useState(() => {
     const convId = useConversationStore.getState().activeConversationId;
     return convId ? _draftCache.get(convId) || '' : '';
@@ -134,6 +149,8 @@ export function InputArea() {
   const searchProviderId = useConversationStore((s) => s.searchProviderId);
   const setSearchEnabled = useConversationStore((s) => s.setSearchEnabled);
   const setSearchProviderId = useConversationStore((s) => s.setSearchProviderId);
+  const workspaceSnapshot = useConversationStore((s) => s.workspaceSnapshot);
+  const updateWorkspaceSnapshot = useConversationStore((s) => s.updateWorkspaceSnapshot);
   const searchProviders = useSearchStore((s) => s.providers);
   const loadSearchProviders = useSearchStore((s) => s.loadProviders);
 
@@ -184,6 +201,28 @@ export function InputArea() {
   const toggleMemoryNamespace = useConversationStore((s) => s.toggleMemoryNamespace);
   const [memoryPopoverOpen, setMemoryPopoverOpen] = useState(false);
 
+  const workspaceContextState = useMemo(
+    () => deriveWorkspaceContextState({
+      workspaceSnapshot,
+      searchEnabled,
+      searchProviderId,
+      enabledMcpServerIds,
+      enabledKnowledgeBaseIds,
+      enabledMemoryNamespaceIds,
+    }),
+    [
+      workspaceSnapshot,
+      searchEnabled,
+      searchProviderId,
+      enabledMcpServerIds,
+      enabledKnowledgeBaseIds,
+      enabledMemoryNamespaceIds,
+    ],
+  );
+  const workspaceMcpServerIds = workspaceContextState.enabledMcpServerIds;
+  const workspaceKnowledgeBaseIds = workspaceContextState.enabledKnowledgeBaseIds;
+  const workspaceMemoryNamespaceIds = workspaceContextState.enabledMemoryNamespaceIds;
+
   // Context clear
   const insertContextClear = useConversationStore((s) => s.insertContextClear);
   const clearAllMessages = useConversationStore((s) => s.clearAllMessages);
@@ -192,6 +231,34 @@ export function InputArea() {
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId);
   const currentMode = activeConversation?.mode || 'chat';
+  const toolApprovalMode = resolveEffectiveToolApprovalMode({
+    currentMode,
+    agentPermissionMode: resolvedAgentPermissionMode,
+    workspaceToolApprovalMode: workspaceContextState.toolApprovalMode,
+  });
+  const toolApprovalSummary = useMemo(() => {
+    switch (toolApprovalMode) {
+      case 'allow_safe':
+        return {
+          label: currentMode === 'agent'
+            ? t('chat.toolApprovalFollowLocalRelaxed', 'Follow local permission')
+            : t('chat.toolApprovalAllowSafe', 'Safe tools auto-run'),
+          color: 'green' as const,
+        };
+      case 'inherit':
+        return { label: t('chat.toolApprovalInherit', 'Use server policy'), color: 'blue' as const };
+      default:
+        return {
+          label: currentMode === 'agent'
+            ? t('chat.toolApprovalFollowLocalStrict', 'Follow local permission')
+            : t('chat.toolApprovalAsk', 'Ask before tools'),
+          color: 'default' as const,
+        };
+    }
+  }, [currentMode, t, toolApprovalMode]);
+  const modeBoundarySummary = currentMode === 'agent'
+    ? t('chat.agentBoundarySummary', 'Agent mode can execute inside the workspace.')
+    : t('chat.chatBoundarySummary', 'Chat mode stays in conversation flow only.');
 
   const setActivePage = useUIStore((s) => s.setActivePage);
   const setSettingsSection = useUIStore((s) => s.setSettingsSection);
@@ -386,7 +453,7 @@ export function InputArea() {
         {servers.map((server) => (
           <div key={server.id} style={{ padding: '3px 0' }}>
             <Checkbox
-              checked={enabledMcpServerIds.includes(server.id)}
+              checked={workspaceMcpServerIds.includes(server.id)}
               onChange={() => toggleMcpServer(server.id)}
             >
               <span style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -408,7 +475,7 @@ export function InputArea() {
         {customServers.length > 0 && renderGroup(t('settings.mcp.custom'), customServers)}
       </div>
     );
-  }, [mcpServers, enabledMcpServerIds, toggleMcpServer, token, t]);
+  }, [mcpServers, workspaceMcpServerIds, toggleMcpServer, token, t]);
 
   // Agent permission mode menu items
   const permissionModeItems = useMemo<MenuProps['items']>(() => [
@@ -435,6 +502,14 @@ export function InputArea() {
     const applyChange = async () => {
       try {
         await updateAgentPermissionMode(activeConversationId, mode);
+        if (workspaceSnapshot) {
+          await updateWorkspaceSnapshot(activeConversationId, {
+            toolBinding: {
+              ...workspaceSnapshot.toolBinding,
+              approvalMode: deriveToolApprovalModeFromAgentPermission(mode),
+            },
+          });
+        }
         setAgentPermissionMode(mode);
       } catch (e) {
         console.warn('Failed to update permission mode:', e);
@@ -458,7 +533,7 @@ export function InputArea() {
     } else {
       await applyChange();
     }
-  }, [activeConversationId, modal, t, updateAgentPermissionMode]);
+  }, [activeConversationId, modal, t, updateAgentPermissionMode, updateWorkspaceSnapshot, workspaceSnapshot]);
 
   const permissionModeIcon = useMemo(() => {
     switch (resolvedAgentPermissionMode) {
@@ -484,9 +559,8 @@ export function InputArea() {
   }, []);
 
   const formatWorkspacePath = useCallback((path: string): string => {
-    const segments = path.replace(/\\/g, '/').split('/').filter(Boolean);
-    return segments.length > 0 ? segments[segments.length - 1] : path;
-  }, []);
+    return getReadableWorkspaceLabel(path, activeConversation?.title);
+  }, [activeConversation?.title]);
   void abbreviatePath;
 
   const handleSelectCwd = useCallback(async () => {
@@ -533,7 +607,7 @@ export function InputArea() {
         {knowledgeBases.map((kb) => (
           <div key={kb.id} style={{ padding: '3px 0' }}>
             <Checkbox
-              checked={enabledKnowledgeBaseIds.includes(kb.id)}
+              checked={workspaceKnowledgeBaseIds.includes(kb.id)}
               onChange={() => toggleKnowledgeBase(kb.id)}
             >
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
@@ -545,7 +619,7 @@ export function InputArea() {
         ))}
       </div>
     );
-  }, [knowledgeBases, enabledKnowledgeBaseIds, toggleKnowledgeBase, token, t, setActivePage]);
+  }, [knowledgeBases, workspaceKnowledgeBaseIds, toggleKnowledgeBase, token, t, setActivePage]);
 
   // Memory namespace popover content
   const memoryPopoverContent = useMemo(() => {
@@ -574,7 +648,7 @@ export function InputArea() {
         {memoryNamespaces.map((ns) => (
           <div key={ns.id} style={{ padding: '3px 0' }}>
             <Checkbox
-              checked={enabledMemoryNamespaceIds.includes(ns.id)}
+              checked={workspaceMemoryNamespaceIds.includes(ns.id)}
               onChange={() => toggleMemoryNamespace(ns.id)}
             >
               <span style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -586,7 +660,7 @@ export function InputArea() {
         ))}
       </div>
     );
-  }, [memoryNamespaces, enabledMemoryNamespaceIds, toggleMemoryNamespace, token, t, setActivePage]);
+  }, [memoryNamespaces, workspaceMemoryNamespaceIds, toggleMemoryNamespace, token, t, setActivePage]);
 
   const currentModel = React.useMemo(() => {
     if (activeConversation) {
@@ -1358,12 +1432,12 @@ export function InputArea() {
               onOpenChange={setMcpPopoverOpen}
             >
               <Tooltip title={t('chat.mcp.title')} open={mcpPopoverOpen ? false : undefined}>
-                <Badge count={enabledMcpServerIds.filter((id) => mcpServers.some((s) => s.id === id && s.enabled)).length} size="small" offset={[-4, 4]} color={token.colorPrimary}>
+                <Badge count={workspaceMcpServerIds.filter((id) => mcpServers.some((s) => s.id === id && s.enabled)).length} size="small" offset={[-4, 4]} color={token.colorPrimary}>
                 <Button
                   type="text"
                   size="small"
                   icon={<Plug size={14} />}
-                  style={enabledMcpServerIds.some((id) => mcpServers.some((s) => s.id === id && s.enabled)) ? { color: token.colorPrimary } : undefined}
+                  style={workspaceMcpServerIds.some((id) => mcpServers.some((s) => s.id === id && s.enabled)) ? { color: token.colorPrimary } : undefined}
                 />
                 </Badge>
               </Tooltip>
@@ -1377,12 +1451,12 @@ export function InputArea() {
               onOpenChange={setKbPopoverOpen}
             >
               <Tooltip title={t('chat.knowledge.title')} open={kbPopoverOpen ? false : undefined}>
-                <Badge count={enabledKnowledgeBaseIds.length} size="small" offset={[-4, 4]} color={token.colorPrimary}>
+                <Badge count={workspaceKnowledgeBaseIds.length} size="small" offset={[-4, 4]} color={token.colorPrimary}>
                 <Button
                   type="text"
                   size="small"
                   icon={<BookOpen size={14} />}
-                  style={enabledKnowledgeBaseIds.length > 0 ? { color: token.colorPrimary } : undefined}
+                  style={workspaceKnowledgeBaseIds.length > 0 ? { color: token.colorPrimary } : undefined}
                 />
                 </Badge>
               </Tooltip>
@@ -1396,12 +1470,12 @@ export function InputArea() {
               onOpenChange={setMemoryPopoverOpen}
             >
               <Tooltip title={t('chat.memory.title')} open={memoryPopoverOpen ? false : undefined}>
-                <Badge count={enabledMemoryNamespaceIds.length} size="small" offset={[-4, 4]} color={token.colorPrimary}>
+                <Badge count={workspaceMemoryNamespaceIds.length} size="small" offset={[-4, 4]} color={token.colorPrimary}>
                 <Button
                   type="text"
                   size="small"
                   icon={<Brain size={14} />}
-                  style={enabledMemoryNamespaceIds.length > 0 ? { color: token.colorPrimary } : undefined}
+                  style={workspaceMemoryNamespaceIds.length > 0 ? { color: token.colorPrimary } : undefined}
                 />
                 </Badge>
               </Tooltip>
@@ -1559,6 +1633,20 @@ export function InputArea() {
               {currentMode === 'agent' ? t('common.agentMode') : t('common.chatMode')}
             </Button>
           </Dropdown>
+          <Tooltip title={modeBoundarySummary}>
+            <Tag
+              bordered={false}
+              style={
+                currentMode === 'agent'
+                  ? { ...primaryTagStyle, cursor: 'help' }
+                  : { marginInlineEnd: 0, cursor: 'help' }
+              }
+            >
+              {currentMode === 'agent'
+                ? t('chat.agentBoundaryShort', 'Workspace execution')
+                : t('chat.chatBoundaryShort', 'Conversation only')}
+            </Tag>
+          </Tooltip>
           {currentMode === 'agent' && (
             <Dropdown
               menu={{
@@ -1568,13 +1656,19 @@ export function InputArea() {
               }}
               trigger={['click']}
             >
-              <Tag color="blue" bordered={false} style={{ marginInlineEnd: 0, cursor: 'pointer' }}>
+              <Tag bordered={false} style={{ ...primaryTagStyle, cursor: 'pointer' }}>
                 {activeAgentExecutor.name}
               </Tag>
             </Dropdown>
           )}
           {currentMode === 'agent' && (
-            <Tooltip title={workspaceTooltipText}>
+            <Tooltip
+              title={
+                resolvedAgentCwd
+                  ? `当前工作空间：${getReadableWorkspaceLabel(resolvedAgentCwd, activeConversation?.title)}\n目录：${resolvedAgentCwd}\n点击可切换目录`
+                  : workspaceTooltipText
+              }
+            >
               <Button
                 type="text"
                 size="small"
@@ -1630,6 +1724,13 @@ export function InputArea() {
                 {permissionModeLabel}
               </Button>
             </Dropdown>
+          )}
+          {currentMode === 'agent' && (
+            <Tooltip title={t('chat.toolApprovalFollowLocalHelp', 'In agent mode, tool approval follows the current local permission mode.')}>
+              <Tag color={toolApprovalSummary.color} bordered={false} style={{ marginInlineEnd: 0, cursor: 'help' }}>
+                {toolApprovalSummary.label}
+              </Tag>
+            </Tooltip>
           )}
           {contextCount > 0 && (
             <span style={{ fontSize: 11, color: token.colorTextSecondary }}>

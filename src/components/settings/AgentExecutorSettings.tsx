@@ -1,4 +1,4 @@
-import { Card, List, Space, Tag, Typography } from 'antd';
+import { Card, List, Space, Tag, Typography, theme } from 'antd';
 import { Bot, FolderOpen, ShieldCheck } from 'lucide-react';
 import { AGENT_EXECUTORS } from '@/lib/agentExecutors';
 
@@ -11,6 +11,8 @@ function commandHint(): string {
 }
 
 export default function AgentExecutorSettings() {
+  const { token } = theme.useToken();
+
   return (
     <div className="h-full overflow-y-auto" style={{ padding: 24 }}>
       <div className="mb-5">
@@ -30,7 +32,15 @@ export default function AgentExecutorSettings() {
                 title={(
                   <Space wrap>
                     <span>{executor.name}</span>
-                    <Tag color="blue">Local</Tag>
+                    <Tag
+                      style={{
+                        color: token.colorPrimary,
+                        backgroundColor: token.colorPrimaryBg,
+                        borderColor: token.colorPrimaryBorder,
+                      }}
+                    >
+                      Local
+                    </Tag>
                   </Space>
                 )}
                 description={(

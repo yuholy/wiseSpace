@@ -43,25 +43,25 @@ pub async fn compare_branches(
 
 #[tauri::command]
 pub async fn get_workspace_snapshot(
-    _state: State<'_, AppState>,
+    state: State<'_, AppState>,
     conversation_id: String,
-) -> Result<serde_json::Value, String> {
-    Ok(serde_json::json!({
-        "conversation_id": conversation_id,
-        "context_sources": [],
-        "active_tools": [],
-        "knowledge_bindings": [],
-        "memory_policy": null,
-        "search_policy": null,
-        "artifacts": [],
-        "branches": []
-    }))
+) -> Result<ConversationWorkspaceSnapshot, String> {
+    wisespace_core::repo::conversation::get_workspace_snapshot(&state.sea_db, &conversation_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn update_workspace_snapshot(
-    _state: State<'_, AppState>,
-    _conversation_id: String,
-) -> Result<(), String> {
-    Ok(())
+    state: State<'_, AppState>,
+    conversation_id: String,
+    input: UpdateConversationWorkspaceSnapshotInput,
+) -> Result<ConversationWorkspaceSnapshot, String> {
+    wisespace_core::repo::conversation::update_workspace_snapshot(
+        &state.sea_db,
+        &conversation_id,
+        input,
+    )
+    .await
+    .map_err(|e| e.to_string())
 }

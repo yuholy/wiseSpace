@@ -12,6 +12,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use tauri::{LogicalPosition, LogicalSize, Position, Size};
 
+#[derive(Clone)]
 pub struct AppState {
     pub sea_db: DatabaseConnection,
     pub master_key: [u8; 32],
@@ -194,6 +195,11 @@ pub fn run() {
             commands::branches::compare_branches,
             commands::branches::get_workspace_snapshot,
             commands::branches::update_workspace_snapshot,
+            commands::workspaces::list_workspaces,
+            commands::workspaces::get_workspace,
+            commands::workspaces::get_workspace_by_conversation,
+            commands::workspaces::rename_workspace,
+            commands::workspaces::attach_conversation_to_workspace,
             // search providers
             commands::search::list_search_providers,
             commands::search::create_search_provider,
@@ -212,15 +218,22 @@ pub fn run() {
             commands::mcp::list_tool_executions,
             // external agents
             commands::external_agents::list_external_agents,
+            commands::external_agents::list_builtin_subagent_assignees,
             commands::external_agents::create_external_agent,
             commands::external_agents::update_external_agent,
             commands::external_agents::delete_external_agent,
             commands::external_agents::test_external_agent_connection,
             commands::external_agents::dispatch_external_agent_task,
+            commands::external_agents::create_delegated_subagent_task,
+            commands::external_agents::run_delegated_subagent_task,
             commands::external_agents::retry_external_agent_task,
             commands::external_agents::sync_external_agent_task,
             commands::external_agents::list_agent_tasks,
             commands::external_agents::list_agent_task_events,
+            // unified extensions
+            commands::extensions::list_extensions,
+            commands::extensions::get_extension_detail,
+            commands::extensions::set_extension_enabled,
             // knowledge
             commands::knowledge::list_knowledge_bases,
             commands::knowledge::create_knowledge_base,

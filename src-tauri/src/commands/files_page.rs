@@ -1,5 +1,6 @@
 use base64::Engine;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::Path;
 use tauri::State;
 use wisespace_core::repo::stored_file::StoredFile;
@@ -30,6 +31,8 @@ pub struct FilesPageEntry {
     /// `file://`-prefixed URI suitable for use as an `<img src>`, populated for
     /// image entries whose backing file exists on disk; `null` for all other entries.
     pub preview_url: Option<String>,
+    pub workspace_id: Option<String>,
+    pub workspace_name: Option<String>,
 }
 
 // ── Pure helpers (unit-testable, no AppState / DB) ────────────────────────────
@@ -52,7 +55,22 @@ fn resolve_storage_path(storage_path: &str) -> String {
 
 /// Build image entries from stored files (mime_type starts with "image/").
 /// Missing rows are included and flagged rather than filtered out.
-pub fn build_image_entries(files: &[StoredFile]) -> Vec<FilesPageEntry> {
+fn workspace_name_for_file(
+    file: &StoredFile,
+    workspace_lookup: &HashMap<String, String>,
+) -> (Option<String>, Option<String>) {
+    let workspace_id = file.workspace_id.clone();
+    let workspace_name = workspace_id
+        .as_ref()
+        .and_then(|id| workspace_lookup.get(id))
+        .cloned();
+    (workspace_id, workspace_name)
+}
+
+pub fn build_image_entries(
+    files: &[StoredFile],
+    workspace_lookup: &HashMap<String, String>,
+) -> Vec<FilesPageEntry> {
     files
         .iter()
         .filter(|f| f.mime_type.starts_with("image/"))
@@ -64,6 +82,7 @@ pub fn build_image_entries(files: &[StoredFile]) -> Vec<FilesPageEntry> {
             } else {
                 Some(format!("file://{}", resolved_path))
             };
+            let (workspace_id, workspace_name) = workspace_name_for_file(f, workspace_lookup);
             FilesPageEntry {
                 id: format!("attachment::{}", f.id),
                 source_kind: "attachment".to_string(),
@@ -75,6 +94,8 @@ pub fn build_image_entries(files: &[StoredFile]) -> Vec<FilesPageEntry> {
                 created_at: f.created_at.clone(),
                 missing,
                 preview_url,
+                workspace_id,
+                workspace_name,
             }
         })
         .collect()
@@ -82,12 +103,16 @@ pub fn build_image_entries(files: &[StoredFile]) -> Vec<FilesPageEntry> {
 
 /// Build non-image file entries from stored files.
 /// Missing rows are included and flagged rather than filtered out.
-pub fn build_file_entries(files: &[StoredFile]) -> Vec<FilesPageEntry> {
+pub fn build_file_entries(
+    files: &[StoredFile],
+    workspace_lookup: &HashMap<String, String>,
+) -> Vec<FilesPageEntry> {
     files
         .iter()
         .filter(|f| !f.mime_type.starts_with("image/"))
         .map(|f| {
             let resolved_path = resolve_storage_path(&f.storage_path);
+            let (workspace_id, workspace_name) = workspace_name_for_file(f, workspace_lookup);
             FilesPageEntry {
                 id: format!("attachment::{}", f.id),
                 source_kind: "attachment".to_string(),
@@ -99,6 +124,8 @@ pub fn build_file_entries(files: &[StoredFile]) -> Vec<FilesPageEntry> {
                 created_at: f.created_at.clone(),
                 missing: check_file_missing(&resolved_path),
                 preview_url: None,
+                workspace_id,
+                workspace_name,
             }
         })
         .collect()
@@ -123,6 +150,8 @@ pub fn build_backup_entries(manifests: &[BackupManifest]) -> Vec<FilesPageEntry>
                 created_at: m.created_at.clone(),
                 missing,
                 preview_url: None,
+                workspace_id: None,
+                workspace_name: None,
             }
         })
         .collect()
@@ -139,7 +168,13 @@ pub fn apply_search_filter(
             let q = q.to_lowercase();
             entries
                 .into_iter()
-                .filter(|e| e.display_name.to_lowercase().contains(&q))
+                .filter(|e| {
+                    e.display_name.to_lowercase().contains(&q)
+                        || e.workspace_name
+                            .as_deref()
+                            .map(|name| name.to_lowercase().contains(&q))
+                            .unwrap_or(false)
+                })
                 .collect()
         }
     }
@@ -310,10 +345,16 @@ pub async fn list_files_page_entries(
             let all_files = wisespace_core::repo::stored_file::list_all_stored_files(&state.sea_db)
                 .await
                 .map_err(|e| e.to_string())?;
+            let workspace_lookup = wisespace_core::repo::workspace::list_workspaces(&state.sea_db)
+                .await
+                .map_err(|e| e.to_string())?
+                .into_iter()
+                .map(|workspace| (workspace.id, workspace.name))
+                .collect::<HashMap<_, _>>();
             if category == "images" {
-                build_image_entries(&all_files)
+                build_image_entries(&all_files, &workspace_lookup)
             } else {
-                build_file_entries(&all_files)
+                build_file_entries(&all_files, &workspace_lookup)
             }
         }
         "backups" => {
@@ -392,6 +433,7 @@ mod tests {
             size_bytes: 1024,
             storage_path: path.to_string(),
             conversation_id: None,
+            workspace_id: None,
             created_at: "2024-01-01T00:00:00Z".to_string(),
         }
     }
@@ -431,7 +473,7 @@ mod tests {
             make_stored_file("2", "doc.pdf", "application/pdf", "/tmp/test/b.pdf"),
             make_stored_file("3", "photo.png", "image/png", "/tmp/test/c.png"),
         ];
-        let entries = build_image_entries(&files);
+        let entries = build_image_entries(&files, &HashMap::new());
         assert_eq!(entries.len(), 2);
         assert!(entries.iter().all(|e| e.category == "images"));
         assert!(entries.iter().all(|e| e.source_kind == "attachment"));
@@ -445,7 +487,7 @@ mod tests {
             make_stored_file("2", "doc.pdf", "application/pdf", "/tmp/test/b.pdf"),
             make_stored_file("3", "data.csv", "text/csv", "/tmp/test/c.csv"),
         ];
-        let entries = build_file_entries(&files);
+        let entries = build_file_entries(&files, &HashMap::new());
         assert_eq!(entries.len(), 2);
         assert!(entries.iter().all(|e| e.category == "files"));
         let names: Vec<&str> = entries.iter().map(|e| e.display_name.as_str()).collect();
@@ -479,7 +521,7 @@ mod tests {
             make_stored_file("1", "photo.jpg", "image/jpeg", "/nonexistent/path/a.jpg"),
             make_stored_file("2", "photo.png", "image/png", "/nonexistent/path/b.png"),
         ];
-        let entries = build_image_entries(&files);
+        let entries = build_image_entries(&files, &HashMap::new());
         // Both rows must be present even though the backing files are gone
         assert_eq!(entries.len(), 2);
         assert!(
@@ -501,7 +543,7 @@ mod tests {
             "application/octet-stream",
             &existing,
         )];
-        let entries = build_file_entries(&files);
+        let entries = build_file_entries(&files, &HashMap::new());
         assert_eq!(entries.len(), 1);
         assert!(
             !entries[0].missing,
@@ -528,7 +570,7 @@ mod tests {
             "image/jpeg",
             "images/abc123_photo.jpg",
         )];
-        let entries = build_image_entries(&files);
+        let entries = build_image_entries(&files, &HashMap::new());
 
         let expected = wisespace_core::storage_paths::documents_root()
             .join("images/abc123_photo.jpg")
@@ -750,6 +792,8 @@ mod tests {
                 created_at: "2024-01-03".to_string(),
                 missing: false,
                 preview_url: None,
+                workspace_id: Some("ws-alpha".to_string()),
+                workspace_name: Some("Alpha Workspace".to_string()),
             },
             FilesPageEntry {
                 id: "attachment::2".to_string(),
@@ -762,6 +806,8 @@ mod tests {
                 created_at: "2024-01-01".to_string(),
                 missing: false,
                 preview_url: None,
+                workspace_id: Some("ws-beta".to_string()),
+                workspace_name: Some("Beta Workspace".to_string()),
             },
             FilesPageEntry {
                 id: "attachment::3".to_string(),
@@ -774,6 +820,8 @@ mod tests {
                 created_at: "2024-01-02".to_string(),
                 missing: false,
                 preview_url: None,
+                workspace_id: None,
+                workspace_name: None,
             },
         ]
     }
@@ -795,6 +843,13 @@ mod tests {
     fn test_search_filter_empty_string_returns_all() {
         let all = apply_search_filter(sample_entries(), Some(""));
         assert_eq!(all.len(), 3);
+    }
+
+    #[test]
+    fn test_search_filter_matches_workspace_name() {
+        let filtered = apply_search_filter(sample_entries(), Some("beta"));
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].display_name, "photo.jpg");
     }
 
     #[test]
@@ -830,7 +885,7 @@ mod tests {
             .to_string_lossy()
             .to_string();
         let files = vec![make_stored_file("1", "photo.jpg", "image/jpeg", &existing)];
-        let entries = build_image_entries(&files);
+        let entries = build_image_entries(&files, &HashMap::new());
         assert_eq!(entries.len(), 1);
         let preview = entries[0]
             .preview_url
@@ -854,7 +909,7 @@ mod tests {
             "image/jpeg",
             "/nonexistent/photo.jpg",
         )];
-        let entries = build_image_entries(&files);
+        let entries = build_image_entries(&files, &HashMap::new());
         assert_eq!(entries.len(), 1);
         assert!(
             entries[0].preview_url.is_none(),
@@ -870,7 +925,7 @@ mod tests {
             "application/pdf",
             "/tmp/doc.pdf",
         )];
-        let entries = build_file_entries(&files);
+        let entries = build_file_entries(&files, &HashMap::new());
         assert_eq!(entries.len(), 1);
         assert!(
             entries[0].preview_url.is_none(),

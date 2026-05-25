@@ -36,6 +36,9 @@ mod m20260509_000001_agent_runtime_foundation;
 mod m20260509_000002_agent_run_resume_support;
 mod m20260510_000001_sdk_only_agent_runtime;
 mod m20260512_000001_add_conversation_source;
+mod m20260523_000001_workspace_identity_foundation;
+mod m20260524_000001_add_workspace_binding_tables;
+mod m20260524_000002_add_agent_task_delegation_fields;
 
 pub struct Migrator;
 
@@ -79,6 +82,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260509_000002_agent_run_resume_support::Migration),
             Box::new(m20260510_000001_sdk_only_agent_runtime::Migration),
             Box::new(m20260512_000001_add_conversation_source::Migration),
+            Box::new(m20260523_000001_workspace_identity_foundation::Migration),
+            Box::new(m20260524_000001_add_workspace_binding_tables::Migration),
+            Box::new(m20260524_000002_add_agent_task_delegation_fields::Migration),
         ]
     }
 }
@@ -247,6 +253,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn migrator_up_adds_workspace_binding_tables_on_sqlite() {
+        let db = sqlite_test_db().await;
+
+        Migrator::up(&db, None)
+            .await
+            .expect("run sqlite migrations");
+
+        let manager = SchemaManager::new(&db);
+        for table in [
+            "workspace_mcp_bindings",
+            "workspace_knowledge_bindings",
+            "workspace_memory_bindings",
+        ] {
+            assert!(
+                manager.has_table(table).await.expect("check binding table"),
+                "missing table {table}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn migrator_up_adds_agent_task_delegation_columns_on_sqlite() {
+        let db = sqlite_test_db().await;
+
+        Migrator::up(&db, None)
+            .await
+            .expect("run sqlite migrations");
+
+        let manager = SchemaManager::new(&db);
+        for column in [
+            "parent_run_id",
+            "parent_task_id",
+            "assignee_kind",
+            "assignee_label",
+            "delegation_depth",
+        ] {
+            assert!(
+                manager
+                    .has_column("agent_tasks", column)
+                    .await
+                    .expect("check delegation column"),
+                "missing agent_tasks.{column}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn migrator_up_adds_external_agent_platform_tables_on_sqlite() {
         let db = sqlite_test_db().await;
 
@@ -319,5 +372,40 @@ mod tests {
         Migrator::refresh(&db)
             .await
             .expect("refresh sqlite migrations");
+    }
+
+    #[tokio::test]
+    async fn migrator_up_adds_workspace_identity_foundation_on_sqlite() {
+        let db = sqlite_test_db().await;
+
+        Migrator::up(&db, None)
+            .await
+            .expect("run sqlite migrations");
+
+        let manager = SchemaManager::new(&db);
+        assert!(
+            manager
+                .has_table("workspaces")
+                .await
+                .expect("check workspaces table"),
+            "missing workspaces table"
+        );
+
+        for (table, column) in [
+            ("conversations", "workspace_id"),
+            ("agent_profiles", "workspace_id"),
+            ("agent_runs", "workspace_id"),
+            ("agent_sessions", "workspace_id"),
+            ("agent_tasks", "workspace_id"),
+            ("stored_files", "workspace_id"),
+        ] {
+            assert!(
+                manager
+                    .has_column(table, column)
+                    .await
+                    .expect("check workspace identity column"),
+                "missing {table}.{column}"
+            );
+        }
     }
 }

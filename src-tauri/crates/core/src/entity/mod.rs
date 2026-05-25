@@ -22,6 +22,10 @@ pub mod settings;
 pub mod skill_states;
 pub mod tool_descriptors;
 pub mod tool_executions;
+pub mod workspaces;
+pub mod workspace_knowledge_bindings;
+pub mod workspace_mcp_bindings;
+pub mod workspace_memory_bindings;
 
 // Wave 2+ entities
 pub mod artifacts;

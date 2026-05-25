@@ -30,6 +30,7 @@ describe('fileStore', () => {
       error: null,
       search: '',
       sortKey: 'createdAt',
+      workspaceFilter: 'all',
     });
   });
 
@@ -205,6 +206,36 @@ describe('fileStore', () => {
 
       expect(useFileStore.getState().rows.find((r) => r.id === '1')).toBeUndefined();
       expect(useFileStore.getState().rows.find((r) => r.id === '2')).toBeDefined();
+    });
+  });
+
+  describe('workspace asset filtering', () => {
+    it('derives workspace options from loaded rows', async () => {
+      invokeMock.mockResolvedValueOnce([
+        makeRow('1', { workspaceId: 'ws-1', workspaceName: 'Alpha' }),
+        makeRow('2', { workspaceId: 'ws-2', workspaceName: 'Beta' }),
+      ]);
+      const { useFileStore } = await import('../fileStore');
+
+      await useFileStore.getState().loadCategory('files');
+
+      expect(useFileStore.getState().getWorkspaceOptions()).toEqual([
+        { value: 'ws-1', label: 'Alpha' },
+        { value: 'ws-2', label: 'Beta' },
+      ]);
+    });
+
+    it('returns visible rows for the selected workspace filter', async () => {
+      invokeMock.mockResolvedValueOnce([
+        makeRow('1', { workspaceId: 'ws-1', workspaceName: 'Alpha' }),
+        makeRow('2', { workspaceId: 'ws-2', workspaceName: 'Beta' }),
+      ]);
+      const { useFileStore } = await import('../fileStore');
+
+      await useFileStore.getState().loadCategory('files');
+      useFileStore.getState().setWorkspaceFilter('ws-2');
+
+      expect(useFileStore.getState().getVisibleRows().map((row) => row.id)).toEqual(['2']);
     });
   });
 });

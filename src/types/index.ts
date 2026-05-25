@@ -137,6 +137,7 @@ export interface ConversationCategory {
 
 export interface Conversation {
   id: string;
+  workspace_id?: string | null;
   title: string;
   model_id: string;
   provider_id: string;
@@ -162,6 +163,17 @@ export interface Conversation {
   message_count: number;
   created_at: number;
   updated_at: number;
+}
+
+export interface Workspace {
+  id: string;
+  slug: string;
+  name: string;
+  root_path: string;
+  source: string;
+  description?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ToolCall {
@@ -619,7 +631,7 @@ export interface DrawingEditInput extends DrawingGenerateInput {
 export interface DrawingMaskEditInput extends DrawingEditInput {
   mask_file_id: string;
 }
-export type SettingsSection = 'providers' | 'defaultModel' | 'conversationSettings' | 'general' | 'display' | 'proxy' | 'shortcuts' | 'data' | 'storage' | 'dataStorage' | 'about' | 'searchProviders' | 'mcpServers' | 'agentExecutors' | 'backup';
+export type SettingsSection = 'providers' | 'defaultModel' | 'conversationSettings' | 'general' | 'display' | 'proxy' | 'shortcuts' | 'data' | 'storage' | 'dataStorage' | 'about' | 'searchProviders' | 'mcpServers' | 'agentExecutors' | 'backup' | 'extensions';
 
 // === Files Module ===
 export type FileCategory = 'images' | 'files';
@@ -638,6 +650,8 @@ export interface FileRow {
   previewUrl?: string;
   missing?: boolean;
   sourceKind?: string;
+  workspaceId?: string | null;
+  workspaceName?: string | null;
 }
 
 export interface FilesPageEntry {
@@ -651,6 +665,8 @@ export interface FilesPageEntry {
   createdAt: string;
   missing: boolean;
   previewUrl?: string | null;
+  workspaceId?: string | null;
+  workspaceName?: string | null;
 }
 
 // ── Skills ─────────────────────────────────────────────────────────────
@@ -711,3 +727,4 @@ export * from './backup';
 export * from './workspace';
 export * from './agent';
 export * from './externalAgent';
+export * from './extension';

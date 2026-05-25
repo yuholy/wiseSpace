@@ -12,6 +12,7 @@ pub struct Model {
     pub size_bytes: i64,
     pub storage_path: String,
     pub conversation_id: Option<String>,
+    pub workspace_id: Option<String>,
     pub created_at: String,
 }
 

@@ -17,6 +17,8 @@ function normalizeFileRow(row: FileRow | FilesPageEntry): FileRow {
       previewUrl,
       missing: row.missing,
       sourceKind: row.sourceKind,
+      workspaceId: row.workspaceId ?? null,
+      workspaceName: row.workspaceName ?? null,
     };
   }
 
@@ -32,10 +34,14 @@ interface FileStoreState {
   error: string | null;
   search: string;
   sortKey: FileSortKey;
+  workspaceFilter: string;
 
   loadCategory: (category: FileCategory) => Promise<void>;
   setSearch: (search: string) => void;
   setSortKey: (key: FileSortKey) => void;
+  setWorkspaceFilter: (workspaceId: string) => void;
+  getWorkspaceOptions: () => Array<{ value: string; label: string }>;
+  getVisibleRows: () => FileRow[];
   clearError: () => void;
   openEntry: (path: string) => Promise<void>;
   revealEntry: (path: string) => Promise<void>;
@@ -48,6 +54,7 @@ export const useFileStore = create<FileStoreState>((set, get) => ({
   error: null,
   search: '',
   sortKey: 'createdAt',
+  workspaceFilter: 'all',
 
   loadCategory: async (category: FileCategory) => {
     set({ loading: true, error: null });
@@ -66,6 +73,24 @@ export const useFileStore = create<FileStoreState>((set, get) => ({
   setSearch: (search: string) => set({ search }),
 
   setSortKey: (key: FileSortKey) => set({ sortKey: key }),
+
+  setWorkspaceFilter: (workspaceId: string) => set({ workspaceFilter: workspaceId }),
+
+  getWorkspaceOptions: () => {
+    const deduped = new Map<string, string>();
+    for (const row of get().rows) {
+      if (row.workspaceId && row.workspaceName) {
+        deduped.set(row.workspaceId, row.workspaceName);
+      }
+    }
+    return Array.from(deduped.entries()).map(([value, label]) => ({ value, label }));
+  },
+
+  getVisibleRows: () => {
+    const { rows, workspaceFilter } = get();
+    if (workspaceFilter === 'all') return rows;
+    return rows.filter((row) => row.workspaceId === workspaceFilter);
+  },
 
   clearError: () => set({ error: null }),
 

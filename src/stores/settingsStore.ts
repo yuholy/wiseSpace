@@ -124,6 +124,7 @@ interface SettingsState {
   loading: boolean;
   /** Set once after the first successful fetchSettings; guards saveSettings from writing stale data. */
   _loaded: boolean;
+  _pendingSettingsPatch: Partial<AppSettings> | null;
   error: string | null;
   globalShortcutStatus: GlobalShortcutStatus;
   fetchSettings: () => Promise<void>;
@@ -135,6 +136,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   settings: DEFAULT_SETTINGS,
   loading: true,
   _loaded: false,
+  _pendingSettingsPatch: null,
   error: null,
   globalShortcutStatus: {
     enabled: false,
@@ -147,19 +149,50 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({ loading: true });
     try {
       const fetched = await invoke<Partial<AppSettings>>('get_settings');
-      set({ settings: { ...DEFAULT_SETTINGS, ...fetched }, loading: false, _loaded: true, error: null });
+      const pendingPatch = get()._pendingSettingsPatch;
+      const mergedSettings = {
+        ...DEFAULT_SETTINGS,
+        ...fetched,
+        ...pendingPatch,
+      };
+      set({
+        settings: mergedSettings,
+        loading: false,
+        _loaded: true,
+        _pendingSettingsPatch: null,
+        error: null,
+      });
+
+      if (pendingPatch) {
+        try {
+          await invoke('save_settings', { settings: mergedSettings });
+        } catch (e) {
+          set({ error: String(e), _pendingSettingsPatch: pendingPatch });
+        }
+      }
     } catch (e) {
       set({ error: String(e), loading: false, _loaded: true });
     }
   },
 
   saveSettings: async (partial) => {
+    const merged = { ...get().settings, ...partial };
     if (!get()._loaded) {
-      console.warn('[settingsStore] saveSettings skipped: settings not loaded yet');
+      set({
+        settings: merged,
+        error: null,
+        _pendingSettingsPatch: {
+          ...(get()._pendingSettingsPatch ?? {}),
+          ...partial,
+        },
+      });
+      if (!get().loading) {
+        void get().fetchSettings();
+      }
       return;
     }
-    const merged = { ...get().settings, ...partial };
-    set({ settings: merged, error: null });
+
+    set({ settings: merged, error: null, _pendingSettingsPatch: null });
     try {
       await invoke('save_settings', { settings: merged });
     } catch (e) {

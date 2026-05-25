@@ -85,6 +85,25 @@ async fn resolve_system_prompt(
     crate::role_prompts::resolve_effective_system_prompt(db, conversation).await
 }
 
+async fn resolve_runtime_binding_ids(
+    db: &DatabaseConnection,
+    conversation_id: &str,
+    enabled_mcp_server_ids: Option<Vec<String>>,
+    enabled_knowledge_base_ids: Option<Vec<String>>,
+    enabled_memory_namespace_ids: Option<Vec<String>>,
+) -> Result<(Vec<String>, Vec<String>, Vec<String>), String> {
+    let (workspace_mcp_ids, workspace_knowledge_ids, workspace_memory_ids) =
+        wisespace_core::repo::workspace::resolve_effective_binding_ids(db, conversation_id)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    Ok((
+        enabled_mcp_server_ids.unwrap_or(workspace_mcp_ids),
+        enabled_knowledge_base_ids.unwrap_or(workspace_knowledge_ids),
+        enabled_memory_namespace_ids.unwrap_or(workspace_memory_ids),
+    ))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct EffectiveChatModelParams {
     temperature: Option<f64>,
@@ -1029,14 +1048,23 @@ pub async fn update_conversation(
     id: String,
     mut input: UpdateConversationInput,
 ) -> Result<Conversation, String> {
+    let should_sync_workspace_name = input.title.is_some();
     if let Some(provider_id) = input.provider_id.as_deref() {
         let real_provider_id = resolve_command_provider_id(&state.sea_db, provider_id).await?;
         input.provider_id = Some(real_provider_id);
     }
 
-    wisespace_core::repo::conversation::update_conversation(&state.sea_db, &id, input)
+    let updated = wisespace_core::repo::conversation::update_conversation(&state.sea_db, &id, input)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    if should_sync_workspace_name {
+        let _ =
+            crate::agent_runtime::profile::sync_workspace_root_to_conversation_title(&state.sea_db, &id)
+                .await;
+    }
+
+    Ok(updated)
 }
 
 #[tauri::command]
@@ -1910,6 +1938,11 @@ pub async fn regenerate_conversation_title(
                         },
                     );
                 } else {
+                    let _ = crate::agent_runtime::profile::sync_workspace_root_to_conversation_title(
+                        &db,
+                        &conv_id,
+                    )
+                    .await;
                     let _ = app_clone.emit(
                         "conversation-title-updated",
                         ConversationTitleUpdatedEvent {
@@ -2413,6 +2446,11 @@ fn spawn_stream_task(
             {
                 tracing::error!("Failed to auto-update title: {}", e);
             } else {
+                let _ = crate::agent_runtime::profile::sync_workspace_root_to_conversation_title(
+                    &db,
+                    &conversation_id,
+                )
+                .await;
                 let _ = app.emit(
                     "conversation-title-updated",
                     ConversationTitleUpdatedEvent {
@@ -2464,6 +2502,12 @@ fn spawn_stream_task(
                             },
                         );
                     } else {
+                        let _ =
+                            crate::agent_runtime::profile::sync_workspace_root_to_conversation_title(
+                                &db,
+                                &conversation_id,
+                            )
+                            .await;
                         let _ = app.emit(
                             "conversation-title-updated",
                             ConversationTitleUpdatedEvent {
@@ -2540,6 +2584,15 @@ pub async fn send_message(
         wisespace_core::repo::conversation::get_conversation(&state.sea_db, &conversation_id)
             .await
             .map_err(|e| e.to_string())?;
+
+    let (effective_mcp_ids, effective_kb_ids, effective_mem_ids) = resolve_runtime_binding_ids(
+        &state.sea_db,
+        &conversation_id,
+        enabled_mcp_server_ids,
+        enabled_knowledge_base_ids,
+        enabled_memory_namespace_ids,
+    )
+    .await?;
 
     // Check if this is the first message (message_count was 0 before we incremented)
     let is_first_message = conversation.message_count <= 1;
@@ -2627,14 +2680,12 @@ pub async fn send_message(
     let assistant_message_id = wisespace_core::utils::gen_id();
 
     // RAG retrieval: search enabled knowledge bases and memory namespaces
-    let kb_ids = enabled_knowledge_base_ids.unwrap_or_default();
-    let mem_ids = enabled_memory_namespace_ids.unwrap_or_default();
     let rag_result = crate::indexing::collect_rag_context(
         &state.sea_db,
         &state.master_key,
         &state.vector_store,
-        &kb_ids,
-        &mem_ids,
+        &effective_kb_ids,
+        &effective_mem_ids,
         &content,
         5,
     )
@@ -2821,7 +2872,7 @@ pub async fn send_message(
     };
 
     // 6. Load MCP tools for enabled servers
-    let mcp_ids = enabled_mcp_server_ids.unwrap_or_default();
+    let mcp_ids = effective_mcp_ids;
     let tools: Option<Vec<ChatTool>> = if mcp_ids.is_empty() {
         None
     } else {
@@ -2975,6 +3026,15 @@ pub async fn regenerate_message(
             .await
             .map_err(|e| e.to_string())?;
 
+    let (effective_mcp_ids, effective_kb_ids, effective_mem_ids) = resolve_runtime_binding_ids(
+        &state.sea_db,
+        &conversation_id,
+        enabled_mcp_server_ids,
+        enabled_knowledge_base_ids,
+        enabled_memory_namespace_ids,
+    )
+    .await?;
+
     // Override conversation model_id/provider_id so spawn_stream_task uses the correct model
     if let Some(ref mid) = active_model_id {
         conversation.model_id = mid.clone();
@@ -3031,14 +3091,12 @@ pub async fn regenerate_message(
 
     // RAG retrieval for regeneration
     let memory_tag = {
-        let kb_ids = enabled_knowledge_base_ids.unwrap_or_default();
-        let mem_ids = enabled_memory_namespace_ids.unwrap_or_default();
         let rag_result = crate::indexing::collect_rag_context(
             &state.sea_db,
             &state.master_key,
             &state.vector_store,
-            &kb_ids,
-            &mem_ids,
+            &effective_kb_ids,
+            &effective_mem_ids,
             &last_user_msg.content,
             5,
         )
@@ -3149,7 +3207,7 @@ pub async fn regenerate_message(
     };
 
     // Load MCP tools for enabled servers
-    let mcp_ids = enabled_mcp_server_ids.unwrap_or_default();
+    let mcp_ids = effective_mcp_ids;
     let tools: Option<Vec<ChatTool>> = if mcp_ids.is_empty() {
         None
     } else {
@@ -3306,6 +3364,14 @@ pub async fn regenerate_with_model(
         wisespace_core::repo::conversation::get_conversation(&state.sea_db, &conversation_id)
             .await
             .map_err(|e| e.to_string())?;
+    let (effective_mcp_ids, effective_kb_ids, effective_mem_ids) = resolve_runtime_binding_ids(
+        &state.sea_db,
+        &conversation_id,
+        enabled_mcp_server_ids,
+        enabled_knowledge_base_ids,
+        enabled_memory_namespace_ids,
+    )
+    .await?;
     conversation.model_id = target_model_id;
     conversation.provider_id = target_provider_id.clone();
 
@@ -3366,14 +3432,12 @@ pub async fn regenerate_with_model(
 
     // RAG retrieval
     let memory_tag = {
-        let kb_ids = enabled_knowledge_base_ids.unwrap_or_default();
-        let mem_ids = enabled_memory_namespace_ids.unwrap_or_default();
         let rag_result = crate::indexing::collect_rag_context(
             &state.sea_db,
             &state.master_key,
             &state.vector_store,
-            &kb_ids,
-            &mem_ids,
+            &effective_kb_ids,
+            &effective_mem_ids,
             &user_msg.content,
             5,
         )
@@ -3477,7 +3541,7 @@ pub async fn regenerate_with_model(
             .and_then(|s| serde_json::from_str(s).ok()),
     };
 
-    let mcp_ids = enabled_mcp_server_ids.unwrap_or_default();
+    let mcp_ids = effective_mcp_ids;
     let tools: Option<Vec<ChatTool>> = if mcp_ids.is_empty() {
         None
     } else {
@@ -4146,6 +4210,7 @@ mod tests {
     ) -> Conversation {
         Conversation {
             id: "conv-1".to_string(),
+            workspace_id: None,
             title: "Conversation".to_string(),
             model_id: "model-1".to_string(),
             provider_id: "provider-1".to_string(),
