@@ -34,6 +34,7 @@ const MENU_ICONS: Record<SettingsSection, React.ReactNode> = {
   searchProviders: <Search size={16} />,
   mcpServers: <Plug size={16} />,
   agentExecutors: <Bot size={16} />,
+  externalAgents: <Globe size={16} />,
   backup: <CloudUpload size={16} />,
   extensions: <Puzzle size={16} />,
 };
@@ -51,7 +52,7 @@ const SECTION_GROUPS: Array<{
   {
     key: 'extensions',
     titleKey: 'settings.groups.extensions',
-    sections: ['mcpServers', 'agentExecutors', 'extensions'],
+    sections: ['mcpServers', 'agentExecutors', 'externalAgents', 'extensions'],
   },
   {
     key: 'system',

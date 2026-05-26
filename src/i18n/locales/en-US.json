@@ -468,12 +468,16 @@
       "system": "Data & System"
     },
     "agentExecutors": {
-      "title": "External Agents",
-      "description": "wiseSpace currently shows available agent runtimes and external agent connectors here. Working directory and permission mode for the built-in local agent can still be configured from the conversation page.",
+      "title": "Local Agent",
+      "description": "wiseSpace currently shows available agent runtimes here. Working directory and permission mode for the built-in local agent can still be configured from the conversation page.",
       "localRuntime": "Local Runtime",
       "localTag": "Local",
       "cwd": "Working Directory",
       "permissionMode": "Permission Mode"
+    },
+    "externalAgents": {
+      "title": "External Agent Connectors",
+      "description": "Connect Pi Adapter, NanoClaw, or other OpenClaw-compatible services as external agents for wiseSpace."
     },
     "extensions": {
       "title": "Extensions",

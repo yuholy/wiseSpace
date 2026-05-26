@@ -468,12 +468,16 @@
       "system": "数据与系统"
     },
     "agentExecutors": {
-      "title": "外部 Agent",
-      "description": "wiseSpace 当前主要在这里展示可接入的 Agent 运行时与外部 Agent 连接器。内置本地 Agent 的工作目录和权限模式仍可在对话页配置。",
+      "title": "本地 Agent",
+      "description": "wiseSpace 当前主要在这里展示可接入的 Agent 运行时。内置本地 Agent 的工作目录和权限模式仍可在对话页配置。",
       "localRuntime": "本地运行时",
       "localTag": "本地",
       "cwd": "工作目录",
       "permissionMode": "权限模式"
+    },
+    "externalAgents": {
+      "title": "外部 Agent 接入",
+      "description": "把 Pi Adapter、NanoClaw 或其他 OpenClaw 类服务作为 wiseSpace 的外部 Agent。"
     },
     "extensions": {
       "title": "扩展能力",
