@@ -54,9 +54,8 @@ fn build_attachment_execution_prompt(prompt: &str, attachments: &[Attachment]) -
     let attachment_lines = attachments
         .iter()
         .map(|attachment| {
-            let absolute_path = wisespace_core::storage_paths::resolve_documents_path(
-                &attachment.file_path,
-            );
+            let absolute_path =
+                wisespace_core::storage_paths::resolve_documents_path(&attachment.file_path);
             format!(
                 "- {} ({})\n  absolute_path: {}",
                 attachment.file_name,
@@ -164,9 +163,10 @@ async fn resolve_multimodal_fallback_target(
         let real_provider_id =
             crate::commands::conversations::resolve_command_provider_id(&state.sea_db, provider_id)
                 .await?;
-        let provider = wisespace_core::repo::provider::get_provider(&state.sea_db, &real_provider_id)
-            .await
-            .map_err(|e| e.to_string())?;
+        let provider =
+            wisespace_core::repo::provider::get_provider(&state.sea_db, &real_provider_id)
+                .await
+                .map_err(|e| e.to_string())?;
         let model = provider
             .models
             .iter()
@@ -363,7 +363,9 @@ pub async fn maybe_augment_prompt_with_multimodal_fallback(
 
     let registry = ProviderRegistry::create_default();
     let adapter = registry
-        .get(provider_type_to_registry_key(&target.provider.provider_type))
+        .get(provider_type_to_registry_key(
+            &target.provider.provider_type,
+        ))
         .ok_or_else(|| "Provider adapter not found for multimodal fallback model".to_string())?;
 
     let response = adapter
@@ -527,14 +529,18 @@ pub async fn prepare_local_agent_execution_context(
             effective_cwd,
             is_first_message,
             global_settings,
-            execution_prompt: build_attachment_execution_prompt(&agent_prompt, &persisted_attachments),
+            execution_prompt: build_attachment_execution_prompt(
+                &agent_prompt,
+                &persisted_attachments,
+            ),
         })
     }
     .await;
 
     if let Err(error) = &prepared {
         let summary = format!("Agent setup failed before execution: {}", error);
-        let _ = agent_run::update_run_status(&state.sea_db, &run.id, "failed", Some(&summary)).await;
+        let _ =
+            agent_run::update_run_status(&state.sea_db, &run.id, "failed", Some(&summary)).await;
     }
 
     prepared
@@ -554,8 +560,12 @@ mod tests {
         assert!(model_id_probably_supports_vision(Some("gpt-4o-vision")));
         assert!(model_id_probably_supports_vision(Some("gpt-4o-mini")));
         assert!(model_id_probably_supports_vision(Some("gemini-2.0-flash")));
-        assert!(model_id_probably_supports_vision(Some("my-multimodal-model")));
-        assert!(!model_id_probably_supports_vision(Some("deepseek-v4-flash")));
+        assert!(model_id_probably_supports_vision(Some(
+            "my-multimodal-model"
+        )));
+        assert!(!model_id_probably_supports_vision(Some(
+            "deepseek-v4-flash"
+        )));
         assert!(!model_id_probably_supports_vision(Some("deepseek-v3")));
         assert!(!model_id_probably_supports_vision(None));
     }

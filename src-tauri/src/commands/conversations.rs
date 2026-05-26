@@ -244,7 +244,10 @@ fn extract_think_tags(content: &str) -> Option<String> {
 
 fn sanitize_summary_file_name(name: &str) -> String {
     let path = Path::new(name);
-    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("summary");
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("summary");
     let sanitized_stem: String = stem
         .chars()
         .filter_map(|c| {
@@ -732,10 +735,9 @@ async fn resolve_multimodal_fallback_target(
     }
 
     let select_target = |provider: ProviderConfig, model: wisespace_core::types::Model| async move {
-        let key_row =
-            wisespace_core::repo::provider::get_active_key(&state.sea_db, &provider.id)
-                .await
-                .map_err(|e| e.to_string())?;
+        let key_row = wisespace_core::repo::provider::get_active_key(&state.sea_db, &provider.id)
+            .await
+            .map_err(|e| e.to_string())?;
         let decrypted_key =
             wisespace_core::crypto::decrypt_key(&key_row.key_encrypted, &state.master_key)
                 .map_err(|e| e.to_string())?;
@@ -754,9 +756,10 @@ async fn resolve_multimodal_fallback_target(
         settings.multimodal_fallback_model_id.as_deref(),
     ) {
         let real_provider_id = resolve_command_provider_id(&state.sea_db, provider_id).await?;
-        let provider = wisespace_core::repo::provider::get_provider(&state.sea_db, &real_provider_id)
-            .await
-            .map_err(|e| e.to_string())?;
+        let provider =
+            wisespace_core::repo::provider::get_provider(&state.sea_db, &real_provider_id)
+                .await
+                .map_err(|e| e.to_string())?;
         let model = provider
             .models
             .iter()
@@ -793,7 +796,11 @@ async fn resolve_multimodal_fallback_target(
         let Some(model) = provider
             .models
             .iter()
-            .find(|model| model.enabled && model.model_type == ModelType::Chat && model_probably_supports_vision(model))
+            .find(|model| {
+                model.enabled
+                    && model.model_type == ModelType::Chat
+                    && model_probably_supports_vision(model)
+            })
             .cloned()
         else {
             continue;
@@ -957,7 +964,9 @@ async fn analyze_message_images_with_fallback(
 
     let registry = ProviderRegistry::create_default();
     let adapter = registry
-        .get(provider_type_to_registry_key(&target.provider.provider_type))
+        .get(provider_type_to_registry_key(
+            &target.provider.provider_type,
+        ))
         .ok_or_else(|| "Provider adapter not found for multimodal fallback model".to_string())?;
 
     let response = adapter
@@ -1011,8 +1020,8 @@ async fn chat_message_from_message_with_fallback(
     include_images: bool,
     analysis_cache: &mut HashMap<String, String>,
 ) -> Result<ChatMessage, String> {
-    let mut chat_message =
-        chat_message_from_message(file_store, message, include_images).map_err(|e| e.to_string())?;
+    let mut chat_message = chat_message_from_message(file_store, message, include_images)
+        .map_err(|e| e.to_string())?;
 
     if include_images || message.role != MessageRole::User {
         return Ok(chat_message);
@@ -1036,8 +1045,7 @@ async fn chat_message_from_message_with_fallback(
         ChatContent::Multipart(_) => message.content.clone(),
     };
     chat_message.content = ChatContent::Text(build_multimodal_fallback_augmented_text(
-        &base_text,
-        &analysis,
+        &base_text, &analysis,
     ));
     Ok(chat_message)
 }
@@ -1082,14 +1090,17 @@ pub async fn update_conversation(
         input.provider_id = Some(real_provider_id);
     }
 
-    let updated = wisespace_core::repo::conversation::update_conversation(&state.sea_db, &id, input)
-        .await
-        .map_err(|e| e.to_string())?;
+    let updated =
+        wisespace_core::repo::conversation::update_conversation(&state.sea_db, &id, input)
+            .await
+            .map_err(|e| e.to_string())?;
 
     if should_sync_workspace_name {
-        let _ =
-            crate::agent_runtime::profile::sync_workspace_root_to_conversation_title(&state.sea_db, &id)
-                .await;
+        let _ = crate::agent_runtime::profile::sync_workspace_root_to_conversation_title(
+            &state.sea_db,
+            &id,
+        )
+        .await;
     }
 
     Ok(updated)
@@ -1966,11 +1977,11 @@ pub async fn regenerate_conversation_title(
                         },
                     );
                 } else {
-                    let _ = crate::agent_runtime::profile::sync_workspace_root_to_conversation_title(
-                        &db,
-                        &conv_id,
-                    )
-                    .await;
+                    let _ =
+                        crate::agent_runtime::profile::sync_workspace_root_to_conversation_title(
+                            &db, &conv_id,
+                        )
+                        .await;
                     let _ = app_clone.emit(
                         "conversation-title-updated",
                         ConversationTitleUpdatedEvent {
@@ -4131,7 +4142,9 @@ pub async fn summarize_conversation_for_user(
         &state,
         &conversation,
         &transcript,
-        existing_summary.as_ref().map(|value| value.summary_text.as_str()),
+        existing_summary
+            .as_ref()
+            .map(|value| value.summary_text.as_str()),
         &settings,
     )
     .await?;

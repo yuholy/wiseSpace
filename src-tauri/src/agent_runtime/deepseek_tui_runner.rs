@@ -5,10 +5,10 @@ use super::cli_runner::{
 use super::compat::{
     ensure_agent_assistant_message, AgentCancelTokenGuard, RunningAgentGuard, RUNNING_AGENTS,
 };
-use super::context::{maybe_augment_prompt_with_multimodal_fallback, model_id_probably_supports_vision};
-use super::payloads::{
-    AgentErrorPayload, AgentPermissionRequestPayload, AgentStatusPayload,
+use super::context::{
+    maybe_augment_prompt_with_multimodal_fallback, model_id_probably_supports_vision,
 };
+use super::payloads::{AgentErrorPayload, AgentPermissionRequestPayload, AgentStatusPayload};
 use super::result_renderer;
 use super::{profile, runtime};
 use crate::AppState;
@@ -396,8 +396,13 @@ async fn create_turn_with_recovery(
             .latest_turn_id
             .as_deref()
             .and_then(|turn_id| detail.turns.iter().find(|turn| turn.id == turn_id));
-        let latest_status = latest_turn.map(|turn| turn.status.as_str()).unwrap_or("unknown");
-        if !matches!(latest_status, "completed" | "failed" | "interrupted" | "cancelled") {
+        let latest_status = latest_turn
+            .map(|turn| turn.status.as_str())
+            .unwrap_or("unknown");
+        if !matches!(
+            latest_status,
+            "completed" | "failed" | "interrupted" | "cancelled"
+        ) {
             if let Some(turn_id) = detail.thread.latest_turn_id.as_deref() {
                 let _ = interrupt_runtime_turn(client, thread_id, turn_id).await;
                 sleep(Duration::from_millis(250)).await;
@@ -449,7 +454,9 @@ fn serialize_runtime_context(
     let mut next = base.clone();
     next.runtime_thread_id = Some(thread_id.to_string());
     next.latest_turn_id = turn_id.map(ToString::to_string);
-    next.deepseek_model = model_id.map(ToString::to_string).or_else(|| next.deepseek_model.clone());
+    next.deepseek_model = model_id
+        .map(ToString::to_string)
+        .or_else(|| next.deepseek_model.clone());
     next.workspace_root = Some(workspace_root.to_string());
     serialize_deepseek_session_context(&next)
 }
@@ -502,7 +509,10 @@ fn extract_runtime_failure_reason(payload: &Value) -> Option<String> {
     }
 
     if let Some(item) = extract_payload_item(payload) {
-        for candidate in [item.detail.as_deref(), item.summary.as_deref()].into_iter().flatten() {
+        for candidate in [item.detail.as_deref(), item.summary.as_deref()]
+            .into_iter()
+            .flatten()
+        {
             if let Some(message) = compact_runtime_error_message(candidate) {
                 return Some(message);
             }
@@ -516,25 +526,27 @@ fn summarize_runtime_item(item: &RuntimeItem) -> Value {
     let mut summary = serde_json::Map::new();
     summary.insert("kind".to_string(), Value::String(item.kind.clone()));
     summary.insert("status".to_string(), Value::String(item.status.clone()));
-    if let Some(item_summary) = item.summary.as_ref().filter(|value| !value.trim().is_empty()) {
+    if let Some(item_summary) = item
+        .summary
+        .as_ref()
+        .filter(|value| !value.trim().is_empty())
+    {
         summary.insert("summary".to_string(), Value::String(item_summary.clone()));
     }
-    if let Some(item_detail) = item.detail.as_ref().filter(|value| !value.trim().is_empty()) {
+    if let Some(item_detail) = item
+        .detail
+        .as_ref()
+        .filter(|value| !value.trim().is_empty())
+    {
         summary.insert("detail".to_string(), Value::String(item_detail.clone()));
     }
     Value::Object(summary)
 }
 
 fn extract_command_input(detail: &ThreadDetailResponse, turn_id: &str) -> Value {
-    let Some(item) = detail
-        .items
-        .iter()
-        .rev()
-        .find(|item| {
-            item.turn_id == turn_id
-                && matches!(item.kind.as_str(), "command_execution" | "tool_call")
-        })
-    else {
+    let Some(item) = detail.items.iter().rev().find(|item| {
+        item.turn_id == turn_id && matches!(item.kind.as_str(), "command_execution" | "tool_call")
+    }) else {
         return serde_json::json!({});
     };
 
@@ -697,7 +709,8 @@ pub async fn start_deepseek_tui_run(
         .or_else(|| session.sdk_context_json.clone());
     let context = normalize_thread_context(existing_context_json.as_deref(), &effective_cwd);
     let existing_thread_id = context.runtime_thread_id.clone();
-    let permission_mode = PermissionMode::from_str(input.permission_mode.as_deref().unwrap_or("default"));
+    let permission_mode =
+        PermissionMode::from_str(input.permission_mode.as_deref().unwrap_or("default"));
     let should_auto_approve = permission_mode == PermissionMode::FullAccess;
 
     let thread = if let Some(thread_id) = existing_thread_id {
@@ -786,7 +799,9 @@ pub async fn start_deepseek_tui_run(
             &global_settings,
             &input.prompt,
             &persisted_attachments,
-            model_id_probably_supports_vision(input.model_id.as_deref().or(thread.model.as_deref())),
+            model_id_probably_supports_vision(
+                input.model_id.as_deref().or(thread.model.as_deref()),
+            ),
         )
         .await?;
         let execution_prompt =
@@ -824,16 +839,24 @@ pub async fn start_deepseek_tui_run(
             &execution_prompt,
         )
         .await?;
-        Ok::<_, String>((persisted_attachments, global_settings, user_message, execution_prompt, turn_response))
+        Ok::<_, String>((
+            persisted_attachments,
+            global_settings,
+            user_message,
+            execution_prompt,
+            turn_response,
+        ))
     }
     .await;
 
     if let Err(error) = &prepared {
         let summary = format!("Agent setup failed before execution: {}", error);
-        let _ = agent_run::update_run_status(&state.sea_db, &run.id, "failed", Some(&summary)).await;
+        let _ =
+            agent_run::update_run_status(&state.sea_db, &run.id, "failed", Some(&summary)).await;
     }
 
-    let (_persisted_attachments, _global_settings, user_message, _execution_prompt, turn_response) = prepared?;
+    let (_persisted_attachments, _global_settings, user_message, _execution_prompt, turn_response) =
+        prepared?;
     let resume_context_json = serialize_runtime_context(
         &context,
         &turn_response.thread.id,
@@ -1050,7 +1073,10 @@ pub async fn start_deepseek_tui_run(
                     RiskLevel::ReadOnly
                 };
 
-                if matches!(decide_permission(permission_mode, risk_level, false), PermissionAction::AutoAllow) {
+                if matches!(
+                    decide_permission(permission_mode, risk_level, false),
+                    PermissionAction::AutoAllow
+                ) {
                     let _ = runtime::append_runtime_event(
                         &db,
                         &run.id,
@@ -1080,7 +1106,8 @@ pub async fn start_deepseek_tui_run(
                         should_auto_approve,
                         &continue_prompt,
                     )
-                    .await {
+                    .await
+                    {
                         Ok(next_turn) => {
                             if next_turn.thread.id != thread_id {
                                 thread_id = next_turn.thread.id.clone();
@@ -1091,7 +1118,9 @@ pub async fn start_deepseek_tui_run(
                                 .unwrap_or(next_baseline);
                             active_turn_id = next_turn.turn.id.clone();
                             active_resume_context_json = serialize_runtime_context(
-                                &load_deepseek_session_context(active_resume_context_json.as_deref()),
+                                &load_deepseek_session_context(
+                                    active_resume_context_json.as_deref(),
+                                ),
                                 &thread_id,
                                 Some(&active_turn_id),
                                 Some(&effective_model),
@@ -1111,7 +1140,8 @@ pub async fn start_deepseek_tui_run(
                                 active_resume_context_json.as_deref(),
                             )
                             .await;
-                            let _ = agent_run::update_run_status(&db, &run.id, "running", None).await;
+                            let _ =
+                                agent_run::update_run_status(&db, &run.id, "running", None).await;
                             continue;
                         }
                         Err(err) => {
@@ -1178,8 +1208,10 @@ pub async fn start_deepseek_tui_run(
                     .remove(&permission_payload.tool_use_id);
 
                 if decision == "deny" {
-                    let _ = interrupt_turn_from_context(active_resume_context_json.as_deref()).await;
-                    let error_message = "DeepSeek runtime tool approval was denied by the user".to_string();
+                    let _ =
+                        interrupt_turn_from_context(active_resume_context_json.as_deref()).await;
+                    let error_message =
+                        "DeepSeek runtime tool approval was denied by the user".to_string();
                     let _ = agent_run::finish_run(
                         &db,
                         &run.id,
@@ -1190,14 +1222,14 @@ pub async fn start_deepseek_tui_run(
                         Some(&error_message),
                     )
                     .await;
-                        let _ = app_handle.emit(
-                            "agent-error",
-                            AgentErrorPayload {
-                                conversation_id: conversation_id.clone(),
-                                assistant_message_id: Some(assistant_message_id.clone()),
-                                message: error_message,
-                            },
-                        );
+                    let _ = app_handle.emit(
+                        "agent-error",
+                        AgentErrorPayload {
+                            conversation_id: conversation_id.clone(),
+                            assistant_message_id: Some(assistant_message_id.clone()),
+                            message: error_message,
+                        },
+                    );
                     return;
                 }
 
@@ -1206,8 +1238,10 @@ pub async fn start_deepseek_tui_run(
                     .await
                     .map(|value| value.latest_seq)
                     .unwrap_or(active_baseline_seq);
-                let continue_prompt =
-                    build_approval_continue_prompt(&permission_payload.tool_name, &permission_payload.input);
+                let continue_prompt = build_approval_continue_prompt(
+                    &permission_payload.tool_name,
+                    &permission_payload.input,
+                );
                 match create_turn_with_recovery(
                     &client,
                     &thread_id,
@@ -1216,7 +1250,8 @@ pub async fn start_deepseek_tui_run(
                     should_auto_approve,
                     &continue_prompt,
                 )
-                .await {
+                .await
+                {
                     Ok(next_turn) => {
                         if next_turn.thread.id != thread_id {
                             thread_id = next_turn.thread.id.clone();
@@ -1317,142 +1352,151 @@ pub async fn start_deepseek_tui_run(
             }
 
             match stream_result {
-            Ok(()) => {
-                let detail = match get_thread_detail(&client, &thread_id).await {
-                    Ok(detail) => detail,
-                    Err(err) => {
-                        let _ = app_handle.emit(
-                            "agent-error",
-                            AgentErrorPayload {
-                                conversation_id: conversation_id.clone(),
-                                assistant_message_id: assistant_message_id.clone(),
-                                message: format!("Failed to load DeepSeek thread result: {}", err),
-                            },
-                        );
-                        let _ = agent_run::finish_run(
-                            &db,
-                            &run.id,
-                            "failed",
-                            active_resume_context_json.as_deref(),
-                            None,
-                            0.0,
-                            Some(&format!("Failed to load DeepSeek thread result: {}", err)),
-                        )
-                        .await;
-                        return;
+                Ok(()) => {
+                    let detail = match get_thread_detail(&client, &thread_id).await {
+                        Ok(detail) => detail,
+                        Err(err) => {
+                            let _ = app_handle.emit(
+                                "agent-error",
+                                AgentErrorPayload {
+                                    conversation_id: conversation_id.clone(),
+                                    assistant_message_id: assistant_message_id.clone(),
+                                    message: format!(
+                                        "Failed to load DeepSeek thread result: {}",
+                                        err
+                                    ),
+                                },
+                            );
+                            let _ = agent_run::finish_run(
+                                &db,
+                                &run.id,
+                                "failed",
+                                active_resume_context_json.as_deref(),
+                                None,
+                                0.0,
+                                Some(&format!("Failed to load DeepSeek thread result: {}", err)),
+                            )
+                            .await;
+                            return;
+                        }
+                    };
+                    let turn_detail = detail.turns.iter().find(|item| item.id == active_turn_id);
+                    let latest_reasoning = detail
+                        .items
+                        .iter()
+                        .filter(|item| {
+                            item.turn_id == active_turn_id && item.kind == "agent_reasoning"
+                        })
+                        .filter_map(|item| item.detail.clone().or(item.summary.clone()))
+                        .next_back();
+                    let latest_message = detail
+                        .items
+                        .iter()
+                        .filter(|item| {
+                            item.turn_id == active_turn_id && item.kind == "agent_message"
+                        })
+                        .filter_map(|item| item.detail.clone().or(item.summary.clone()))
+                        .next_back();
+
+                    if let Some(reasoning) = latest_reasoning {
+                        accumulated_thinking = reasoning;
                     }
-                };
-                let turn_detail = detail.turns.iter().find(|item| item.id == active_turn_id);
-                let latest_reasoning = detail
-                    .items
-                    .iter()
-                    .filter(|item| item.turn_id == active_turn_id && item.kind == "agent_reasoning")
-                    .filter_map(|item| item.detail.clone().or(item.summary.clone()))
-                    .next_back();
-                let latest_message = detail
-                    .items
-                    .iter()
-                    .filter(|item| item.turn_id == active_turn_id && item.kind == "agent_message")
-                    .filter_map(|item| item.detail.clone().or(item.summary.clone()))
-                    .next_back();
+                    if let Some(text) = latest_message {
+                        accumulated_text = text;
+                    }
+                    if final_usage.is_none() {
+                        final_usage = turn_detail.and_then(|turn| turn.usage.clone());
+                    }
 
-                if let Some(reasoning) = latest_reasoning {
-                    accumulated_thinking = reasoning;
+                    let final_content = build_agent_content_with_thinking(
+                        &accumulated_text,
+                        (!accumulated_thinking.trim().is_empty())
+                            .then_some(accumulated_thinking.as_str()),
+                    );
+
+                    let persisted_assistant_message_id = ensure_agent_assistant_message(
+                        &db,
+                        &app_handle,
+                        &conversation_id,
+                        &user_message.id,
+                        user_message.created_at,
+                        &final_content,
+                        &mut assistant_message_id,
+                        &assistant_id_for_task,
+                    )
+                    .await;
+
+                    if let Some(message_id) = persisted_assistant_message_id.as_deref() {
+                        let _ =
+                            message::update_message_content(&db, message_id, &final_content).await;
+                    }
+
+                    let final_context_json = serialize_runtime_context(
+                        &load_deepseek_session_context(active_resume_context_json.as_deref()),
+                        &thread_id,
+                        Some(&active_turn_id),
+                        Some(&effective_model),
+                        &effective_cwd,
+                    );
+                    let _ = agent_run::update_run_resume_state(
+                        &db,
+                        &run.id,
+                        Some("resumable"),
+                        Some(None),
+                        Some(final_context_json.as_deref()),
+                    )
+                    .await;
+                    let _ = agent_session::set_sdk_context_by_conversation_id(
+                        &db,
+                        &conversation_id,
+                        final_context_json.as_deref(),
+                    )
+                    .await;
+
+                    let usage = final_usage.as_ref().map(|usage| open_agent_sdk::Usage {
+                        input_tokens: usage.input_tokens,
+                        output_tokens: usage.output_tokens,
+                        cache_creation_input_tokens: 0,
+                        cache_read_input_tokens: 0,
+                    });
+                    let _ = result_renderer::finish_run_with_result(
+                        &app_handle,
+                        &db,
+                        &run,
+                        assistant_message_id.as_deref(),
+                        &final_content,
+                        &accumulated_thinking,
+                        &effective_model,
+                        usage.as_ref(),
+                        1,
+                        0.0,
+                        final_context_json.as_deref(),
+                    )
+                    .await;
+                    return;
                 }
-                if let Some(text) = latest_message {
-                    accumulated_text = text;
+                Err(err) => {
+                    let _ = agent_run::finish_run(
+                        &db,
+                        &run.id,
+                        "failed",
+                        active_resume_context_json.as_deref(),
+                        None,
+                        0.0,
+                        Some(&err),
+                    )
+                    .await;
+                    let _ = app_handle.emit(
+                        "agent-error",
+                        AgentErrorPayload {
+                            conversation_id: conversation_id.clone(),
+                            assistant_message_id: assistant_message_id.clone(),
+                            message: err,
+                        },
+                    );
+                    return;
                 }
-                if final_usage.is_none() {
-                    final_usage = turn_detail.and_then(|turn| turn.usage.clone());
-                }
-
-                let final_content = build_agent_content_with_thinking(
-                    &accumulated_text,
-                    (!accumulated_thinking.trim().is_empty()).then_some(accumulated_thinking.as_str()),
-                );
-
-                let persisted_assistant_message_id = ensure_agent_assistant_message(
-                    &db,
-                    &app_handle,
-                    &conversation_id,
-                    &user_message.id,
-                    user_message.created_at,
-                    &final_content,
-                    &mut assistant_message_id,
-                    &assistant_id_for_task,
-                )
-                .await;
-
-                if let Some(message_id) = persisted_assistant_message_id.as_deref() {
-                    let _ = message::update_message_content(&db, message_id, &final_content).await;
-                }
-
-                let final_context_json = serialize_runtime_context(
-                    &load_deepseek_session_context(active_resume_context_json.as_deref()),
-                    &thread_id,
-                    Some(&active_turn_id),
-                    Some(&effective_model),
-                    &effective_cwd,
-                );
-                let _ = agent_run::update_run_resume_state(
-                    &db,
-                    &run.id,
-                    Some("resumable"),
-                    Some(None),
-                    Some(final_context_json.as_deref()),
-                )
-                .await;
-                let _ = agent_session::set_sdk_context_by_conversation_id(
-                    &db,
-                    &conversation_id,
-                    final_context_json.as_deref(),
-                )
-                .await;
-
-                let usage = final_usage.as_ref().map(|usage| open_agent_sdk::Usage {
-                    input_tokens: usage.input_tokens,
-                    output_tokens: usage.output_tokens,
-                    cache_creation_input_tokens: 0,
-                    cache_read_input_tokens: 0,
-                });
-                let _ = result_renderer::finish_run_with_result(
-                    &app_handle,
-                    &db,
-                    &run,
-                    assistant_message_id.as_deref(),
-                    &final_content,
-                    &accumulated_thinking,
-                    &effective_model,
-                    usage.as_ref(),
-                    1,
-                    0.0,
-                    final_context_json.as_deref(),
-                )
-                .await;
-                return;
             }
-            Err(err) => {
-                let _ = agent_run::finish_run(
-                    &db,
-                    &run.id,
-                    "failed",
-                    active_resume_context_json.as_deref(),
-                    None,
-                    0.0,
-                    Some(&err),
-                )
-                .await;
-                let _ = app_handle.emit(
-                    "agent-error",
-                    AgentErrorPayload {
-                        conversation_id: conversation_id.clone(),
-                        assistant_message_id: assistant_message_id.clone(),
-                        message: err,
-                    },
-                );
-                return;
-            }
-        }
         }
     });
 

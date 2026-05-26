@@ -74,9 +74,15 @@ fn provider_type_to_registry_key(pt: &ProviderType) -> &'static str {
     }
 }
 
-fn format_recent_messages_for_subagent(messages: &[Message], source_message_id: Option<&str>) -> String {
+fn format_recent_messages_for_subagent(
+    messages: &[Message],
+    source_message_id: Option<&str>,
+) -> String {
     let relevant = if let Some(source_message_id) = source_message_id {
-        if let Some(source_index) = messages.iter().position(|message| message.id == source_message_id) {
+        if let Some(source_index) = messages
+            .iter()
+            .position(|message| message.id == source_message_id)
+        {
             messages
                 .iter()
                 .skip(source_index)
@@ -234,7 +240,6 @@ fn should_auto_delegate_research(prompt: &str) -> bool {
     hints.iter().any(|hint| normalized.contains(hint))
 }
 
-
 async fn run_builtin_prompt_task(
     state: &AppState,
     task: &AgentTask,
@@ -368,8 +373,7 @@ async fn run_builtin_prompt_task(
         "conversationId": conversation_id,
         "taskId": task.id,
     });
-    let result_payload_json =
-        serde_json::to_string(&result_payload).map_err(|e| e.to_string())?;
+    let result_payload_json = serde_json::to_string(&result_payload).map_err(|e| e.to_string())?;
     let updated_task = wisespace_core::repo::external_agent::update_agent_task_result(
         &state.sea_db,
         &task.id,
@@ -425,9 +429,10 @@ async fn run_builtin_code_reviewer(
         wisespace_core::repo::conversation::get_conversation(&state.sea_db, conversation_id)
             .await
             .map_err(|e| e.to_string())?;
-    let recent_messages = wisespace_core::repo::message::list_messages(&state.sea_db, conversation_id)
-        .await
-        .map_err(|e| e.to_string())?;
+    let recent_messages =
+        wisespace_core::repo::message::list_messages(&state.sea_db, conversation_id)
+            .await
+            .map_err(|e| e.to_string())?;
     let recent_transcript =
         format_recent_messages_for_subagent(&recent_messages, task.source_message_id.as_deref());
     let user_prompt =
@@ -461,9 +466,10 @@ async fn run_builtin_researcher(
         wisespace_core::repo::conversation::get_conversation(&state.sea_db, conversation_id)
             .await
             .map_err(|e| e.to_string())?;
-    let recent_messages = wisespace_core::repo::message::list_messages(&state.sea_db, conversation_id)
-        .await
-        .map_err(|e| e.to_string())?;
+    let recent_messages =
+        wisespace_core::repo::message::list_messages(&state.sea_db, conversation_id)
+            .await
+            .map_err(|e| e.to_string())?;
     let recent_transcript =
         format_recent_messages_for_subagent(&recent_messages, task.source_message_id.as_deref());
     let user_prompt =
@@ -793,6 +799,18 @@ pub async fn test_external_agent_connection(
     let agent = wisespace_core::repo::external_agent::get_external_agent(&state.sea_db, &id)
         .await
         .map_err(|e| e.to_string())?;
+
+    // Auto-launch pi adapter for connection test.
+    if agent.kind == "pi_adapter" {
+        state
+            .pi_adapter
+            .lock()
+            .await
+            .ensure_running()
+            .await
+            .map_err(|e| format!("Failed to start pi adapter: {}", e))?;
+    }
+
     test_connector_connection(&agent).await
 }
 
@@ -827,6 +845,17 @@ pub async fn dispatch_external_agent_task(
         .unwrap_or(true)
     {
         context["wisespaceContext"] = auto_context;
+    }
+
+    // Auto-launch pi adapter sidecar if not already running.
+    if agent.kind == "pi_adapter" {
+        state
+            .pi_adapter
+            .lock()
+            .await
+            .ensure_running()
+            .await
+            .map_err(|e| format!("Failed to start pi adapter: {}", e))?;
     }
 
     dispatch_task_from_parts(
@@ -1027,6 +1056,17 @@ pub async fn retry_external_agent_task(
     )
     .await;
 
+    // Auto-launch pi adapter before retry.
+    if agent.kind == "pi_adapter" {
+        state
+            .pi_adapter
+            .lock()
+            .await
+            .ensure_running()
+            .await
+            .map_err(|e| format!("Failed to start pi adapter: {}", e))?;
+    }
+
     let result = dispatch_task_from_parts(
         &state,
         &agent,
@@ -1083,6 +1123,17 @@ pub async fn sync_external_agent_task(
         &json!({ "externalTaskId": external_task_id }).to_string(),
     )
     .await;
+
+    // Auto-launch pi adapter before sync.
+    if agent.kind == "pi_adapter" {
+        state
+            .pi_adapter
+            .lock()
+            .await
+            .ensure_running()
+            .await
+            .map_err(|e| format!("Failed to start pi adapter: {}", e))?;
+    }
 
     let response = fetch_connector_task(&agent, &external_task_id)
         .await
@@ -1264,7 +1315,6 @@ mod tests {
             source: "local".into(),
             created_at: 0,
             updated_at: 0,
-
         };
         let task = AgentTask {
             id: "t1".into(),

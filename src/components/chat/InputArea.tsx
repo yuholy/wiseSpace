@@ -24,7 +24,7 @@ import { ConversationSettingsModal } from './ConversationSettingsModal';
 import { ModelSelector } from './ModelSelector';
 import { SearchProviderTypeIcon, PROVIDER_TYPE_LABELS } from '@/components/shared/SearchProviderIcon';
 import { ModelIcon } from '@lobehub/icons';
-import type { AttachmentInput, ProviderType, RealtimeConfig } from '@/types';
+import type { AttachmentInput, Message, ProviderType, RealtimeConfig } from '@/types';
 import { invoke, isTauri } from '@/lib/invoke';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
@@ -1013,25 +1013,103 @@ export function InputArea() {
         }
       });
       if (modeToSend === 'agent' && externalAgentId) {
-        const dispatched = await dispatchExternalTask({
-          conversationId: conversationIdForSend,
-          externalAgentId,
-          kind: 'code',
-          title: trimmed.slice(0, 60) || 'Pi Agent Task',
-          inputText: trimmed,
-          contextJson: JSON.stringify({
-            workspaceRoot: resolvedAgentCwd,
-            permissionMode: resolvedAgentPermissionMode,
-          }),
-        });
-        if (conversationIdForSend) {
-          await fetchMessages(conversationIdForSend);
-          if (dispatched.task.status !== 'completed' && dispatched.task.status !== 'failed' && dispatched.task.status !== 'cancelled') {
-            void waitForExternalTaskCompletion(dispatched.task.id, conversationIdForSend).catch((error) => {
-              console.warn('Failed to sync external task completion:', error);
-              messageApi.error(String(error));
+        // Optimistic UI: show user message + placeholder immediately
+        const optUser: Message = {
+          id: `temp-ext-user-${Date.now()}`,
+          conversation_id: conversationIdForSend,
+          role: 'user',
+          content: trimmed,
+          provider_id: null,
+          model_id: null,
+          token_count: null,
+          attachments: (attachments || []).map((a) => ({
+            id: `temp-ext-att-${Date.now()}`,
+            file_name: a.file_name,
+            file_type: a.file_type,
+            file_path: '',
+            file_size: a.file_size,
+            data: a.data,
+          })),
+          thinking: null,
+          tool_calls_json: null,
+          tool_call_id: null,
+          created_at: Date.now(),
+          parent_message_id: null,
+          version_index: 0,
+          is_active: true,
+          status: 'complete',
+          prompt_tokens: undefined,
+          completion_tokens: undefined,
+          tokens_per_second: undefined,
+          first_token_latency_ms: undefined,
+        };
+        const optAssistant: Message = {
+          id: `temp-ext-assistant-${Date.now()}`,
+          conversation_id: conversationIdForSend,
+          role: 'assistant',
+          content: '',
+          provider_id: null,
+          model_id: null,
+          token_count: null,
+          attachments: [],
+          thinking: null,
+          tool_calls_json: null,
+          tool_call_id: null,
+          created_at: Date.now(),
+          parent_message_id: optUser.id,
+          version_index: 0,
+          is_active: true,
+          status: 'partial',
+          prompt_tokens: undefined,
+          completion_tokens: undefined,
+          tokens_per_second: undefined,
+          first_token_latency_ms: undefined,
+        };
+        useConversationStore.setState((s) => ({
+          messages: [...s.messages, optUser, optAssistant],
+          streaming: true,
+          streamingConversationId: conversationIdForSend,
+          streamingMessageId: optAssistant.id,
+        }));
+
+        try {
+          const dispatched = await dispatchExternalTask({
+            conversationId: conversationIdForSend,
+            externalAgentId,
+            kind: 'code',
+            title: trimmed.slice(0, 60) || 'Pi Agent Task',
+            inputText: trimmed,
+            contextJson: JSON.stringify({
+              workspaceRoot: resolvedAgentCwd,
+              permissionMode: resolvedAgentPermissionMode,
+            }),
+          });
+          if (conversationIdForSend) {
+            await fetchMessages(conversationIdForSend);
+            useConversationStore.setState({
+              streaming: false,
+              streamingMessageId: null,
+              streamingConversationId: null,
             });
+            if (dispatched.task.status !== 'completed' && dispatched.task.status !== 'failed' && dispatched.task.status !== 'cancelled') {
+              void waitForExternalTaskCompletion(dispatched.task.id, conversationIdForSend).catch((error) => {
+                console.warn('Failed to sync external task completion:', error);
+                messageApi.error(String(error));
+              });
+            }
           }
+        } catch (dispatchError) {
+          useConversationStore.setState((s) => ({
+            streaming: false,
+            streamingMessageId: null,
+            streamingConversationId: null,
+            messages: s.messages.map((m) =>
+              m.id === optAssistant.id
+                ? { ...m, content: String(dispatchError), status: 'error' }
+                : m
+            ),
+          }));
+          throw dispatchError;
         }
       } else if (modeToSend === 'agent') {
         await sendAgentMessage(trimmed, attachments, {

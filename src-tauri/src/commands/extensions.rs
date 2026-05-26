@@ -3,10 +3,10 @@ use reqwest::Url;
 use serde_json::Value;
 use tauri::State;
 use wisespace_core::types::{
-    ExtensionContributionSummary, ExtensionDetail, ExtensionDiagnostics, ExtensionHealth,
-    ExtensionPermissionProfile, ExtensionRuntimeInfo, ExtensionScope, ExtensionSourceInfo,
-    ExtensionSummary, ExternalAgent, McpServer, SkillInfo, UpdateExternalAgentInput,
-    CreateMcpServerInput,
+    CreateMcpServerInput, ExtensionContributionSummary, ExtensionDetail, ExtensionDiagnostics,
+    ExtensionHealth, ExtensionPermissionProfile, ExtensionRuntimeInfo, ExtensionScope,
+    ExtensionSourceInfo, ExtensionSummary, ExternalAgent, McpServer, SkillInfo,
+    UpdateExternalAgentInput,
 };
 
 fn map_skill_source_kind(source: &str) -> String {
@@ -66,7 +66,10 @@ fn summarize_skill(skill: SkillInfo) -> ExtensionSummary {
             id: format!("skill-contribution::{}", skill.name),
             type_: "prompt_skill".to_string(),
             name: skill.name.clone(),
-            description: skill.when_to_use.clone().or_else(|| Some(skill.description.clone())),
+            description: skill
+                .when_to_use
+                .clone()
+                .or_else(|| Some(skill.description.clone())),
             user_invocable: Some(skill.user_invocable),
             runtime_label: skill.group.clone(),
         }],
@@ -79,7 +82,9 @@ fn summarize_skill(skill: SkillInfo) -> ExtensionSummary {
 fn summarize_mcp(server: McpServer, tool_count: usize) -> ExtensionSummary {
     let health_status = if !server.enabled {
         "warning"
-    } else if server.transport == "stdio" && server.command.as_deref().unwrap_or("").trim().is_empty() {
+    } else if server.transport == "stdio"
+        && server.command.as_deref().unwrap_or("").trim().is_empty()
+    {
         "error"
     } else if matches!(server.transport.as_str(), "http" | "sse")
         && server.endpoint.as_deref().unwrap_or("").trim().is_empty()
@@ -90,7 +95,9 @@ fn summarize_mcp(server: McpServer, tool_count: usize) -> ExtensionSummary {
     };
 
     let summary = match health_status {
-        "error" => Some("Server configuration is incomplete for the selected transport.".to_string()),
+        "error" => {
+            Some("Server configuration is incomplete for the selected transport.".to_string())
+        }
         "warning" => Some("Server is installed but currently disabled.".to_string()),
         _ => Some(format!("{tool_count} discovered tool(s) available.")),
     };
@@ -99,7 +106,10 @@ fn summarize_mcp(server: McpServer, tool_count: usize) -> ExtensionSummary {
         id: format!("mcp_server::{}", server.id),
         kind: "mcp_server".to_string(),
         name: server.name.clone(),
-        description: Some(format!("{} transport MCP server", server.transport.to_uppercase())),
+        description: Some(format!(
+            "{} transport MCP server",
+            server.transport.to_uppercase()
+        )),
         version: None,
         enabled: server.enabled,
         source: ExtensionSourceInfo {
@@ -298,8 +308,8 @@ fn summarize_external_agent(agent: ExternalAgent) -> ExtensionSummary {
     let capability_names = extract_capability_names(&agent);
     let network_scope = bridge_network_scope(agent.base_url.as_deref());
     let auth_configured = bridge_auth_configured(&agent);
-    let elevated_bridge = matches!(network_scope, "lan" | "private_network" | "public_remote")
-        && !auth_configured;
+    let elevated_bridge =
+        matches!(network_scope, "lan" | "private_network" | "public_remote") && !auth_configured;
     let health_status = if !agent.enabled {
         "warning"
     } else if agent.base_url.as_deref().unwrap_or("").trim().is_empty() {
@@ -312,7 +322,10 @@ fn summarize_external_agent(agent: ExternalAgent) -> ExtensionSummary {
 
     let summary = match health_status {
         "error" => Some("Remote connector is missing a base URL.".to_string()),
-        "warning" if elevated_bridge => Some("Connector is reachable but exposed without authentication on a non-local network.".to_string()),
+        "warning" if elevated_bridge => Some(
+            "Connector is reachable but exposed without authentication on a non-local network."
+                .to_string(),
+        ),
         "warning" => Some("Connector is installed but currently disabled.".to_string()),
         _ => Some(format!(
             "{} declared task kind(s).",
@@ -438,10 +451,11 @@ async fn load_mcp_summary(state: &AppState, local_id: &str) -> Result<ExtensionS
     let server = wisespace_core::repo::mcp_server::get_mcp_server(&state.sea_db, local_id)
         .await
         .map_err(|e| e.to_string())?;
-    let tool_count = wisespace_core::repo::mcp_server::list_tools_for_server(&state.sea_db, local_id)
-        .await
-        .map(|tools| tools.len())
-        .unwrap_or(0);
+    let tool_count =
+        wisespace_core::repo::mcp_server::list_tools_for_server(&state.sea_db, local_id)
+            .await
+            .map(|tools| tools.len())
+            .unwrap_or(0);
     Ok(summarize_mcp(server, tool_count))
 }
 
@@ -481,7 +495,9 @@ fn skill_detail(info: SkillInfo) -> ExtensionDetail {
 fn mcp_detail(server: McpServer, tool_count: usize) -> ExtensionDetail {
     let last_error = if !server.enabled {
         None
-    } else if server.transport == "stdio" && server.command.as_deref().unwrap_or("").trim().is_empty() {
+    } else if server.transport == "stdio"
+        && server.command.as_deref().unwrap_or("").trim().is_empty()
+    {
         Some("Missing command for stdio transport.".to_string())
     } else if matches!(server.transport.as_str(), "http" | "sse")
         && server.endpoint.as_deref().unwrap_or("").trim().is_empty()
@@ -612,10 +628,11 @@ pub async fn list_extensions(state: State<'_, AppState>) -> Result<Vec<Extension
         .await
         .map_err(|e| e.to_string())?;
     for server in servers {
-        let tool_count = wisespace_core::repo::mcp_server::list_tools_for_server(&state.sea_db, &server.id)
-            .await
-            .map(|tools| tools.len())
-            .unwrap_or(0);
+        let tool_count =
+            wisespace_core::repo::mcp_server::list_tools_for_server(&state.sea_db, &server.id)
+                .await
+                .map(|tools| tools.len())
+                .unwrap_or(0);
         result.push(summarize_mcp(server, tool_count));
     }
 
@@ -715,9 +732,10 @@ pub async fn set_extension_enabled(
             load_skill_summary(&state, local_id).await
         }
         "mcp_server" => {
-            let existing = wisespace_core::repo::mcp_server::get_mcp_server(&state.sea_db, local_id)
-                .await
-                .map_err(|e| e.to_string())?;
+            let existing =
+                wisespace_core::repo::mcp_server::get_mcp_server(&state.sea_db, local_id)
+                    .await
+                    .map_err(|e| e.to_string())?;
             wisespace_core::repo::mcp_server::update_mcp_server(
                 &state.sea_db,
                 local_id,
@@ -863,14 +881,28 @@ mod tests {
         );
 
         assert_eq!(
-            detail.summary.runtime.as_ref().map(|runtime| runtime.host_kind.as_str()),
+            detail
+                .summary
+                .runtime
+                .as_ref()
+                .map(|runtime| runtime.host_kind.as_str()),
             Some("mcp_host")
         );
         assert_eq!(
-            detail.summary.runtime.as_ref().map(|runtime| runtime.isolation.as_str()),
+            detail
+                .summary
+                .runtime
+                .as_ref()
+                .map(|runtime| runtime.isolation.as_str()),
             Some("subprocess")
         );
-        assert_eq!(detail.diagnostics.as_ref().and_then(|d| d.can_test_connection), Some(true));
+        assert_eq!(
+            detail
+                .diagnostics
+                .as_ref()
+                .and_then(|d| d.can_test_connection),
+            Some(true)
+        );
         assert!(detail.kind_detail.is_some());
     }
 }

@@ -1,17 +1,17 @@
 use super::event::AgentEventRecorder;
-use crate::agent_runtime::context::prepare_local_agent_execution_context;
-use crate::agent_runtime::planner::{build_local_agent_plan, LocalAgentRunRequest};
-use crate::agent_runtime::result_renderer;
 use crate::agent_runtime::compat::{
     create_adapter_arc, ensure_agent_assistant_message, get_tool_input_summary,
     persist_agent_partial_content, provider_type_to_registry_key, truncate_preview,
     AgentCancelTokenGuard, RunningAgentGuard, RUNNING_AGENTS,
 };
+use crate::agent_runtime::context::prepare_local_agent_execution_context;
 use crate::agent_runtime::payloads::{
     AgentAskUserPayload, AgentErrorPayload, AgentPermissionRequestPayload, AgentRateLimitPayload,
     AgentStatusPayload, AgentTextPayload, AgentThinkingPayload, AgentToolResultPayload,
     AgentToolStartPayload, AgentToolUsePayload,
 };
+use crate::agent_runtime::planner::{build_local_agent_plan, LocalAgentRunRequest};
+use crate::agent_runtime::result_renderer;
 use crate::AppState;
 use open_agent_sdk::{
     Agent, AgentOptions, CanUseToolFn, ContentBlock, PermissionDecision, SDKMessage, Usage,

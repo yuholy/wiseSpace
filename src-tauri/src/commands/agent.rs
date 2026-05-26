@@ -1,4 +1,4 @@
-﻿use crate::agent_runtime::compat::{ensure_legacy_session_for_profile, RUNNING_AGENTS};
+use crate::agent_runtime::compat::{ensure_legacy_session_for_profile, RUNNING_AGENTS};
 use crate::AppState;
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, State};
@@ -714,9 +714,10 @@ pub async fn agent_cancel(
                 .resume_token_json
                 .as_deref()
                 .or(run.sdk_context_json.as_deref());
-            let _ =
-                crate::agent_runtime::deepseek_tui_runner::interrupt_turn_from_context(interrupt_context)
-                    .await;
+            let _ = crate::agent_runtime::deepseek_tui_runner::interrupt_turn_from_context(
+                interrupt_context,
+            )
+            .await;
         }
     }
 

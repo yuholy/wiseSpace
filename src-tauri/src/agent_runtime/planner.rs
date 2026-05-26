@@ -41,9 +41,7 @@ pub struct LocalAgentRunPlan {
     pub context_needs: LocalAgentContextNeeds,
 }
 
-pub fn build_local_agent_plan(
-    request: LocalAgentRunRequest,
-) -> Result<LocalAgentRunPlan, String> {
+pub fn build_local_agent_plan(request: LocalAgentRunRequest) -> Result<LocalAgentRunPlan, String> {
     let prompt = request.prompt.trim().to_string();
     if prompt.is_empty() {
         return Err("Agent prompt is required".to_string());

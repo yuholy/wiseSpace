@@ -1,4 +1,4 @@
-﻿use sea_orm::DatabaseConnection;
+use sea_orm::DatabaseConnection;
 use std::path::{Path, PathBuf};
 use wisespace_core::repo::{agent_profile, agent_run, agent_session};
 use wisespace_core::types::{AgentProfile, AgentSession};
@@ -7,10 +7,13 @@ async fn default_workspace_root(
     db: &DatabaseConnection,
     conversation_id: &str,
 ) -> Result<String, String> {
-    wisespace_core::repo::workspace::ensure_canonical_workspace_for_conversation(db, conversation_id)
-        .await
-        .map(|workspace| workspace.root_path)
-        .map_err(|e| e.to_string())
+    wisespace_core::repo::workspace::ensure_canonical_workspace_for_conversation(
+        db,
+        conversation_id,
+    )
+    .await
+    .map(|workspace| workspace.root_path)
+    .map_err(|e| e.to_string())
 }
 
 fn legacy_workspace_root(conversation_id: &str) -> PathBuf {
@@ -282,8 +285,9 @@ async fn ensure_profile_workspace_location(
         )
         .await
         .map_err(|e| e.to_string())?;
-        let _ = agent_session::upsert_agent_session(db, &profile.conversation_id, Some(&desired), None)
-            .await;
+        let _ =
+            agent_session::upsert_agent_session(db, &profile.conversation_id, Some(&desired), None)
+                .await;
         return Ok(updated);
     }
 
@@ -343,7 +347,8 @@ pub async fn sync_workspace_root_to_conversation_title(
 
     let current_path = decode_workspace_root(&current_root);
     let legacy_path = legacy_workspace_root(conversation_id);
-    let default_id_path = wisespace_core::storage_paths::conversation_workspace_dir(conversation_id);
+    let default_id_path =
+        wisespace_core::storage_paths::conversation_workspace_dir(conversation_id);
     let desired = default_workspace_root(db, conversation_id).await?;
     let desired_path = decode_workspace_root(&desired);
 
@@ -373,7 +378,8 @@ pub async fn sync_workspace_root_to_conversation_title(
         )
         .await
         .map_err(|e| e.to_string())?;
-        let _ = agent_session::upsert_agent_session(db, conversation_id, Some(&desired), None).await;
+        let _ =
+            agent_session::upsert_agent_session(db, conversation_id, Some(&desired), None).await;
         return Ok(updated.workspace_root);
     }
 
@@ -411,17 +417,10 @@ pub async fn sync_workspace_root_to_conversation_title(
         })?;
     }
 
-    let updated = agent_profile::upsert_profile(
-        db,
-        conversation_id,
-        Some(&desired),
-        None,
-        None,
-        None,
-        None,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
+    let updated =
+        agent_profile::upsert_profile(db, conversation_id, Some(&desired), None, None, None, None)
+            .await
+            .map_err(|e| e.to_string())?;
     let _ = agent_session::upsert_agent_session(db, conversation_id, Some(&desired), None).await;
     Ok(updated.workspace_root)
 }
@@ -467,16 +466,10 @@ pub async fn get_compat_session(
     let runtime_status = latest_run
         .as_ref()
         .map(|run| match run.status.as_str() {
-            "queued"
-            | "starting"
-            | "running"
-            | "waiting_approval"
-            | "waiting_input"
-            | "cancelling"
-            | "completed"
-            | "failed"
-            | "cancelled"
-            | "interrupted" => run.status.clone(),
+            "queued" | "starting" | "running" | "waiting_approval" | "waiting_input"
+            | "cancelling" | "completed" | "failed" | "cancelled" | "interrupted" => {
+                run.status.clone()
+            }
             _ => "idle".to_string(),
         })
         .unwrap_or_else(|| "idle".to_string());
@@ -660,4 +653,3 @@ mod tests {
         let _ = std::fs::remove_dir_all(&docs_root);
     }
 }
-

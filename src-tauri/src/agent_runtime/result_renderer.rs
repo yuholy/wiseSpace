@@ -104,7 +104,8 @@ pub async fn finish_run_with_result(
             conversation_id: run.conversation_id.clone(),
             assistant_message_id: assistant_message_id.unwrap_or_default().to_string(),
             text: final_content.to_string(),
-            thinking: Some(accumulated_thinking.to_string()).filter(|value| !value.trim().is_empty()),
+            thinking: Some(accumulated_thinking.to_string())
+                .filter(|value| !value.trim().is_empty()),
             model: Some(model_id.to_string()),
             session_id: None,
             usage: usage_payload.clone(),
