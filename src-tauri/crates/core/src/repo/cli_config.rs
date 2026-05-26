@@ -2,15 +2,22 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{Result, WiseSpaceError};
 
+const PI_GATEWAY_API_KEY_PLACEHOLDER: &str = "WISESPACE_GATEWAY_API_KEY";
+const CLAUDE_DEFAULT_MODEL: &str = "claude-sonnet-4-6-20251117";
+const CLAUDE_DEFAULT_OPUS_MODEL: &str = "claude-opus-4-7-20260127";
+const CLAUDE_DEFAULT_SONNET_MODEL: &str = "claude-sonnet-4-6-20251117";
+const CLAUDE_DEFAULT_HAIKU_MODEL: &str = "claude-haiku-4-5-20251001";
+const CLAUDE_DEFAULT_SUBAGENT_MODEL: &str = "claude-haiku-4-5-20251001";
+
 // ─── Types ──────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CliTool {
     ClaudeCode,
     Codex,
-    Gemini,
     OpenCode,
-    Cursor,
+    Pi,
+    DeepSeekTui,
 }
 
 impl CliTool {
@@ -18,9 +25,9 @@ impl CliTool {
         match s {
             "claude_code" => Ok(Self::ClaudeCode),
             "codex" => Ok(Self::Codex),
-            "gemini" => Ok(Self::Gemini),
             "opencode" => Ok(Self::OpenCode),
-            "cursor" => Ok(Self::Cursor),
+            "pi" => Ok(Self::Pi),
+            "deepseek_tui" => Ok(Self::DeepSeekTui),
             _ => Err(WiseSpaceError::NotFound(format!("Unknown CLI tool: {}", s))),
         }
     }
@@ -29,9 +36,9 @@ impl CliTool {
         match self {
             Self::ClaudeCode => "claude_code",
             Self::Codex => "codex",
-            Self::Gemini => "gemini",
             Self::OpenCode => "opencode",
-            Self::Cursor => "cursor",
+            Self::Pi => "pi",
+            Self::DeepSeekTui => "deepseek_tui",
         }
     }
 
@@ -39,9 +46,9 @@ impl CliTool {
         match self {
             Self::ClaudeCode => "Claude Code",
             Self::Codex => "Codex",
-            Self::Gemini => "Gemini CLI",
             Self::OpenCode => "OpenCode",
-            Self::Cursor => "Cursor",
+            Self::Pi => "Pi",
+            Self::DeepSeekTui => "DeepSeek-TUI",
         }
     }
 
@@ -49,9 +56,9 @@ impl CliTool {
         match self {
             Self::ClaudeCode => "claude",
             Self::Codex => "codex",
-            Self::Gemini => "gemini",
             Self::OpenCode => "opencode",
-            Self::Cursor => "cursor",
+            Self::Pi => "pi",
+            Self::DeepSeekTui => "deepseek",
         }
     }
 
@@ -59,9 +66,17 @@ impl CliTool {
         match self {
             Self::ClaudeCode => "--version",
             Self::Codex => "--version",
-            Self::Gemini => "--version",
             Self::OpenCode => "--version",
-            Self::Cursor => "--version",
+            Self::Pi => "--version",
+            Self::DeepSeekTui => "--version",
+        }
+    }
+
+    pub fn install_package_name(&self) -> Option<&'static str> {
+        match self {
+            Self::Pi => Some("@earendil-works/pi-coding-agent"),
+            Self::DeepSeekTui => Some("deepseek-tui"),
+            _ => None,
         }
     }
 
@@ -69,9 +84,9 @@ impl CliTool {
         &[
             Self::ClaudeCode,
             Self::Codex,
-            Self::Gemini,
             Self::OpenCode,
-            Self::Cursor,
+            Self::Pi,
+            Self::DeepSeekTui,
         ]
     }
 }
@@ -81,14 +96,16 @@ impl CliTool {
 /// Returns the detected version string if the tool is installed, or None.
 pub fn check_installed_version(tool: CliTool) -> Option<String> {
     match tool {
-        CliTool::Cursor => {
-            if check_cursor_installed() {
-                Some("installed".to_string())
-            } else {
+        CliTool::DeepSeekTui => run_version_command("deepseek", tool.version_arg())
+            .or_else(|| run_version_command("deepseek-tui", tool.version_arg())),
+        CliTool::Pi => run_version_command("pi", tool.version_arg()),
+        CliTool::ClaudeCode | CliTool::Codex | CliTool::OpenCode => {
+            if matches!(tool, CliTool::OpenCode) && !check_command_exists_cross_platform(tool.command_name()) {
                 None
+            } else {
+                run_version_command(tool.command_name(), tool.version_arg())
             }
         }
-        _ => run_version_command(tool.command_name(), tool.version_arg()),
     }
 }
 
@@ -132,24 +149,30 @@ fn check_command_exists(cmd: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn check_cursor_installed() -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        Path::new("/Applications/Cursor.app").exists()
-    }
+fn check_command_exists_cross_platform(cmd: &str) -> bool {
     #[cfg(target_os = "windows")]
     {
-        if let Ok(appdata) = std::env::var("LOCALAPPDATA") {
-            Path::new(&appdata)
-                .join("Programs/cursor/Cursor.exe")
-                .exists()
-        } else {
-            false
-        }
+        std::process::Command::new("where")
+            .arg(cmd)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("which")
+            .arg(cmd)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
     }
     #[cfg(target_os = "linux")]
     {
-        check_command_exists("cursor")
+        check_command_exists(cmd)
     }
 }
 
@@ -177,34 +200,12 @@ fn config_paths(tool: CliTool) -> Result<Vec<PathBuf>> {
             home.join(".codex").join("auth.json"),
             home.join(".codex").join("config.toml"),
         ]),
-        CliTool::Gemini => Ok(vec![
-            home.join(".gemini").join(".env"),
-            home.join(".gemini").join("settings.json"),
-        ]),
         CliTool::OpenCode => Ok(vec![home
             .join(".config")
             .join("opencode")
             .join("opencode.json")]),
-        CliTool::Cursor => {
-            #[cfg(target_os = "macos")]
-            {
-                Ok(vec![home.join(
-                    "Library/Application Support/Cursor/User/settings.json",
-                )])
-            }
-            #[cfg(target_os = "windows")]
-            {
-                let appdata = std::env::var("APPDATA")
-                    .map_err(|_| WiseSpaceError::NotFound("APPDATA not set".into()))?;
-                Ok(vec![
-                    PathBuf::from(appdata).join("Cursor/User/settings.json")
-                ])
-            }
-            #[cfg(target_os = "linux")]
-            {
-                Ok(vec![home.join(".config/Cursor/User/settings.json")])
-            }
-        }
+        CliTool::Pi => Ok(vec![home.join(".pi").join("agent").join("models.json")]),
+        CliTool::DeepSeekTui => Ok(vec![home.join(".deepseek").join("config.toml")]),
     }
 }
 
@@ -288,9 +289,9 @@ fn is_connected(tool: CliTool, gateway_url: &str) -> Result<bool> {
     match tool {
         CliTool::ClaudeCode => check_claude_code_connected(&paths[0], &paths[1], gateway_url),
         CliTool::Codex => check_codex_connected(&paths[0], &paths[1], gateway_url),
-        CliTool::Gemini => check_gemini_connected(&paths[0], &paths[1], gateway_url),
         CliTool::OpenCode => check_opencode_connected(&paths[0], gateway_url),
-        CliTool::Cursor => check_cursor_connected(&paths[0], gateway_url),
+        CliTool::Pi => check_pi_connected(&paths[0], gateway_url),
+        CliTool::DeepSeekTui => check_deepseek_tui_connected(&paths[0], gateway_url),
     }
 }
 
@@ -378,53 +379,6 @@ fn check_codex_connected(auth_path: &Path, config_path: &Path, gateway_url: &str
     Ok(provider_ok && base_url_ok && requires_openai_auth_ok && wire_api_ok)
 }
 
-/// Gemini CLI (~/.gemini/.env + ~/.gemini/settings.json):
-/// connected = .env has GEMINI_API_BASE_URL == gateway_url AND GEMINI_API_KEY is non-empty
-///             AND settings.json has security.auth.selectedType == "gemini-api-key".
-fn check_gemini_connected(
-    env_path: &Path,
-    settings_path: &Path,
-    gateway_url: &str,
-) -> Result<bool> {
-    if !env_path.exists() || !settings_path.exists() {
-        return Ok(false);
-    }
-
-    // Check .env
-    let content = std::fs::read_to_string(env_path)
-        .map_err(|e| WiseSpaceError::Gateway(format!("Failed to read .env: {}", e)))?;
-    let mut base_url_ok = false;
-    let mut key_ok = false;
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with('#') || trimmed.is_empty() {
-            continue;
-        }
-        if let Some((k, v)) = trimmed.split_once('=') {
-            match k.trim() {
-                "GEMINI_API_BASE_URL" => {
-                    base_url_ok = v.trim().trim_matches('"') == gateway_url;
-                }
-                "GEMINI_API_KEY" => {
-                    key_ok = !v.trim().trim_matches('"').is_empty();
-                }
-                _ => {}
-            }
-        }
-    }
-
-    // Check settings.json
-    let settings = read_json_file(settings_path)?;
-    let selected_type_ok = settings
-        .get("security")
-        .and_then(|s| s.get("auth"))
-        .and_then(|a| a.get("selectedType"))
-        .and_then(|v| v.as_str())
-        == Some("gemini-api-key");
-
-    Ok(base_url_ok && key_ok && selected_type_ok)
-}
-
 /// OpenCode (~/.config/opencode/opencode.json):
 /// connected = provider.wisespace.baseURL == gateway_url AND provider.wisespace.apiKey is non-empty.
 fn check_opencode_connected(path: &Path, gateway_url: &str) -> Result<bool> {
@@ -445,20 +399,57 @@ fn check_opencode_connected(path: &Path, gateway_url: &str) -> Result<bool> {
     Ok(url_ok && key_ok)
 }
 
-/// Cursor (settings.json):
-/// connected = openai.apiBaseUrl == gateway_url AND openai.apiKey is non-empty.
-fn check_cursor_connected(path: &Path, gateway_url: &str) -> Result<bool> {
+/// Pi (~/.pi/agent/models.json):
+/// connected = providers.wisespace.baseUrl == gateway_url AND providers.wisespace.apiKey is non-empty.
+fn check_pi_connected(path: &Path, gateway_url: &str) -> Result<bool> {
     if !path.exists() {
         return Ok(false);
     }
     let json = read_json_file(path)?;
-    let url_ok = json.get("openai.apiBaseUrl").and_then(|v| v.as_str()) == Some(gateway_url);
-    let key_ok = json
-        .get("openai.apiKey")
+    let wisespace = json.get("providers").and_then(|value| value.get("wisespace"));
+    let url_ok = wisespace
+        .and_then(|value| value.get("baseUrl"))
         .and_then(|v| v.as_str())
-        .map(|k| !k.is_empty())
+        == Some(gateway_url);
+    let key_ok = wisespace
+        .and_then(|value| value.get("apiKey"))
+        .and_then(|v| v.as_str())
+        .map(|k| !k.is_empty() && k != PI_GATEWAY_API_KEY_PLACEHOLDER)
         .unwrap_or(false);
     Ok(url_ok && key_ok)
+}
+
+/// DeepSeek-TUI (~/.deepseek/config.toml):
+/// connected = provider == "openai" AND providers.openai.base_url == gateway_url
+///             AND providers.openai.api_key is non-empty.
+fn check_deepseek_tui_connected(path: &Path, gateway_url: &str) -> Result<bool> {
+    if !path.exists() {
+        return Ok(false);
+    }
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| WiseSpaceError::Gateway(format!("Failed to read config.toml: {}", e)))?;
+    let doc = content
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| WiseSpaceError::Gateway(format!("Failed to parse TOML: {}", e)))?;
+    let provider_ok = doc.get("provider").and_then(|v| v.as_str()) == Some("openai");
+    let base_url_ok = doc
+        .get("providers")
+        .and_then(|value| value.as_table())
+        .and_then(|table| table.get("openai"))
+        .and_then(|item| item.as_table())
+        .and_then(|table| table.get("base_url"))
+        .and_then(|v| v.as_str())
+        == Some(gateway_url);
+    let api_key_ok = doc
+        .get("providers")
+        .and_then(|value| value.as_table())
+        .and_then(|table| table.get("openai"))
+        .and_then(|item| item.as_table())
+        .and_then(|table| table.get("api_key"))
+        .and_then(|v| v.as_str())
+        .map(|value| !value.is_empty())
+        .unwrap_or(false);
+    Ok(provider_ok && base_url_ok && api_key_ok)
 }
 
 // ─── Connect ────────────────────────────────────────────
@@ -495,9 +486,9 @@ pub fn connect(tool: CliTool, gateway_url: &str, api_key: &str) -> Result<()> {
     let write_result = match tool {
         CliTool::ClaudeCode => connect_claude_code(&paths[0], &paths[1], gateway_url, api_key),
         CliTool::Codex => connect_codex(&paths[0], &paths[1], gateway_url, api_key),
-        CliTool::Gemini => connect_gemini(&paths[0], &paths[1], gateway_url, api_key),
         CliTool::OpenCode => connect_opencode(&paths[0], gateway_url, api_key),
-        CliTool::Cursor => connect_cursor(&paths[0], gateway_url, api_key),
+        CliTool::Pi => connect_pi(&paths[0], gateway_url, api_key),
+        CliTool::DeepSeekTui => connect_deepseek_tui(&paths[0], gateway_url, api_key),
     };
     if let Err(e) = write_result {
         rollback_to_backup(tool);
@@ -562,6 +553,26 @@ fn connect_claude_code(
     env.insert(
         "ANTHROPIC_AUTH_TOKEN".into(),
         serde_json::Value::String(api_key.into()),
+    );
+    env.insert(
+        "ANTHROPIC_MODEL".into(),
+        serde_json::Value::String(CLAUDE_DEFAULT_MODEL.into()),
+    );
+    env.insert(
+        "ANTHROPIC_DEFAULT_OPUS_MODEL".into(),
+        serde_json::Value::String(CLAUDE_DEFAULT_OPUS_MODEL.into()),
+    );
+    env.insert(
+        "ANTHROPIC_DEFAULT_SONNET_MODEL".into(),
+        serde_json::Value::String(CLAUDE_DEFAULT_SONNET_MODEL.into()),
+    );
+    env.insert(
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL".into(),
+        serde_json::Value::String(CLAUDE_DEFAULT_HAIKU_MODEL.into()),
+    );
+    env.insert(
+        "CLAUDE_CODE_SUBAGENT_MODEL".into(),
+        serde_json::Value::String(CLAUDE_DEFAULT_SUBAGENT_MODEL.into()),
     );
     let content = serde_json::to_string_pretty(&settings)
         .map_err(|e| WiseSpaceError::Gateway(format!("Failed to serialize JSON: {}", e)))?;
@@ -632,89 +643,6 @@ fn connect_codex(
     atomic_write(config_path, &doc.to_string())
 }
 
-fn connect_gemini(
-    env_path: &Path,
-    settings_path: &Path,
-    gateway_url: &str,
-    api_key: &str,
-) -> Result<()> {
-    // Write .env
-    let mut vars: Vec<(String, String)> = Vec::new();
-    let mut comments: Vec<String> = Vec::new();
-
-    if env_path.exists() {
-        let content = std::fs::read_to_string(env_path)
-            .map_err(|e| WiseSpaceError::Gateway(format!("Failed to read .env: {}", e)))?;
-        for line in content.lines() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() || trimmed.starts_with('#') {
-                comments.push(line.to_string());
-                continue;
-            }
-            if let Some((k, v)) = trimmed.split_once('=') {
-                let key = k.trim().to_string();
-                // Skip keys we'll overwrite
-                if key != "GEMINI_API_KEY"
-                    && key != "GOOGLE_API_KEY"
-                    && key != "GEMINI_API_BASE_URL"
-                {
-                    vars.push((key, v.trim().to_string()));
-                }
-            }
-        }
-    }
-
-    vars.push(("GEMINI_API_KEY".into(), api_key.into()));
-    vars.push(("GOOGLE_API_KEY".into(), api_key.into()));
-    vars.push(("GEMINI_API_BASE_URL".into(), gateway_url.into()));
-
-    let mut output = String::new();
-    for c in &comments {
-        output.push_str(c);
-        output.push('\n');
-    }
-    for (k, v) in &vars {
-        output.push_str(&format!("{}={}\n", k, v));
-    }
-
-    atomic_write(env_path, &output)?;
-
-    // Write/merge settings.json
-    let mut settings = read_json_or_empty(settings_path)?;
-    let obj = settings
-        .as_object_mut()
-        .ok_or_else(|| WiseSpaceError::Gateway("Gemini settings is not a JSON object".into()))?;
-
-    // Ensure security.auth.selectedType == "gemini-api-key"
-    if !obj.contains_key("security") {
-        obj.insert("security".into(), serde_json::json!({}));
-    }
-    let security = obj
-        .get_mut("security")
-        .unwrap()
-        .as_object_mut()
-        .ok_or_else(|| WiseSpaceError::Gateway("security is not a JSON object".into()))?;
-
-    if !security.contains_key("auth") {
-        security.insert("auth".into(), serde_json::json!({}));
-    }
-    let auth = security
-        .get_mut("auth")
-        .unwrap()
-        .as_object_mut()
-        .ok_or_else(|| WiseSpaceError::Gateway("security.auth is not a JSON object".into()))?;
-
-    auth.insert(
-        "selectedType".into(),
-        serde_json::Value::String("gemini-api-key".into()),
-    );
-
-    let settings_content = serde_json::to_string_pretty(&settings).map_err(|e| {
-        WiseSpaceError::Gateway(format!("Failed to serialize settings JSON: {}", e))
-    })?;
-    atomic_write(settings_path, &settings_content)
-}
-
 fn connect_opencode(config_path: &Path, gateway_url: &str, api_key: &str) -> Result<()> {
     let mut json = read_json_or_empty(config_path)?;
     let obj = json
@@ -757,22 +685,109 @@ fn connect_opencode(config_path: &Path, gateway_url: &str, api_key: &str) -> Res
     atomic_write(config_path, &content)
 }
 
-fn connect_cursor(settings_path: &Path, gateway_url: &str, api_key: &str) -> Result<()> {
-    let mut json = read_json_or_empty(settings_path)?;
+fn connect_pi(config_path: &Path, gateway_url: &str, api_key: &str) -> Result<()> {
+    let mut json = read_json_or_empty(config_path)?;
     let obj = json
         .as_object_mut()
-        .ok_or_else(|| WiseSpaceError::Gateway("Cursor settings is not a JSON object".into()))?;
-    obj.insert(
-        "openai.apiBaseUrl".into(),
-        serde_json::Value::String(gateway_url.into()),
+        .ok_or_else(|| WiseSpaceError::Gateway("Pi models.json is not a JSON object".into()))?;
+
+    if !obj.contains_key("providers") {
+        obj.insert("providers".into(), serde_json::json!({}));
+    }
+    let providers = obj
+        .get_mut("providers")
+        .and_then(|value| value.as_object_mut())
+        .ok_or_else(|| WiseSpaceError::Gateway("Pi providers is not a JSON object".into()))?;
+
+    providers.insert(
+        "wisespace".into(),
+        serde_json::json!({
+            "name": "wiseSpace Gateway",
+            "baseUrl": gateway_url,
+            "api": "openai-completions",
+            "apiKey": api_key,
+            "authHeader": true,
+            "models": [
+                {
+                    "id": "gpt-5.4",
+                    "name": "gpt-5.4",
+                    "reasoning": true,
+                    "input": ["text", "image"],
+                    "contextWindow": 128000,
+                    "maxTokens": 128000,
+                    "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+                },
+                {
+                    "id": "gpt-5.3-codex",
+                    "name": "gpt-5.3-codex",
+                    "reasoning": true,
+                    "input": ["text", "image"],
+                    "contextWindow": 128000,
+                    "maxTokens": 128000,
+                    "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+                },
+                {
+                    "id": "deepseek-v4-pro",
+                    "name": "deepseek-v4-pro",
+                    "reasoning": true,
+                    "input": ["text", "image"],
+                    "contextWindow": 128000,
+                    "maxTokens": 128000,
+                    "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+                },
+                {
+                    "id": "deepseek-v4-flash",
+                    "name": "deepseek-v4-flash",
+                    "reasoning": true,
+                    "input": ["text", "image"],
+                    "contextWindow": 128000,
+                    "maxTokens": 128000,
+                    "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+                }
+            ]
+        }),
     );
-    obj.insert(
-        "openai.apiKey".into(),
-        serde_json::Value::String(api_key.into()),
-    );
+
     let content = serde_json::to_string_pretty(&json)
         .map_err(|e| WiseSpaceError::Gateway(format!("Failed to serialize JSON: {}", e)))?;
-    atomic_write(settings_path, &content)
+    atomic_write(config_path, &content)
+}
+
+fn connect_deepseek_tui(config_path: &Path, gateway_url: &str, api_key: &str) -> Result<()> {
+    let content = if config_path.exists() {
+        std::fs::read_to_string(config_path)
+            .map_err(|e| WiseSpaceError::Gateway(format!("Failed to read config.toml: {}", e)))?
+    } else {
+        String::new()
+    };
+
+    let mut doc = content
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| WiseSpaceError::Gateway(format!("Failed to parse TOML: {}", e)))?;
+
+    doc["provider"] = toml_edit::value("openai");
+    if doc.get("default_text_model").is_none() {
+        doc["default_text_model"] = toml_edit::value("deepseek-v4-pro");
+    }
+
+    if !doc.contains_key("providers") {
+        doc["providers"] = toml_edit::Item::Table(toml_edit::Table::new());
+    }
+    let providers = doc["providers"]
+        .as_table_mut()
+        .ok_or_else(|| WiseSpaceError::Gateway("providers is not a table".into()))?;
+
+    if !providers.contains_key("openai") {
+        providers["openai"] = toml_edit::Item::Table(toml_edit::Table::new());
+    }
+    let openai = providers["openai"]
+        .as_table_mut()
+        .ok_or_else(|| WiseSpaceError::Gateway("providers.openai is not a table".into()))?;
+
+    openai["api_key"] = toml_edit::value(api_key);
+    openai["base_url"] = toml_edit::value(gateway_url);
+
+    atomic_write(config_path, &doc.to_string())
 }
 
 // ─── Disconnect ─────────────────────────────────────────
@@ -832,16 +847,9 @@ fn disconnect_remove_fields(tool: CliTool, gateway_url: &str) -> Result<()> {
             };
             auth_result.and_then(|_| remove_toml_wisespace_config(&paths[1]))
         }
-        CliTool::Gemini => {
-            let env_result = remove_env_keys(
-                &paths[0],
-                &["GEMINI_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_BASE_URL"],
-            );
-            let settings_result = remove_gemini_settings_selected_type(&paths[1]);
-            env_result.and(settings_result)
-        }
         CliTool::OpenCode => remove_json_provider(&paths[0], "wisespace"),
-        CliTool::Cursor => remove_json_fields(&paths[0], &["openai.apiBaseUrl", "openai.apiKey"]),
+        CliTool::Pi => remove_json_provider(&paths[0], "wisespace"),
+        CliTool::DeepSeekTui => remove_toml_deepseek_openai_provider(&paths[0]),
     };
 
     if let Err(e) = remove_result {
@@ -874,24 +882,6 @@ fn disconnect_remove_fields(tool: CliTool, gateway_url: &str) -> Result<()> {
     }
 }
 
-fn remove_json_fields(path: &Path, keys: &[&str]) -> Result<()> {
-    if !path.exists() {
-        return Ok(());
-    }
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| WiseSpaceError::Gateway(format!("Failed to read: {}", e)))?;
-    let mut json: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|e| WiseSpaceError::Gateway(format!("Failed to parse JSON: {}", e)))?;
-    if let Some(obj) = json.as_object_mut() {
-        for key in keys {
-            obj.remove(*key);
-        }
-    }
-    let output = serde_json::to_string_pretty(&json)
-        .map_err(|e| WiseSpaceError::Gateway(format!("Failed to serialize JSON: {}", e)))?;
-    atomic_write(path, &output)
-}
-
 fn remove_toml_wisespace_config(path: &Path) -> Result<()> {
     if !path.exists() {
         return Ok(());
@@ -920,33 +910,6 @@ fn remove_toml_wisespace_config(path: &Path) -> Result<()> {
     atomic_write(path, &doc.to_string())
 }
 
-fn remove_env_keys(path: &Path, keys: &[&str]) -> Result<()> {
-    if !path.exists() {
-        return Ok(());
-    }
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| WiseSpaceError::Gateway(format!("Failed to read .env: {}", e)))?;
-    let mut output = String::new();
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            output.push_str(line);
-            output.push('\n');
-            continue;
-        }
-        if let Some((k, _)) = trimmed.split_once('=') {
-            if !keys.contains(&k.trim()) {
-                output.push_str(line);
-                output.push('\n');
-            }
-        } else {
-            output.push_str(line);
-            output.push('\n');
-        }
-    }
-    atomic_write(path, &output)
-}
-
 fn remove_json_provider(path: &Path, provider_name: &str) -> Result<()> {
     if !path.exists() {
         return Ok(());
@@ -958,6 +921,9 @@ fn remove_json_provider(path: &Path, provider_name: &str) -> Result<()> {
     if let Some(obj) = json.as_object_mut() {
         if let Some(provider) = obj.get_mut("provider").and_then(|p| p.as_object_mut()) {
             provider.remove(provider_name);
+        }
+        if let Some(providers) = obj.get_mut("providers").and_then(|p| p.as_object_mut()) {
+            providers.remove(provider_name);
         }
     }
     let output = serde_json::to_string_pretty(&json)
@@ -1022,36 +988,27 @@ fn remove_claude_settings_gateway_fields(path: &Path, gateway_url: &str) -> Resu
     atomic_write(path, &output)
 }
 
-fn remove_gemini_settings_selected_type(path: &Path) -> Result<()> {
+fn remove_toml_deepseek_openai_provider(path: &Path) -> Result<()> {
     if !path.exists() {
         return Ok(());
     }
     let content = std::fs::read_to_string(path)
-        .map_err(|e| WiseSpaceError::Gateway(format!("Failed to read settings.json: {}", e)))?;
-    let mut json: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|e| WiseSpaceError::Gateway(format!("Failed to parse JSON: {}", e)))?;
+        .map_err(|e| WiseSpaceError::Gateway(format!("Failed to read TOML: {}", e)))?;
+    let mut doc = content
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| WiseSpaceError::Gateway(format!("Failed to parse TOML: {}", e)))?;
 
-    if let Some(obj) = json.as_object_mut() {
-        // Only remove selectedType if it's "gemini-api-key"
-        if let Some(security) = obj.get_mut("security").and_then(|s| s.as_object_mut()) {
-            if let Some(auth) = security.get_mut("auth").and_then(|a| a.as_object_mut()) {
-                if auth.get("selectedType").and_then(|v| v.as_str()) == Some("gemini-api-key") {
-                    auth.remove("selectedType");
-                    // Clean up empty auth and security objects
-                    if auth.is_empty() {
-                        security.remove("auth");
-                    }
-                }
-                if security.is_empty() {
-                    obj.remove("security");
-                }
-            }
+    if doc.get("provider").and_then(|v| v.as_str()) == Some("openai") {
+        doc.remove("provider");
+    }
+    if let Some(providers) = doc.get_mut("providers").and_then(|v| v.as_table_mut()) {
+        providers.remove("openai");
+        if providers.is_empty() {
+            doc.remove("providers");
         }
     }
 
-    let output = serde_json::to_string_pretty(&json)
-        .map_err(|e| WiseSpaceError::Gateway(format!("Failed to serialize JSON: {}", e)))?;
-    atomic_write(path, &output)
+    atomic_write(path, &doc.to_string())
 }
 
 // ─── Helpers ────────────────────────────────────────────

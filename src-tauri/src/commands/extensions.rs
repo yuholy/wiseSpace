@@ -181,7 +181,9 @@ fn extract_capability_names(agent: &ExternalAgent) -> Vec<String> {
 
 fn bridge_family(kind: &str) -> &'static str {
     let normalized = kind.to_lowercase();
-    if normalized.contains("openclaw") {
+    if normalized.contains("pi") {
+        "pi_adapter"
+    } else if normalized.contains("openclaw") {
         "openclaw"
     } else if normalized.contains("nanoclaw") {
         "nanoclaw"

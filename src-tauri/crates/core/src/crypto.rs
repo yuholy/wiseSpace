@@ -74,5 +74,16 @@ pub fn key_prefix(key: &str) -> String {
 pub fn generate_gateway_key() -> String {
     let mut bytes = [0u8; 32];
     OsRng.fill_bytes(&mut bytes);
-    format!("aq-{}", hex::encode(bytes))
+    format!("ws-{}", hex::encode(bytes))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::generate_gateway_key;
+
+    #[test]
+    fn generated_gateway_keys_use_ws_prefix() {
+        let key = generate_gateway_key();
+        assert!(key.starts_with("ws-"), "expected ws- prefix, got {key}");
+    }
 }

@@ -65,6 +65,7 @@ export interface ExtensionRuntimeInfo {
 }
 
 export type ExternalBridgeFamily =
+  | 'pi_adapter'
   | 'openclaw'
   | 'nanoclaw'
   | 'http_bridge'

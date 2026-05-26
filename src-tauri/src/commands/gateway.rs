@@ -93,9 +93,34 @@ fn gateway_client_host(listen_address: &str) -> String {
 }
 
 fn gateway_api_base_path(tool: CliTool) -> &'static str {
-    match tool {
-        CliTool::Gemini => "/v1beta",
-        _ => "/v1",
+    let _ = tool;
+    "/v1"
+}
+
+async fn validate_cli_tool_gateway_compatibility(
+    state: &AppState,
+    cli_tool: CliTool,
+) -> Result<(), String> {
+    if cli_tool != CliTool::ClaudeCode {
+        return Ok(());
+    }
+
+    let providers = wisespace_core::repo::provider::list_providers(&state.sea_db)
+        .await
+        .map_err(|e| e.to_string())?;
+    let has_enabled_anthropic_model = providers.iter().any(|provider| {
+        provider.enabled
+            && provider.provider_type == ProviderType::Anthropic
+            && provider.models.iter().any(|model| model.enabled)
+    });
+
+    if has_enabled_anthropic_model {
+        Ok(())
+    } else {
+        Err(
+            "Claude Code 需要至少一个已启用的 Anthropic/Claude 模型。当前网关里没有启用任何 Claude 模型，请先在模型设置中启用 Claude 提供商后再接入。"
+                .to_string(),
+        )
     }
 }
 
@@ -383,6 +408,8 @@ pub async fn connect_cli_tool(
     let cli_tool = CliTool::from_str(&tool).map_err(|e| e.to_string())?;
     let protocol = QuickConnectProtocol::parse(&protocol)?;
 
+    validate_cli_tool_gateway_compatibility(&state, cli_tool).await?;
+
     // Get plain key via decryption
     let plain_key =
         wisespace_core::repo::gateway_key::get_plain_key(&state.sea_db, &state.master_key, &key_id)
@@ -393,6 +420,47 @@ pub async fn connect_cli_tool(
 
     wisespace_core::repo::cli_config::connect(cli_tool, &gateway_url, &plain_key)
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn install_cli_tool(tool: String) -> Result<(), String> {
+    let cli_tool = CliTool::from_str(&tool).map_err(|e| e.to_string())?;
+    let package_name = cli_tool.install_package_name().ok_or_else(|| {
+        format!(
+            "{} does not support managed install in wiseSpace yet",
+            cli_tool.display_name()
+        )
+    })?;
+
+    let package_name = package_name.to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        let npm_cmd = if cfg!(target_os = "windows") {
+            "npm.cmd"
+        } else {
+            "npm"
+        };
+        let output = std::process::Command::new(npm_cmd)
+            .args(["install", "-g", &package_name])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output()
+            .map_err(|e| format!("Failed to start npm install: {}", e))?;
+
+        if output.status.success() {
+            Ok(())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let details = if !stderr.is_empty() { stderr } else { stdout };
+            Err(if details.is_empty() {
+                format!("npm install exited with status {}", output.status)
+            } else {
+                details
+            })
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -833,11 +901,11 @@ mod tests {
 
     #[test]
     fn gateway_api_base_path_matches_native_protocols() {
-        assert_eq!(gateway_api_base_path(CliTool::Gemini), "/v1beta");
         assert_eq!(gateway_api_base_path(CliTool::ClaudeCode), "/v1");
         assert_eq!(gateway_api_base_path(CliTool::Codex), "/v1");
         assert_eq!(gateway_api_base_path(CliTool::OpenCode), "/v1");
-        assert_eq!(gateway_api_base_path(CliTool::Cursor), "/v1");
+        assert_eq!(gateway_api_base_path(CliTool::Pi), "/v1");
+        assert_eq!(gateway_api_base_path(CliTool::DeepSeekTui), "/v1");
     }
 
     #[test]
@@ -896,7 +964,7 @@ mod tests {
                 8080,
                 Some(8443),
                 false,
-                CliTool::Cursor,
+                CliTool::Pi,
                 QuickConnectProtocol::Http,
             )
             .expect("http url"),
@@ -908,7 +976,7 @@ mod tests {
                 8080,
                 Some(8443),
                 false,
-                CliTool::Cursor,
+                CliTool::Pi,
                 QuickConnectProtocol::Https,
             )
             .expect("https url"),
@@ -941,7 +1009,7 @@ mod tests {
             8080,
             Some(8443),
             true,
-            CliTool::Cursor,
+            CliTool::Pi,
             QuickConnectProtocol::Http,
         )
         .expect_err("http should be unavailable");
@@ -955,7 +1023,7 @@ mod tests {
     #[test]
     fn build_gateway_url_options_keeps_http_for_detection_when_force_ssl_is_enabled() {
         let gateway_urls =
-            build_gateway_url_options("127.0.0.1", 8080, Some(8443), true, CliTool::Cursor);
+            build_gateway_url_options("127.0.0.1", 8080, Some(8443), true, CliTool::Pi);
 
         assert_eq!(
             gateway_urls.http.as_deref(),
@@ -1006,7 +1074,7 @@ mod tests {
     #[test]
     fn disconnect_gateway_url_for_cli_tool_keeps_http_target_when_force_ssl_is_enabled() {
         let gateway_urls =
-            build_gateway_url_options("127.0.0.1", 8080, Some(8443), true, CliTool::Cursor);
+            build_gateway_url_options("127.0.0.1", 8080, Some(8443), true, CliTool::Pi);
         let connection_state = resolve_cli_tool_connection_state(true, true, false);
 
         assert_eq!(

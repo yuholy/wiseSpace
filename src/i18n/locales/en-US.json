@@ -362,6 +362,7 @@
     "cliSelectProtocol": "Select Protocol",
     "cliProtocolHttp": "HTTP",
     "cliProtocolHttps": "HTTPS",
+    "cliInstall": "Install",
     "cliDisconnect": "Disconnect",
     "cliReconnect": "Reconnect",
     "cliSwitchProtocolReconnect": "Switch to selected protocol and reconnect",
@@ -370,6 +371,8 @@
     "cliStartGatewayFirst": "Please start the gateway before using quick connect.",
     "cliConnectSuccess": "{{name}} connected successfully",
     "cliConnectError": "Connection failed: {{error}}",
+    "cliInstallSuccess": "{{name}} installed successfully",
+    "cliInstallError": "Install failed: {{error}}",
     "cliDisconnectSuccess": "{{name}} disconnected",
     "cliDisconnectError": "Disconnect failed: {{error}}",
     "cliDisconnectTitle": "Disconnect",
@@ -444,8 +447,8 @@
     "templateDescClaude": "Anthropic's official CLI coding assistant, collaborate with Claude directly in the terminal",
     "templateDescCodex": "OpenAI's lightweight coding agent, autonomously complete coding tasks in a sandbox",
     "templateDescOpencode": "Open-source terminal AI coding assistant, flexible code tool supporting multiple model backends",
-    "templateDescGemini": "Google Gemini CLI coding agent, use Gemini models directly in the terminal",
-    "templateDescCursor": "AI-native editor based on VS Code, with deep integration of code completion and chat"
+    "templateDescPi": "Earendil Works terminal coding agent, wired to wiseSpace Gateway through a custom provider",
+    "templateDescDeepSeekTui": "DeepSeek-TUI terminal agent, connected to wiseSpace Gateway through OpenAI-compatible config"
   },
   "settings": {
     "title": "Settings",

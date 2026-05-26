@@ -6,6 +6,37 @@ import type { ExternalAgent } from '@/types';
 import { getExternalTaskSummary } from '@/lib/externalTaskSummary';
 
 const DEFAULT_CAPABILITIES = JSON.stringify({ taskKinds: ['general'], resultIngest: ['assistant_message'] }, null, 2);
+const PI_ADAPTER_CAPABILITIES = JSON.stringify({
+  taskKinds: ['general', 'code', 'review'],
+  resultIngest: ['assistant_message'],
+  runtime: {
+    engine: 'pi',
+    transport: 'rpc-subprocess',
+  },
+}, null, 2);
+
+const KIND_OPTIONS = [
+  { label: 'Pi Adapter', value: 'pi_adapter' },
+  { label: 'OpenClaw compatible', value: 'openclaw' },
+  { label: 'NanoClaw', value: 'nanoclaw' },
+  { label: '通用 HTTP', value: 'generic_http' },
+] as const;
+
+function getPresetValues(kind: string) {
+  if (kind === 'pi_adapter') {
+    return {
+      name: 'Pi Adapter',
+      baseUrl: 'http://127.0.0.1:8789',
+      capabilitiesJson: PI_ADAPTER_CAPABILITIES,
+    };
+  }
+
+  return {
+    name: '',
+    baseUrl: '',
+    capabilitiesJson: DEFAULT_CAPABILITIES,
+  };
+}
 
 interface AgentFormValues {
   name: string;
@@ -55,6 +86,7 @@ export default function ExternalAgentSettings() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [taskEventsOpen, setTaskEventsOpen] = useState(false);
   const [taskEvents, setTaskEvents] = useState<Array<{ id: string; eventType: string; payloadJson: string; createdAt: number }>>([]);
+  const selectedKind = Form.useWatch('kind', form) ?? 'generic_http';
   const selectedAgent = useMemo(
     () => agents.find((agent) => agent.id === selectedId) ?? null,
     [agents, selectedId],
@@ -88,6 +120,22 @@ export default function ExternalAgentSettings() {
       enabled: selectedAgent.enabled,
     });
   }, [form, selectedAgent]);
+
+  const applyKindPreset = (kind: string) => {
+    const preset = getPresetValues(kind);
+    const currentName = form.getFieldValue('name');
+    const currentBaseUrl = form.getFieldValue('baseUrl');
+    const currentCapabilities = form.getFieldValue('capabilitiesJson');
+
+    form.setFieldsValue({
+      kind,
+      name: currentName || preset.name,
+      baseUrl: currentBaseUrl || preset.baseUrl,
+      capabilitiesJson: currentCapabilities === DEFAULT_CAPABILITIES || !currentCapabilities
+        ? preset.capabilitiesJson
+        : currentCapabilities,
+    });
+  };
 
   const saveAgent = async () => {
     const values = await form.validateFields();
@@ -179,7 +227,7 @@ export default function ExternalAgentSettings() {
       <div className="mb-5 flex items-center justify-between">
         <div>
           <Typography.Title level={4} style={{ margin: 0 }}>外部 Agent</Typography.Title>
-          <Typography.Text type="secondary">把 NanoClaw 或其他 OpenClaw 类服务作为 wiseSpace 的外部执行器。</Typography.Text>
+          <Typography.Text type="secondary">把 Pi Adapter、NanoClaw 或其他 OpenClaw 类服务作为 wiseSpace 的外部执行器。</Typography.Text>
         </div>
         <Button icon={<RefreshCw size={16} />} onClick={() => { void loadAgents(); void loadTasks({ limit: 20 }); }}>
           刷新
@@ -220,6 +268,9 @@ export default function ExternalAgentSettings() {
           title={selectedAgent ? '编辑 Agent' : '新建 Agent'}
           extra={(
             <Space>
+              {!selectedAgent && selectedKind === 'pi_adapter' && (
+                <Tag color="blue">推荐地址 http://127.0.0.1:8789</Tag>
+              )}
               {selectedAgent && <Button icon={<PlugZap size={16} />} onClick={runTest}>测试</Button>}
               {selectedAgent && <Button danger icon={<Trash2 size={16} />} onClick={removeAgent}>删除</Button>}
               <Button type="primary" icon={<Save size={16} />} onClick={saveAgent}>保存</Button>
@@ -228,16 +279,13 @@ export default function ExternalAgentSettings() {
         >
           <Form form={form} layout="vertical" initialValues={{ kind: 'generic_http', authType: 'none', capabilitiesJson: DEFAULT_CAPABILITIES, enabled: true }}>
             <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
-              <Input placeholder="NanoClaw 本地服务" />
+              <Input placeholder={selectedKind === 'pi_adapter' ? 'Pi Adapter' : 'NanoClaw 本地服务'} />
             </Form.Item>
             <div className="grid gap-3" style={{ gridTemplateColumns: '1fr 1fr' }}>
               <Form.Item name="kind" label="类型">
                 <Select
-                  options={[
-                    { label: '通用 HTTP', value: 'generic_http' },
-                    { label: 'NanoClaw', value: 'nanoclaw' },
-                    { label: 'OpenClaw compatible', value: 'openclaw' },
-                  ]}
+                  options={KIND_OPTIONS.map((option) => ({ ...option }))}
+                  onChange={applyKindPreset}
                 />
               </Form.Item>
               <Form.Item name="enabled" label="启用" valuePropName="checked">
@@ -245,8 +293,13 @@ export default function ExternalAgentSettings() {
               </Form.Item>
             </div>
             <Form.Item name="baseUrl" label="服务地址">
-              <Input placeholder="http://127.0.0.1:8787" />
+              <Input placeholder={selectedKind === 'pi_adapter' ? 'http://127.0.0.1:8789' : 'http://127.0.0.1:8787'} />
             </Form.Item>
+            {selectedKind === 'pi_adapter' && (
+              <Typography.Paragraph type="secondary" style={{ marginTop: -8 }}>
+                先在本地运行 `pnpm external-agent:pi-adapter`，然后把服务地址指向上面的默认端口。
+              </Typography.Paragraph>
+            )}
             <div className="grid gap-3" style={{ gridTemplateColumns: '180px 1fr' }}>
               <Form.Item name="authType" label="认证方式">
                 <Select
@@ -269,7 +322,7 @@ export default function ExternalAgentSettings() {
                   validator: async (_, value) => {
                     JSON.parse(value || '{}');
                   },
-                  message: '璇疯緭鍏ュ悎娉?JSON',
+                  message: '请输入合法 JSON',
                 },
               ]}
             >
@@ -332,7 +385,7 @@ export default function ExternalAgentSettings() {
             renderItem={(event) => (
               <List.Item key={event.id}>
                 <List.Item.Meta
-                  title={<Space><Tag>{event.eventType}</Tag><Typography.Text type="secondary">把 NanoClaw 或其他 OpenClaw 类服务作为 wiseSpace 的外部执行器。</Typography.Text></Space>}
+                  title={<Space><Tag>{event.eventType}</Tag><Typography.Text type="secondary">外部 Agent 任务事件</Typography.Text></Space>}
                   description={
                     <pre
                       style={{

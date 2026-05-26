@@ -951,7 +951,7 @@ interface ConversationState {
     title: string,
     modelId: string,
     providerId: string,
-    options?: { categoryId?: string | null },
+    options?: { categoryId?: string | null; mode?: 'chat' | 'agent' },
   ) => Promise<Conversation>;
   updateConversation: (id: string, input: UpdateConversationInput) => Promise<void>;
   renameConversation: (id: string, title: string) => Promise<void>;
@@ -1818,6 +1818,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
           input: {
             ...categoryTemplateUpdateFromCategory(category),
             ...conversationPreferenceUpdateFromState(get()),
+            ...(options?.mode ? { mode: options.mode } : {}),
           },
         });
       } catch (preferenceError) {

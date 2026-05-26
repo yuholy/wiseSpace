@@ -13,6 +13,7 @@ pub async fn dispatch_task(
     task_payload: Value,
 ) -> Result<ConnectorResponse, String> {
     match agent.kind.as_str() {
+        "pi_adapter" => openclaw::dispatch_task(agent, task, task_payload).await,
         "nanoclaw" => nanoclaw::dispatch_task(agent, task, task_payload).await,
         "openclaw" => openclaw::dispatch_task(agent, task, task_payload).await,
         "custom_http" | "generic_http" | "" => {
@@ -26,6 +27,7 @@ pub async fn test_connection(
     agent: &ExternalAgent,
 ) -> Result<ExternalAgentConnectionTestResult, String> {
     match agent.kind.as_str() {
+        "pi_adapter" => openclaw::test_connection(agent).await,
         "nanoclaw" => nanoclaw::test_connection(agent).await,
         "openclaw" => openclaw::test_connection(agent).await,
         "custom_http" | "generic_http" | "" => test_custom_http(agent).await,
@@ -38,6 +40,7 @@ pub async fn fetch_task(
     external_task_id: &str,
 ) -> Result<ConnectorResponse, String> {
     match agent.kind.as_str() {
+        "pi_adapter" => openclaw::fetch_task(agent, external_task_id).await,
         "nanoclaw" => nanoclaw::fetch_task(agent, external_task_id).await,
         "openclaw" => openclaw::fetch_task(agent, external_task_id).await,
         "custom_http" | "generic_http" | "" => {

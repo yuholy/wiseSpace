@@ -506,12 +506,30 @@ async fn dispatch_task_from_parts(
     });
     let request_payload_json =
         serde_json::to_string(&request_payload).map_err(|e| e.to_string())?;
+    let effective_source_message_id = match (conversation_id, source_message_id) {
+        (Some(conversation_id), None) => Some(
+            wisespace_core::repo::message::create_message(
+                &state.sea_db,
+                conversation_id,
+                MessageRole::User,
+                input_text,
+                &[],
+                None,
+                0,
+            )
+            .await
+            .map_err(|e| e.to_string())?
+            .id,
+        ),
+        (_, Some(existing)) => Some(existing.to_string()),
+        _ => None,
+    };
     let task = wisespace_core::repo::external_agent::create_agent_task(
         &state.sea_db,
         conversation_id,
         parent_run_id,
         parent_task_id,
-        source_message_id,
+        effective_source_message_id.as_deref(),
         &agent.id,
         "external_agent",
         assignee_label,
@@ -527,7 +545,7 @@ async fn dispatch_task_from_parts(
         "conversationId": conversation_id,
         "parentRunId": parent_run_id,
         "parentTaskId": parent_task_id,
-        "sourceMessageId": source_message_id,
+        "sourceMessageId": effective_source_message_id.clone(),
         "kind": kind,
         "title": title,
         "assigneeLabel": assignee_label,
@@ -571,7 +589,7 @@ async fn dispatch_task_from_parts(
                     ingest_assistant_message(
                         &state.sea_db,
                         conversation_id,
-                        source_message_id,
+                        effective_source_message_id.as_deref(),
                         content,
                         &response.result_payload,
                     )

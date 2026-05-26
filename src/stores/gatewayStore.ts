@@ -63,6 +63,7 @@ interface GatewayState {
   fetchRequestLogs: (limit?: number, offset?: number) => Promise<void>;
   clearRequestLogs: () => Promise<void>;
   fetchCliToolStatuses: () => Promise<void>;
+  installCliTool: (tool: string) => Promise<void>;
   connectCliTool: (tool: string, keyId: string, protocol: QuickConnectProtocol) => Promise<void>;
   disconnectCliTool: (tool: string, restoreBackup: boolean) => Promise<void>;
 }
@@ -311,6 +312,17 @@ export const useGatewayStore = create<GatewayState>((set) => ({
       set({ cliTools, cliToolsLoading: false });
     } catch (e) {
       set({ error: String(e), cliToolsLoading: false });
+    }
+  },
+
+  installCliTool: async (tool) => {
+    try {
+      await invoke('install_cli_tool', { tool });
+      const cliTools = await invoke<CliToolInfo[]>('get_all_cli_tool_statuses');
+      set({ cliTools, error: null });
+    } catch (e) {
+      set({ error: String(e) });
+      throw e;
     }
   },
 

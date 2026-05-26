@@ -2,11 +2,8 @@ import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react
 import { useTranslation } from 'react-i18next';
 import { Card, Button, Typography, App, Tag, Select } from 'antd';
 import { Zap, ZapOff, RefreshCw, AlertCircle } from 'lucide-react';
-import { ClaudeCode } from '@lobehub/icons';
 import { Codex } from '@lobehub/icons';
 import { OpenCode } from '@lobehub/icons';
-import { Gemini } from '@lobehub/icons';
-import { Cursor } from '@lobehub/icons';
 import { useGatewayStore } from '@/stores/gatewayStore';
 import type { CliToolInfo, QuickConnectProtocol } from '@/types';
 
@@ -17,38 +14,102 @@ interface QuickConnectItem {
   name: string;
   avatar: (size: number) => ReactNode;
   description: string;
+  configPathHint?: string;
+  supportsManagedInstall?: boolean;
+}
+
+function PiGlyph({ size }: { size: number }) {
+  return (
+    <span
+      style={{
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'linear-gradient(135deg, #111827 0%, #334155 100%)',
+        color: '#fff',
+      }}
+    >
+      <svg
+        viewBox="0 0 800 800"
+        aria-hidden="true"
+        focusable="false"
+        style={{ width: Math.round(size * 0.58), height: Math.round(size * 0.58) }}
+      >
+        <path
+          fill="currentColor"
+          fillRule="evenodd"
+          d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z"
+        />
+        <path fill="currentColor" d="M517.36 400H634.72V634.72H517.36Z" />
+      </svg>
+    </span>
+  );
+}
+
+function DeepSeekSeal({ size }: { size: number }) {
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#171717',
+        backgroundImage:
+          'radial-gradient(rgba(244, 241, 232, 0.28) 0.7px, transparent 0.7px)',
+        backgroundSize: `${Math.max(4, Math.round(size * 0.14))}px ${Math.max(4, Math.round(size * 0.14))}px`,
+        color: '#f4f1e8',
+        fontFamily: '"Noto Serif SC", serif',
+        fontWeight: 700,
+        width: size,
+        height: size,
+        borderRadius: 1,
+        letterSpacing: '-0.04em',
+        boxShadow: 'inset 0 0 0 1px rgba(244, 241, 232, 0.18), inset 0 0 0 3px #171717',
+        transform: 'rotate(-1.5deg)',
+        position: 'relative',
+        fontSize: Math.round(size * 0.48),
+        lineHeight: 1,
+      }}
+    >
+      深
+    </span>
+  );
 }
 
 const CONNECT_ITEMS: QuickConnectItem[] = [
-  {
-    key: 'claude_code',
-    name: 'Claude Code',
-    avatar: (size) => <ClaudeCode.Avatar size={size} />,
-    description: 'gateway.templateDescClaude',
-  },
   {
     key: 'codex',
     name: 'Codex',
     avatar: (size) => <Codex.Avatar size={size} />,
     description: 'gateway.templateDescCodex',
+    configPathHint: '~/.codex/auth.json',
   },
   {
     key: 'opencode',
     name: 'OpenCode',
     avatar: (size) => <OpenCode.Avatar size={size} />,
     description: 'gateway.templateDescOpencode',
+    configPathHint: '~/.config/opencode/opencode.json',
   },
   {
-    key: 'gemini',
-    name: 'Gemini CLI',
-    avatar: (size) => <Gemini.Avatar size={size} />,
-    description: 'gateway.templateDescGemini',
+    key: 'pi',
+    name: 'Pi',
+    avatar: (size) => <PiGlyph size={size} />,
+    description: 'gateway.templateDescPi',
+    configPathHint: '~/.pi/agent/models.json',
+    supportsManagedInstall: true,
   },
   {
-    key: 'cursor',
-    name: 'Cursor',
-    avatar: (size) => <Cursor.Avatar size={size} />,
-    description: 'gateway.templateDescCursor',
+    key: 'deepseek_tui',
+    name: 'DeepSeek-TUI',
+    avatar: (size) => <DeepSeekSeal size={size} />,
+    description: 'gateway.templateDescDeepSeekTui',
+    configPathHint: '~/.deepseek/config.toml',
+    supportsManagedInstall: true,
   },
 ];
 
@@ -113,18 +174,20 @@ function ToolCard({
   selectedKeyId,
   selectedProtocol,
   quickConnectBlocked,
+  onInstall,
   onConnect,
   onDisconnect,
-  connecting,
+  busyTool,
 }: {
   item: QuickConnectItem;
   toolInfo?: CliToolInfo;
   selectedKeyId?: string;
   selectedProtocol?: QuickConnectProtocol;
   quickConnectBlocked: boolean;
+  onInstall: (toolId: string) => void;
   onConnect: (toolId: string) => void;
   onDisconnect: (toolId: string, restoreBackup: boolean) => void;
-  connecting: string | null;
+  busyTool: string | null;
 }) {
   const { t } = useTranslation();
   const { modal } = App.useApp();
@@ -132,9 +195,10 @@ function ToolCard({
   const status = toolInfo?.status ?? 'not_installed';
   const connectedProtocol = toolInfo?.connectedProtocol ?? null;
   const displayStatus = status === 'connected' && connectedProtocol == null ? 'not_connected' : status;
-  const isConnecting = connecting === item.key;
+  const isBusy = busyTool === item.key;
   const isNotInstalled = displayStatus === 'not_installed';
   const isConnected = displayStatus === 'connected';
+  const configPath = toolInfo?.configPath ?? item.configPathHint;
   const needsReconnect =
     isConnected &&
     connectedProtocol != null &&
@@ -154,6 +218,10 @@ function ToolCard({
       onConnect(item.key);
     }
   }, [item.key, isNotInstalled, onConnect, modal, t]);
+
+  const handleInstall = useCallback(() => {
+    onInstall(item.key);
+  }, [item.key, onInstall]);
 
   const handleDisconnect = useCallback(() => {
     const hasBackup = toolInfo?.hasBackup ?? false;
@@ -192,19 +260,27 @@ function ToolCard({
           >
             {t(item.description)}
           </Paragraph>
-          {toolInfo?.configPath && (
+          {configPath && (
             <Text type="secondary" style={{ fontSize: 11 }}>
-              {toolInfo.configPath}
+              {configPath}
             </Text>
           )}
         </div>
         <div style={{ flexShrink: 0 }}>
-          {isConnected && !needsReconnect ? (
+          {isNotInstalled && item.supportsManagedInstall ? (
+            <Button
+              icon={<Zap size={14} />}
+              onClick={handleInstall}
+              loading={isBusy}
+            >
+              {t('gateway.cliInstall')}
+            </Button>
+          ) : isConnected && !needsReconnect ? (
             <Button
               danger
               icon={<ZapOff size={14} />}
               onClick={handleDisconnect}
-              loading={isConnecting}
+              loading={isBusy}
             >
               {t('gateway.cliDisconnect')}
             </Button>
@@ -214,7 +290,7 @@ function ToolCard({
               icon={<Zap size={14} />}
               onClick={handleConnect}
               disabled={quickConnectBlocked || !selectedKeyId || !selectedProtocol}
-              loading={isConnecting}
+              loading={isBusy}
             >
               {needsReconnect ? t('gateway.cliSwitchProtocolReconnect') : t('gateway.quickConnect')}
             </Button>
@@ -235,11 +311,12 @@ export function GatewayTemplates() {
     keys,
     fetchStatus,
     fetchCliToolStatuses,
+    installCliTool,
     connectCliTool,
     disconnectCliTool,
     fetchKeys,
   } = useGatewayStore();
-  const [connecting, setConnecting] = useState<string | null>(null);
+  const [busyTool, setBusyTool] = useState<string | null>(null);
   const enabledKeys = keys.filter((k) => k.enabled && k.has_encrypted_key);
   const quickConnectBlocked = !status.is_running;
   const [selectedKeyId, setSelectedKeyId] = useState<string | undefined>(undefined);
@@ -290,10 +367,26 @@ export function GatewayTemplates() {
     void fetchCliToolStatuses();
   }, [fetchStatus, fetchCliToolStatuses]);
 
+  const handleInstall = useCallback(
+    async (toolId: string) => {
+      setBusyTool(toolId);
+      try {
+        await installCliTool(toolId);
+        const name = CONNECT_ITEMS.find((i) => i.key === toolId)?.name;
+        message.success(t('gateway.cliInstallSuccess', { name }));
+      } catch (e) {
+        message.error(t('gateway.cliInstallError', { error: String(e) }));
+      } finally {
+        setBusyTool(null);
+      }
+    },
+    [installCliTool, message, t],
+  );
+
   const handleConnect = useCallback(
     async (toolId: string) => {
       if (!selectedKeyId || !selectedProtocol) return;
-      setConnecting(toolId);
+      setBusyTool(toolId);
       try {
         await connectCliTool(toolId, selectedKeyId, selectedProtocol);
         const name = CONNECT_ITEMS.find((i) => i.key === toolId)?.name;
@@ -301,7 +394,7 @@ export function GatewayTemplates() {
       } catch (e) {
         message.error(t('gateway.cliConnectError', { error: String(e) }));
       } finally {
-        setConnecting(null);
+        setBusyTool(null);
       }
     },
     [connectCliTool, message, selectedKeyId, selectedProtocol, t],
@@ -309,7 +402,7 @@ export function GatewayTemplates() {
 
   const handleDisconnect = useCallback(
     async (toolId: string, restoreBackup: boolean) => {
-      setConnecting(toolId);
+      setBusyTool(toolId);
       try {
         await disconnectCliTool(toolId, restoreBackup);
         const name = CONNECT_ITEMS.find((i) => i.key === toolId)?.name;
@@ -317,7 +410,7 @@ export function GatewayTemplates() {
       } catch (e) {
         message.error(t('gateway.cliDisconnectError', { error: String(e) }));
       } finally {
-        setConnecting(null);
+        setBusyTool(null);
       }
     },
     [disconnectCliTool, message, t],
@@ -382,9 +475,10 @@ export function GatewayTemplates() {
           selectedKeyId={selectedKeyId}
           selectedProtocol={selectedProtocol}
           quickConnectBlocked={quickConnectBlocked}
+          onInstall={handleInstall}
           onConnect={handleConnect}
           onDisconnect={handleDisconnect}
-          connecting={connecting}
+          busyTool={busyTool}
         />
       ))}
     </div>

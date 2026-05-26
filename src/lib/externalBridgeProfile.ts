@@ -8,6 +8,7 @@ import type {
 
 function deriveBridgeFamily(kind?: string | null): ExternalBridgeFamily {
   const normalized = (kind ?? '').toLowerCase();
+  if (normalized.includes('pi')) return 'pi_adapter';
   if (normalized.includes('openclaw')) return 'openclaw';
   if (normalized.includes('nanoclaw')) return 'nanoclaw';
   if (normalized.includes('http')) return 'http_bridge';
@@ -119,6 +120,8 @@ export function readExternalBridgeProfile(
 
 export function getExternalBridgeFamilyLabel(family: ExternalBridgeFamily): string {
   switch (family) {
+    case 'pi_adapter':
+      return 'Pi Adapter';
     case 'openclaw':
       return 'OpenClaw';
     case 'nanoclaw':

@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { Modal, Input, List, Tag, Typography, theme } from 'antd';
-import { Search, MessageSquare, Settings, Plus, PanelLeftClose, Sparkles } from 'lucide-react';
+import { Search, MessageSquare, Settings, Plus, PanelLeftClose, Sparkles, Router } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useUIStore } from '@/stores';
 import { formatShortcutForDisplay } from '@/lib/shortcuts';
@@ -53,14 +53,13 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
         category: nav,
         action: () => { setActivePage('settings'); onClose(); },
       },
-      // Gateway module hidden for now
-      // {
-      //   id: 'go-gateway',
-      //   label: t('commandPalette.goToGateway'),
-      //   icon: <Network size={16} />,
-      //   category: nav,
-      //   action: () => { setActivePage('gateway'); onClose(); },
-      // },
+      {
+        id: 'go-gateway',
+        label: t('commandPalette.goToGateway'),
+        icon: <Router size={16} />,
+        category: nav,
+        action: () => { setActivePage('gateway'); onClose(); },
+      },
       {
         id: 'go-skills',
         label: t('commandPalette.goToSkills'),

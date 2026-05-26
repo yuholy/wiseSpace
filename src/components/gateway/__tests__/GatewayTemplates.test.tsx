@@ -7,6 +7,7 @@ import { GatewayTemplates } from '../GatewayTemplates';
 const fetchStatus = vi.fn();
 const fetchCliToolStatuses = vi.fn();
 const fetchKeys = vi.fn();
+const installCliTool = vi.fn();
 const connectCliTool = vi.fn();
 const disconnectCliTool = vi.fn();
 
@@ -24,11 +25,8 @@ vi.mock('@lobehub/icons', () => {
   };
 
   return {
-    ClaudeCode: avatar,
     Codex: avatar,
     OpenCode: avatar,
-    Gemini: avatar,
-    Cursor: avatar,
   };
 });
 
@@ -49,14 +47,6 @@ function buildStoreState(overrides: Record<string, unknown> = {}) {
     },
     cliTools: [
       {
-        id: 'claude_code',
-        name: 'Claude Code',
-        status: 'not_connected',
-        configPath: '/configs/claude.json',
-        hasBackup: false,
-        connectedProtocol: null,
-      },
-      {
         id: 'codex',
         name: 'Codex',
         status: 'connected',
@@ -73,10 +63,18 @@ function buildStoreState(overrides: Record<string, unknown> = {}) {
         connectedProtocol: 'https',
       },
       {
-        id: 'gemini',
-        name: 'Gemini CLI',
+        id: 'pi',
+        name: 'Pi',
         status: 'not_installed',
         configPath: null,
+        hasBackup: false,
+        connectedProtocol: null,
+      },
+      {
+        id: 'deepseek_tui',
+        name: 'DeepSeek-TUI',
+        status: 'not_connected',
+        configPath: '/configs/deepseek.toml',
         hasBackup: false,
         connectedProtocol: null,
       },
@@ -97,6 +95,7 @@ function buildStoreState(overrides: Record<string, unknown> = {}) {
     fetchStatus,
     fetchCliToolStatuses,
     fetchKeys,
+    installCliTool,
     connectCliTool,
     disconnectCliTool,
     ...overrides,
@@ -127,6 +126,7 @@ function getToolCard(name: string) {
 describe('GatewayTemplates', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    installCliTool.mockResolvedValue(undefined);
     connectCliTool.mockResolvedValue(undefined);
     disconnectCliTool.mockResolvedValue(undefined);
     storeState = buildStoreState();
@@ -157,7 +157,7 @@ describe('GatewayTemplates', () => {
 
     expect(screen.getByText('gateway.cliConnectedHttp')).toBeInTheDocument();
     expect(screen.getByText('gateway.cliConnectedHttps')).toBeInTheDocument();
-    expect(screen.getByText('gateway.cliNotConnected')).toBeInTheDocument();
+    expect(screen.getAllByText('gateway.cliNotConnected').length).toBeGreaterThan(0);
     expect(screen.getAllByText('gateway.cliNotInstalled').length).toBeGreaterThan(0);
 
     await selectProtocol('gateway.cliProtocolHttps');
@@ -168,13 +168,13 @@ describe('GatewayTemplates', () => {
     const openCodeCard = getToolCard('OpenCode');
     expect(within(openCodeCard).getByRole('button', { name: 'gateway.cliDisconnect' })).toBeInTheDocument();
 
-    const claudeCard = getToolCard('Claude Code');
-    const quickConnectButton = within(claudeCard).getByRole('button', { name: 'gateway.quickConnect' });
+    const deepseekCard = getToolCard('DeepSeek-TUI');
+    const quickConnectButton = within(deepseekCard).getByRole('button', { name: 'gateway.quickConnect' });
     await waitFor(() => expect(quickConnectButton).toBeEnabled());
     await userEvent.click(quickConnectButton);
 
     await waitFor(() => {
-      expect(connectCliTool).toHaveBeenCalledWith('claude_code', 'key-1', 'https');
+      expect(connectCliTool).toHaveBeenCalledWith('deepseek_tui', 'key-1', 'https');
     });
   });
 
@@ -191,10 +191,10 @@ describe('GatewayTemplates', () => {
       },
       cliTools: [
         {
-          id: 'claude_code',
-          name: 'Claude Code',
+          id: 'deepseek_tui',
+          name: 'DeepSeek-TUI',
           status: 'not_connected',
-          configPath: '/configs/claude.json',
+          configPath: '/configs/deepseek.toml',
           hasBackup: false,
           connectedProtocol: null,
         },
@@ -207,13 +207,13 @@ describe('GatewayTemplates', () => {
     expect(protocolSelect).toHaveClass('ant-select-disabled');
     expect(within(protocolSelect).getByText('gateway.cliProtocolHttp')).toBeInTheDocument();
 
-    const claudeCard = getToolCard('Claude Code');
-    const quickConnectButton = within(claudeCard).getByRole('button', { name: 'gateway.quickConnect' });
+    const deepseekCard = getToolCard('DeepSeek-TUI');
+    const quickConnectButton = within(deepseekCard).getByRole('button', { name: 'gateway.quickConnect' });
     await waitFor(() => expect(quickConnectButton).toBeEnabled());
     await userEvent.click(quickConnectButton);
 
     await waitFor(() => {
-      expect(connectCliTool).toHaveBeenCalledWith('claude_code', 'key-1', 'http');
+      expect(connectCliTool).toHaveBeenCalledWith('deepseek_tui', 'key-1', 'http');
     });
   });
 
@@ -270,6 +270,18 @@ describe('GatewayTemplates', () => {
     expect(within(codexCard).queryByRole('button', { name: 'gateway.cliDisconnect' })).not.toBeInTheDocument();
   });
 
+  it('shows config path hints and install actions for managed tools before installation', async () => {
+    renderWithApp();
+
+    const piCard = getToolCard('Pi');
+    expect(within(piCard).getByText('~/.pi/agent/models.json')).toBeInTheDocument();
+    expect(within(piCard).getByRole('button', { name: 'gateway.cliInstall' })).toBeInTheDocument();
+
+    const deepseekCard = getToolCard('DeepSeek-TUI');
+    expect(within(deepseekCard).getByText('/configs/deepseek.toml')).toBeInTheDocument();
+    expect(within(deepseekCard).getByRole('button', { name: 'gateway.quickConnect' })).toBeInTheDocument();
+  });
+
   it('shows a warning and disables quick connect actions while the gateway is stopped', async () => {
     storeState = buildStoreState({
       status: {
@@ -287,9 +299,9 @@ describe('GatewayTemplates', () => {
 
     expect(screen.getByText('gateway.cliStartGatewayFirst')).toBeInTheDocument();
 
-    const claudeCard = getToolCard('Claude Code');
+    const deepseekCard = getToolCard('DeepSeek-TUI');
     await waitFor(() => {
-      expect(within(claudeCard).getByRole('button', { name: 'gateway.quickConnect' })).toBeDisabled();
+      expect(within(deepseekCard).getByRole('button', { name: 'gateway.quickConnect' })).toBeDisabled();
     });
 
     await selectProtocol('gateway.cliProtocolHttps');
@@ -302,5 +314,11 @@ describe('GatewayTemplates', () => {
     const protocolSelect = screen.getByTestId('gateway-protocol-select');
     expect(protocolSelect).not.toHaveClass('ant-select-disabled');
     expect(screen.getByText('Primary Gateway Key (aqb_123)')).toBeInTheDocument();
+  });
+
+  it('hides Claude Code from the quick connect list', async () => {
+    renderWithApp();
+
+    expect(screen.queryByRole('heading', { name: 'Claude Code', level: 5 })).not.toBeInTheDocument();
   });
 });

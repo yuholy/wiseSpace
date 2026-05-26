@@ -169,6 +169,7 @@ pub fn run() {
             commands::gateway::clear_gateway_request_logs,
             commands::gateway::get_all_cli_tool_statuses,
             commands::gateway::connect_cli_tool,
+            commands::gateway::install_cli_tool,
             commands::gateway::disconnect_cli_tool,
             commands::gateway::generate_self_signed_cert,
             // messages

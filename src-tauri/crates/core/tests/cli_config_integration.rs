@@ -143,6 +143,10 @@ fn opencode_config_path(home: &Path) -> PathBuf {
     home.join(".config").join("opencode").join("opencode.json")
 }
 
+fn pi_models_path(home: &Path) -> PathBuf {
+    home.join(".pi").join("agent").join("models.json")
+}
+
 #[cfg(target_os = "macos")]
 fn cursor_settings_path(home: &Path, _appdata: &Path) -> PathBuf {
     home.join("Library")
@@ -331,7 +335,26 @@ fn claude_connect_overwrites_existing_anthropic_env_settings() {
             "https://127.0.0.1:8443/v1"
         );
         assert_eq!(settings["env"]["ANTHROPIC_AUTH_TOKEN"], "new-token");
-        assert_eq!(settings["env"]["ANTHROPIC_MODEL"], "claude-opus-4-6");
+        assert_eq!(
+            settings["env"]["ANTHROPIC_MODEL"],
+            "claude-sonnet-4-6-20251117"
+        );
+        assert_eq!(
+            settings["env"]["ANTHROPIC_DEFAULT_OPUS_MODEL"],
+            "claude-opus-4-7-20260127"
+        );
+        assert_eq!(
+            settings["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"],
+            "claude-sonnet-4-6-20251117"
+        );
+        assert_eq!(
+            settings["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"],
+            "claude-haiku-4-5-20251001"
+        );
+        assert_eq!(
+            settings["env"]["CLAUDE_CODE_SUBAGENT_MODEL"],
+            "claude-haiku-4-5-20251001"
+        );
         assert_eq!(settings["permissions"]["allow"][0], "mcp__pencil");
 
         let config = read_json(&config_path);
@@ -393,6 +416,53 @@ fn codex_connect_writes_openai_api_key_auth_and_proxy_provider_contract() {
                 .and_then(|value| value.as_bool()),
             Some(true),
             "Codex provider should opt into OpenAI-auth-compatible key loading"
+        );
+    });
+}
+
+#[test]
+fn pi_connect_writes_literal_gateway_key_into_models_json() {
+    with_temp_home(|temp_home| {
+        connect(CliTool::Pi, "http://localhost:1234/v1", "ws-test-api-key")
+            .expect("connect(Pi) should succeed before contract assertions");
+
+        let models_path = pi_models_path(temp_home.home());
+        assert!(models_path.exists(), "expected Pi models.json at {models_path:?}");
+
+        let models = read_json(&models_path);
+        assert_eq!(
+            models["providers"]["wisespace"]["baseUrl"],
+            "http://localhost:1234/v1"
+        );
+        assert_eq!(
+            models["providers"]["wisespace"]["apiKey"],
+            "ws-test-api-key"
+        );
+    });
+}
+
+#[test]
+fn pi_validation_rejects_placeholder_gateway_key() {
+    use wisespace_core::repo::cli_config::validate_connection;
+
+    with_temp_home(|temp_home| {
+        let models_path = pi_models_path(temp_home.home());
+        write_json(
+            &models_path,
+            &json!({
+                "providers": {
+                    "wisespace": {
+                        "baseUrl": "http://localhost:1234/v1",
+                        "apiKey": "WISESPACE_GATEWAY_API_KEY"
+                    }
+                }
+            }),
+        );
+
+        assert_eq!(
+            validate_connection(CliTool::Pi, "http://localhost:1234/v1").unwrap(),
+            false,
+            "should reject placeholder apiKey values for Pi"
         );
     });
 }

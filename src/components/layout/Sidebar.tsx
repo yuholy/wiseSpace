@@ -1,5 +1,5 @@
 import { Tooltip, theme } from 'antd';
-import { MessageSquare, BookOpen, Brain, FolderOpen, Sparkles } from 'lucide-react';
+import { MessageSquare, BookOpen, Brain, FolderOpen, Sparkles, Router } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useUIStore, useSettingsStore } from '@/stores';
 import { getShortcutBinding, formatShortcutForDisplay } from '@/lib/shortcuts';
@@ -12,8 +12,7 @@ const mainNavItems: { key: PageKey; icon: React.ReactNode; labelKey: string }[] 
   { key: 'skills', icon: <Sparkles size={18} />, labelKey: 'nav.skills' },
   { key: 'knowledge', icon: <BookOpen size={18} />, labelKey: 'nav.knowledge' },
   { key: 'memory', icon: <Brain size={18} />, labelKey: 'nav.memory' },
-  // Gateway module hidden for now
-  // { key: 'gateway', icon: <Router size={18} />, labelKey: 'nav.gateway' },
+  { key: 'gateway', icon: <Router size={18} />, labelKey: 'nav.gateway' },
   { key: 'files', icon: <FolderOpen size={18} />, labelKey: 'nav.files' },
 ];
 
@@ -25,8 +24,7 @@ export function Sidebar() {
   const settings = useSettingsStore((s) => s.settings);
 
   const NAV_SHORTCUT_MAP: Partial<Record<PageKey, ShortcutAction>> = {
-    // Gateway module hidden for now
-    // gateway: 'toggleGateway',
+    gateway: 'toggleGateway',
   };
 
   const renderNavButton = (item: { key: PageKey; icon: React.ReactNode; labelKey: string }) => {

@@ -362,6 +362,7 @@
     "cliSelectProtocol": "选择协议",
     "cliProtocolHttp": "HTTP",
     "cliProtocolHttps": "HTTPS",
+    "cliInstall": "一键安装",
     "cliDisconnect": "断开",
     "cliReconnect": "重新接入",
     "cliSwitchProtocolReconnect": "切换到当前协议重新接入",
@@ -370,6 +371,8 @@
     "cliStartGatewayFirst": "请先启动网关，然后再进行一键接入。",
     "cliConnectSuccess": "{{name}} 接入成功",
     "cliConnectError": "接入失败：{{error}}",
+    "cliInstallSuccess": "{{name}} 安装成功",
+    "cliInstallError": "安装失败：{{error}}",
     "cliDisconnectSuccess": "{{name}} 已断开",
     "cliDisconnectError": "断开失败：{{error}}",
     "cliDisconnectTitle": "断开接入",
@@ -444,8 +447,8 @@
     "templateDescClaude": "Anthropic 官方 CLI 编程助手，在终端中直接与 Claude 协作编码",
     "templateDescCodex": "OpenAI 轻量级编程代理，支持在沙盒中自主完成编码任务",
     "templateDescOpencode": "开源终端 AI 编程助手，支持多模型后端的灵活代码工具",
-    "templateDescGemini": "Google Gemini CLI 编程代理，直接在终端中使用 Gemini 模型",
-    "templateDescCursor": "基于 VS Code 的 AI 原生编辑器，深度集成代码补全与对话"
+    "templateDescPi": "Earendil Works 的终端编程代理，可通过自定义 provider 接入 wiseSpace Gateway",
+    "templateDescDeepSeekTui": "DeepSeek-TUI 终端代理，可通过 OpenAI 兼容配置接入 wiseSpace Gateway"
   },
   "settings": {
     "title": "设置",

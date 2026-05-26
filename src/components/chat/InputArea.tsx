@@ -4,6 +4,7 @@ import type { MenuProps } from 'antd';
 import { Paperclip, Trash2, Mic, Eraser, Scissors, Globe, Brain, Atom, Plug, SlidersHorizontal, ArrowUp, Square, Check, Zap, ZapOff, Shrink, Upload, GitCompareArrows, X, BookOpen, GripHorizontal, CircleOff, SignalLow, SignalMedium, SignalHigh, Signal, Bot, MessageSquare, Shield, ShieldCheck, ShieldAlert, FolderOpen, ExternalLink, FileImage } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAgentStore, useConversationStore, useProviderStore, useSettingsStore, useSearchStore, useMcpStore, useMemoryStore, useKnowledgeStore } from '@/stores';
+import { useExternalAgentStore } from '@/stores/externalAgentStore';
 import { useUIStore } from '@/stores/uiStore';
 import { findModelByIds, supportsReasoning, modelHasCapability } from '@/lib/modelCapabilities';
 import {
@@ -28,8 +29,10 @@ import { invoke, isTauri } from '@/lib/invoke';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
   AGENT_EXECUTORS,
+  getExternalAgentExecutorId,
   getAgentExecutorMeta,
   getAgentExecutorStorageKey,
+  getExternalAgentIdFromExecutorId,
   type AgentExecutorId,
 } from '@/lib/agentExecutors';
 import {
@@ -53,6 +56,9 @@ async function fileToAttachmentInput(file: File): Promise<AttachmentInput> {
     reader.readAsDataURL(file);
   });
 }
+
+const EXTERNAL_AGENT_SYNC_INTERVAL_MS = 1500;
+const EXTERNAL_AGENT_SYNC_TIMEOUT_MS = 5 * 60 * 1000;
 
 // In-memory draft cache: persists input text per-conversation across component unmounts
 const _draftCache = new Map<string, string>();
@@ -101,6 +107,7 @@ export function InputArea() {
   // Multi-model companion state
   const [companionModels, setCompanionModels] = useState<Array<{ providerId: string; modelId: string }>>([]);
   const [multiModelOpen, setMultiModelOpen] = useState(false);
+  const [pendingMode, setPendingMode] = useState<'chat' | 'agent'>('chat');
   const sendMultiModelMessage = useConversationStore((s) => s.sendMultiModelMessage);
 
   const { message: messageApi, modal } = App.useApp();
@@ -113,11 +120,16 @@ export function InputArea() {
   const activeAgentExecutorId = useConversationStore((s) => s.activeAgentExecutorId);
   const setAgentExecutorId = useConversationStore((s) => s.setActiveAgentExecutorId);
   const setActiveAgentExecutorModel = useConversationStore((s) => s.setActiveAgentExecutorModel);
+  const fetchMessages = useConversationStore((s) => s.fetchMessages);
   const agentProfiles = useAgentStore((s) => s.profilesByConversation);
   const updateAgentCwd = useAgentStore((s) => s.updateCwd);
   const updateAgentPermissionMode = useAgentStore((s) => s.updatePermissionMode);
   const fetchAgentProfile = useAgentStore((s) => s.fetchProfile);
   const createConversation = useConversationStore((s) => s.createConversation);
+  const externalAgents = useExternalAgentStore((s) => s.agents);
+  const loadExternalAgents = useExternalAgentStore((s) => s.loadAgents);
+  const dispatchExternalTask = useExternalAgentStore((s) => s.dispatchTask);
+  const syncExternalTask = useExternalAgentStore((s) => s.syncTask);
   const messages = useConversationStore((s) => s.messages);
   const totalActiveCount = useConversationStore((s) => s.totalActiveCount);
   const hasOlderMessages = useConversationStore((s) => s.hasOlderMessages);
@@ -173,10 +185,11 @@ export function InputArea() {
   const [agentPermissionMode, setAgentPermissionMode] = useState<string>('default');
   // Agent working directory state
   const [agentCwd, setAgentCwd] = useState<string | null>(null);
+  const [pendingAgentCwd, setPendingAgentCwd] = useState<string | null>(null);
   const currentAgentProfile = activeConversationId ? agentProfiles[activeConversationId] : undefined;
-  const resolvedAgentCwd = currentAgentProfile?.workspaceRoot ?? agentCwd;
+  const resolvedAgentCwd = currentAgentProfile?.workspaceRoot ?? agentCwd ?? pendingAgentCwd;
   const resolvedAgentPermissionMode = currentAgentProfile?.permissionMode ?? agentPermissionMode;
-  const activeAgentExecutor = getAgentExecutorMeta(activeAgentExecutorId);
+  const activeAgentExecutor = getAgentExecutorMeta(activeAgentExecutorId, externalAgents);
   const workspaceTooltipText = resolvedAgentCwd
     ? `当前工作空间：${resolvedAgentCwd}\n点击可切换目录`
     : '选择 Agent 工作空间。未设置时会自动创建默认工作空间。';
@@ -232,7 +245,7 @@ export function InputArea() {
   const compressContext = useConversationStore((s) => s.compressContext);
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId);
-  const currentMode = activeConversation?.mode || 'chat';
+  const currentMode = activeConversation?.mode ?? pendingMode;
   const toolApprovalMode = resolveEffectiveToolApprovalMode({
     currentMode,
     agentPermissionMode: resolvedAgentPermissionMode,
@@ -275,6 +288,10 @@ export function InputArea() {
     if (mcpServers.length === 0) loadMcpServers();
   }, [mcpServers.length, loadMcpServers]);
 
+  useEffect(() => {
+    if (externalAgents.length === 0) void loadExternalAgents();
+  }, [externalAgents.length, loadExternalAgents]);
+
   // Load knowledge bases on mount
   useEffect(() => {
     if (knowledgeBases.length === 0) loadKnowledgeBases();
@@ -301,9 +318,15 @@ export function InputArea() {
 
   useEffect(() => {
     if (currentMode !== 'agent') return;
+    if (!activeConversationId) return;
     setAgentCwd(currentAgentProfile?.workspaceRoot || null);
     setAgentPermissionMode(currentAgentProfile?.permissionMode || 'default');
-  }, [currentMode, currentAgentProfile?.workspaceRoot, currentAgentProfile?.permissionMode]);
+  }, [currentMode, activeConversationId, currentAgentProfile?.workspaceRoot, currentAgentProfile?.permissionMode]);
+
+  useEffect(() => {
+    if (!activeConversation) return;
+    setPendingMode(activeConversation.mode === 'agent' ? 'agent' : 'chat');
+  }, [activeConversation]);
 
   const handleAgentExecutorChange = useCallback((executorId: AgentExecutorId) => {
     setAgentExecutorId(executorId);
@@ -313,12 +336,42 @@ export function InputArea() {
     }
   }, [activeConversationId, setActiveAgentExecutorModel, setAgentExecutorId]);
 
+  const waitForExternalTaskCompletion = useCallback(async (
+    taskId: string,
+    conversationId: string,
+  ) => {
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < EXTERNAL_AGENT_SYNC_TIMEOUT_MS) {
+      await new Promise((resolve) => window.setTimeout(resolve, EXTERNAL_AGENT_SYNC_INTERVAL_MS));
+      const result = await syncExternalTask(taskId);
+      if (result.assistantMessage) {
+        await fetchMessages(conversationId);
+        return result;
+      }
+      if (result.task.status === 'completed' || result.task.status === 'failed' || result.task.status === 'cancelled') {
+        await fetchMessages(conversationId);
+        return result;
+      }
+    }
+
+    throw new Error(t('chat.externalAgentSyncTimeout', 'External agent sync timed out'));
+  }, [fetchMessages, syncExternalTask, t]);
+
   const agentExecutorItems = useMemo<MenuProps['items']>(() => (
-    AGENT_EXECUTORS.map((executor) => ({
-      key: executor.id,
-      label: executor.name,
-    }))
-  ), []);
+    [
+      ...AGENT_EXECUTORS.map((executor) => ({
+        key: executor.id,
+        label: executor.name,
+      })),
+      ...externalAgents
+        .filter((agent) => agent.enabled)
+        .map((agent) => ({
+          key: getExternalAgentExecutorId(agent.id),
+          label: agent.name,
+        })),
+    ]
+  ), [externalAgents]);
 
   // Draft persistence: save old draft & restore new when conversation changes
   useEffect(() => {
@@ -579,7 +632,6 @@ export function InputArea() {
   void abbreviatePath;
 
   const handleSelectCwd = useCallback(async () => {
-    if (!activeConversationId) return;
     try {
       const selected = await open({
         directory: true,
@@ -587,8 +639,11 @@ export function InputArea() {
         title: t('common.selectDirectory'),
       });
       if (selected && typeof selected === 'string') {
-        await updateAgentCwd(activeConversationId, selected);
+        setPendingAgentCwd(selected);
         setAgentCwd(selected);
+        if (activeConversationId) {
+          await updateAgentCwd(activeConversationId, selected);
+        }
       }
     } catch (e) {
       console.warn('Failed to select working directory:', e);
@@ -878,16 +933,19 @@ export function InputArea() {
   );
 
   const handleModeSwitch = useCallback(async (mode: 'chat' | 'agent') => {
+    setPendingMode(mode);
+
+    const nextExecutor = getAgentExecutorMeta(activeAgentExecutorId, externalAgents);
+    if (mode === 'agent' && (companionModels.length > 0 || nextExecutor.kind === 'external')) {
+      setCompanionModels([]);
+      if (companionStorageKey) localStorage.removeItem(companionStorageKey);
+    }
+
     if (!activeConversation) return;
 
     await updateConversation(activeConversation.id, { mode });
 
     if (mode === 'agent') {
-      // Clear multi-model companion models — not applicable in agent mode
-      if (companionModels.length > 0) {
-        setCompanionModels([]);
-        if (companionStorageKey) localStorage.removeItem(companionStorageKey);
-      }
       try {
         const profile = await fetchAgentProfile(activeConversation.id);
         if (!profile?.workspaceRoot) {
@@ -903,13 +961,17 @@ export function InputArea() {
         console.warn('Failed to init agent session:', e);
       }
     }
-  }, [activeConversation, updateConversation, companionModels, companionStorageKey, fetchAgentProfile, updateAgentCwd]);
+  }, [activeConversation, activeAgentExecutorId, companionModels, companionStorageKey, externalAgents, fetchAgentProfile, updateAgentCwd, updateConversation]);
 
   const handleSend = useCallback(async () => {
     const trimmed = value.trim();
     if (!trimmed) return;
 
     const submittedFiles = attachedFiles;
+    const modeToSend = activeConversation?.mode ?? pendingMode;
+    const selectedExecutor = getAgentExecutorMeta(activeAgentExecutorId, externalAgents);
+    const externalAgentId = getExternalAgentIdFromExecutorId(selectedExecutor.id);
+    let conversationIdForSend = activeConversationId;
 
     try {
       if (!activeConversationId) {
@@ -927,7 +989,11 @@ export function InputArea() {
           messageApi.warning(t('chat.noModelsAvailable'));
           return;
         }
-        await createConversation(trimmed.slice(0, 30), model.model_id, provider.id);
+        const createdConversation = await createConversation(trimmed.slice(0, 30), model.model_id, provider.id, { mode: modeToSend });
+        conversationIdForSend = createdConversation.id;
+        if (modeToSend === 'agent' && pendingAgentCwd) {
+          await updateAgentCwd(createdConversation.id, pendingAgentCwd);
+        }
       }
 
       let attachments: AttachmentInput[] | undefined;
@@ -946,11 +1012,32 @@ export function InputArea() {
           textareaRef.current.style.height = 'auto';
         }
       });
-      if (currentMode === 'agent') {
+      if (modeToSend === 'agent' && externalAgentId) {
+        const dispatched = await dispatchExternalTask({
+          conversationId: conversationIdForSend,
+          externalAgentId,
+          kind: 'code',
+          title: trimmed.slice(0, 60) || 'Pi Agent Task',
+          inputText: trimmed,
+          contextJson: JSON.stringify({
+            workspaceRoot: resolvedAgentCwd,
+            permissionMode: resolvedAgentPermissionMode,
+          }),
+        });
+        if (conversationIdForSend) {
+          await fetchMessages(conversationIdForSend);
+          if (dispatched.task.status !== 'completed' && dispatched.task.status !== 'failed' && dispatched.task.status !== 'cancelled') {
+            void waitForExternalTaskCompletion(dispatched.task.id, conversationIdForSend).catch((error) => {
+              console.warn('Failed to sync external task completion:', error);
+              messageApi.error(String(error));
+            });
+          }
+        }
+      } else if (modeToSend === 'agent') {
         await sendAgentMessage(trimmed, attachments, {
-          executorId: activeAgentExecutor.id,
+          executorId: selectedExecutor.id,
           cwd: resolvedAgentCwd,
-          permissionMode: activeAgentExecutor.supportsPermissionMode ? resolvedAgentPermissionMode : null,
+          permissionMode: selectedExecutor.supportsPermissionMode ? resolvedAgentPermissionMode : null,
           executorModel: null,
         });
       } else if (companionModels.length > 0) {
@@ -975,7 +1062,7 @@ export function InputArea() {
         }
       });
     }
-  }, [value, attachedFiles, sendMessage, sendAgentMessage, sendMultiModelMessage, companionModels, activeConversationId, providers, settings, createConversation, messageApi, t, searchEnabled, searchProviderId, currentMode, activeAgentExecutor.id, activeAgentExecutor.supportsPermissionMode, resolvedAgentCwd, resolvedAgentPermissionMode]);
+  }, [value, attachedFiles, activeConversation, activeAgentExecutorId, activeConversationId, companionModels, createConversation, dispatchExternalTask, externalAgents, fetchMessages, messageApi, pendingAgentCwd, pendingMode, providers, resolvedAgentCwd, resolvedAgentPermissionMode, searchEnabled, searchProviderId, sendAgentMessage, sendMessage, sendMultiModelMessage, settings, t, updateAgentCwd, waitForExternalTaskCompletion]);
 
   const handleFillLastMessage = useCallback(() => {
     if (streaming) return;
@@ -1098,14 +1185,19 @@ export function InputArea() {
       if (e.nativeEvent.isComposing || e.key === 'Process' || e.keyCode === 229) {
         return;
       }
-      const sendShortcut = getShortcutBinding(settings, 'sendMessage');
-      if (matchesShortcutEvent(e.nativeEvent, sendShortcut)) {
+      if (e.key !== 'Enter') {
+        return;
+      }
+      if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) {
+        return;
+      }
+      if (matchesShortcutEvent(e.nativeEvent, 'Enter')) {
         e.preventDefault();
         e.stopPropagation();
         handleSend();
       }
     },
-    [handleSend, settings],
+    [handleSend],
   );
 
   // Auto-resize textarea: height = max(userMinHeight, contentHeight), capped at ABSOLUTE_MAX
@@ -1761,7 +1853,7 @@ export function InputArea() {
           )}
         </div>
         <div className="ml-3 flex shrink-0 items-center justify-end gap-2 whitespace-nowrap">
-          {currentMode === 'agent' && (
+          {currentMode === 'agent' && activeAgentExecutor.supportsPermissionMode && (
             <Dropdown
               menu={{
                 items: permissionModeItems,
@@ -1784,7 +1876,7 @@ export function InputArea() {
               </Button>
             </Dropdown>
           )}
-          {currentMode === 'agent' && (
+          {currentMode === 'agent' && activeAgentExecutor.supportsPermissionMode && (
             <Tooltip title={t('chat.toolApprovalFollowLocalHelp', 'In agent mode, tool approval follows the current local permission mode.')}>
               <Tag color={toolApprovalSummary.color} bordered={false} style={{ marginInlineEnd: 0, cursor: 'help' }}>
                 {toolApprovalSummary.label}

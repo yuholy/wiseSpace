@@ -1,7 +1,7 @@
 {
   "name": "wisespace",
   "private": true,
-  "version": "0.1.4",
+  "version": "0.1.5",
   "license": "AGPL-3.0-only",
   "packageManager": "pnpm@10.32.1",
   "type": "module",
@@ -11,6 +11,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "external-agent:mock": "node scripts/external-agent-mock-server.mjs",
+    "external-agent:pi-adapter": "node scripts/pi-adapter-server.mjs",
+    "pi:wisespace": "node scripts/pi-via-wisespace.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
     "test:run": "vitest run",
