@@ -13,8 +13,6 @@ export { DataStorageSettings } from './DataStorageSettings';
 export { AboutPage } from './AboutPage';
 export { default as SearchProviderSettings } from './SearchProviderSettings';
 export { default as McpServerSettings } from './McpServerSettings';
-export { default as AgentExecutorSettings } from './AgentExecutorSettings';
-export { default as ExternalAgentSettings } from './ExternalAgentSettings';
 export { default as ExtensionsSettings } from './ExtensionsSettings';
 export { default as KnowledgeSettings } from './KnowledgeSettings';
 export { default as MemorySettings } from './MemorySettings';

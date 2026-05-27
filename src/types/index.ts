@@ -631,7 +631,7 @@ export interface DrawingEditInput extends DrawingGenerateInput {
 export interface DrawingMaskEditInput extends DrawingEditInput {
   mask_file_id: string;
 }
-export type SettingsSection = 'providers' | 'defaultModel' | 'conversationSettings' | 'general' | 'display' | 'proxy' | 'shortcuts' | 'data' | 'storage' | 'dataStorage' | 'about' | 'searchProviders' | 'mcpServers' | 'agentExecutors' | 'externalAgents' | 'backup' | 'extensions';
+export type SettingsSection = 'providers' | 'defaultModel' | 'conversationSettings' | 'general' | 'display' | 'proxy' | 'shortcuts' | 'data' | 'storage' | 'dataStorage' | 'about' | 'searchProviders' | 'mcpServers' | 'backup' | 'extensions';
 
 // === Files Module ===
 export type FileCategory = 'images' | 'files';
@@ -726,5 +726,5 @@ export * from './artifact';
 export * from './backup';
 export * from './workspace';
 export * from './agent';
-export * from './externalAgent';
+export * from './agentTask';
 export * from './extension';

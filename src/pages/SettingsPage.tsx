@@ -9,10 +9,8 @@ import {
   DataStorageSettings,
   AboutPage,
   McpServerSettings,
-  AgentExecutorSettings,
   BackupCenter,
   ExtensionsSettings,
-  ExternalAgentSettings,
 } from '@/components/settings';
 import { DefaultModelSettings } from '@/components/settings/DefaultModelSettings';
 import { ConversationSettings } from '@/components/settings/ConversationSettings';
@@ -32,9 +30,8 @@ const SECTION_COMPONENTS: Record<SettingsSection, React.ComponentType> = {
   about: AboutPage,
   searchProviders: ProviderSettings,
   mcpServers: McpServerSettings,
-  agentExecutors: AgentExecutorSettings,
   backup: BackupCenter,
-  externalAgents: ExternalAgentSettings,
+
   extensions: ExtensionsSettings,
 };
 
@@ -42,7 +39,7 @@ export function SettingsPage() {
   const { token } = theme.useToken();
   const settingsSection = useUIStore((s) => s.settingsSection);
   const normalizedSection = settingsSection === 'searchProviders' ? 'providers' : settingsSection;
-  const ContentComponent = SECTION_COMPONENTS[normalizedSection as SettingsSection] ?? AgentExecutorSettings;
+  const ContentComponent = SECTION_COMPONENTS[normalizedSection as SettingsSection] ?? GeneralSettings;
 
   return (
     <div className="flex h-full">

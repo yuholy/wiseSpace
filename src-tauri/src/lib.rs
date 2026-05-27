@@ -12,8 +12,6 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use tauri::{LogicalPosition, LogicalSize, Position, Size};
 
-use crate::external_agents::pi_manager::PiAdapterManager;
-
 #[derive(Clone)]
 pub struct AppState {
     pub sea_db: DatabaseConnection,
@@ -34,13 +32,11 @@ pub struct AppState {
         Arc<Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<String>>>>,
     pub agent_always_allowed:
         Arc<Mutex<std::collections::HashMap<String, std::collections::HashSet<String>>>>,
-    pub pi_adapter: Arc<Mutex<PiAdapterManager>>,
 }
 
 mod agent_runtime;
 mod commands;
 mod context_manager;
-mod external_agents;
 mod indexing;
 mod paths;
 mod role_prompts;
@@ -220,20 +216,12 @@ pub fn run() {
             commands::mcp::list_mcp_tools,
             commands::mcp::discover_mcp_tools,
             commands::mcp::list_tool_executions,
-            // external agents
-            commands::external_agents::list_external_agents,
-            commands::external_agents::list_builtin_subagent_assignees,
-            commands::external_agents::create_external_agent,
-            commands::external_agents::update_external_agent,
-            commands::external_agents::delete_external_agent,
-            commands::external_agents::test_external_agent_connection,
-            commands::external_agents::dispatch_external_agent_task,
-            commands::external_agents::create_delegated_subagent_task,
-            commands::external_agents::run_delegated_subagent_task,
-            commands::external_agents::retry_external_agent_task,
-            commands::external_agents::sync_external_agent_task,
-            commands::external_agents::list_agent_tasks,
-            commands::external_agents::list_agent_task_events,
+            // subagents
+            commands::subagents::list_builtin_subagent_assignees,
+            commands::subagents::create_delegated_subagent_task,
+            commands::subagents::run_delegated_subagent_task,
+            commands::subagents::list_agent_tasks,
+            commands::subagents::list_agent_task_events,
             // unified extensions
             commands::extensions::list_extensions,
             commands::extensions::get_extension_detail,
@@ -529,15 +517,6 @@ pub fn run() {
                 agent_permission_senders: Arc::new(Mutex::new(std::collections::HashMap::new())),
                 agent_ask_senders: Arc::new(Mutex::new(std::collections::HashMap::new())),
                 agent_always_allowed: Arc::new(Mutex::new(std::collections::HashMap::new())),
-                pi_adapter: Arc::new(Mutex::new(PiAdapterManager::with_defaults(
-                    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                        .parent()
-                        .unwrap_or_else(|| std::path::Path::new("."))
-                        .join("scripts")
-                        .join("pi-adapter-server.mjs")
-                        .to_string_lossy()
-                        .to_string(),
-                ))),
             });
 
             // Reset any agent sessions that were running when app crashed/closed
@@ -769,13 +748,6 @@ pub fn run() {
     };
 
     app.run(|app, event| {
-        if let tauri::RunEvent::Exit = event {
-            let state = app.state::<AppState>();
-            let pi_adapter = state.pi_adapter.clone();
-            tauri::async_runtime::spawn(async move {
-                pi_adapter.lock().await.stop().await;
-            });
-        }
         #[cfg(target_os = "macos")]
         if let tauri::RunEvent::Reopen {
             has_visible_windows,

@@ -3,12 +3,6 @@ import { Alert, App, Button, Card, Descriptions, Dropdown, Empty, List, Modal, S
 import type { MenuProps } from 'antd';
 import { ArrowRight, Blocks, Bot, Cable, MoreHorizontal, PlugZap, RefreshCw, Wrench } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import {
-  getExternalBridgeFamilyLabel,
-  getExternalBridgeNetworkScopeLabel,
-  getExternalBridgeRiskColor,
-  readExternalBridgeProfile,
-} from '@/lib/externalBridgeProfile';
 import { useExtensionStore, useUIStore } from '@/stores';
 import type { ExtensionDetail, ExtensionKind, ExtensionSummary } from '@/types';
 import { SettingsGroup } from './SettingsGroup';
@@ -311,7 +305,6 @@ export default function ExtensionsSettings() {
               { label: t('settings.extensions.filter.all', { defaultValue: 'All' }), value: 'all' },
               { label: t('settings.extensions.filter.skills', { defaultValue: 'Skills' }), value: 'skill' },
               { label: t('settings.extensions.filter.mcp', { defaultValue: 'MCP' }), value: 'mcp_server' },
-              { label: t('settings.extensions.filter.externalAgents', { defaultValue: 'External Agents' }), value: 'external_agent' },
             ]}
           />
 
@@ -326,12 +319,7 @@ export default function ExtensionsSettings() {
               renderItem={(extension) => {
                 const actionTarget = sourceActionTarget(extension);
                 const connectionCheck = connectionChecksById[extension.id];
-                const bridgeProfile = extension.kind === 'external_agent'
-                  ? readExternalBridgeProfile({
-                      ...extension,
-                      kindDetail: detailsById[extension.id]?.kindDetail,
-                    } as ExtensionDetail)
-                  : null;
+                const bridgeProfile = null;
                 const extraTags = [
                   availabilityLabel(extension.scope.availability, t),
                   trustLevelLabel(extension.permissions.trustLevel, t),
@@ -612,36 +600,6 @@ export default function ExtensionsSettings() {
                 }
               />
             ) : null}
-            {(() => {
-              const bridgeProfile = readExternalBridgeProfile(selectedExtensionDetail);
-              if (!bridgeProfile) return null;
-
-              return (
-                <Alert
-                  type={bridgeProfile.riskLevel === 'elevated' ? 'warning' : 'info'}
-                  showIcon
-                  message={bridgeProfile.permissionSummary}
-                  description={(
-                    <Space size={[8, 6]} wrap style={{ marginTop: 8 }}>
-                      <Tag>{getExternalBridgeFamilyLabel(bridgeProfile.family)}</Tag>
-                      <Tag color={getExternalBridgeRiskColor(bridgeProfile.riskLevel)}>
-                        {getExternalBridgeNetworkScopeLabel(bridgeProfile.networkScope)}
-                      </Tag>
-                      <Tag color={bridgeProfile.authConfigured ? 'success' : 'warning'}>
-                        {bridgeProfile.authConfigured
-                          ? t('settings.extensions.authConfigured', {
-                              defaultValue: localizedDefault('已配置鉴权', 'Auth configured'),
-                            })
-                          : t('settings.extensions.authMissing', {
-                              defaultValue: localizedDefault('未配置鉴权', 'No auth'),
-                            })}
-                      </Tag>
-                      {bridgeProfile.authType ? <Tag>{bridgeProfile.authType}</Tag> : null}
-                    </Space>
-                  )}
-                />
-              );
-            })()}
             <Descriptions column={1} size="small" bordered>
               <Descriptions.Item label={t('settings.extensions.detail.name', { defaultValue: localizedDefault('名称', 'Name') })}>
                 {selectedExtensionDetail.name}

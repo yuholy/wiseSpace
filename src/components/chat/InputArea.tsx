@@ -4,7 +4,6 @@ import type { MenuProps } from 'antd';
 import { Paperclip, Trash2, Mic, Eraser, Scissors, Globe, Brain, Atom, Plug, SlidersHorizontal, ArrowUp, Square, Check, Zap, ZapOff, Shrink, Upload, GitCompareArrows, X, BookOpen, GripHorizontal, CircleOff, SignalLow, SignalMedium, SignalHigh, Signal, Bot, MessageSquare, Shield, ShieldCheck, ShieldAlert, FolderOpen, ExternalLink, FileImage } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAgentStore, useConversationStore, useProviderStore, useSettingsStore, useSearchStore, useMcpStore, useMemoryStore, useKnowledgeStore } from '@/stores';
-import { useExternalAgentStore } from '@/stores/externalAgentStore';
 import { useUIStore } from '@/stores/uiStore';
 import { findModelByIds, supportsReasoning, modelHasCapability } from '@/lib/modelCapabilities';
 import {
@@ -28,12 +27,7 @@ import type { AttachmentInput, Message, ProviderType, RealtimeConfig } from '@/t
 import { invoke, isTauri } from '@/lib/invoke';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
-  AGENT_EXECUTORS,
-  getExternalAgentExecutorId,
   getAgentExecutorMeta,
-  getAgentExecutorStorageKey,
-  getExternalAgentIdFromExecutorId,
-  type AgentExecutorId,
 } from '@/lib/agentExecutors';
 import {
   deriveToolApprovalModeFromAgentPermission,
@@ -56,9 +50,6 @@ async function fileToAttachmentInput(file: File): Promise<AttachmentInput> {
     reader.readAsDataURL(file);
   });
 }
-
-const EXTERNAL_AGENT_SYNC_INTERVAL_MS = 1500;
-const EXTERNAL_AGENT_SYNC_TIMEOUT_MS = 5 * 60 * 1000;
 
 // In-memory draft cache: persists input text per-conversation across component unmounts
 const _draftCache = new Map<string, string>();
@@ -126,10 +117,6 @@ export function InputArea() {
   const updateAgentPermissionMode = useAgentStore((s) => s.updatePermissionMode);
   const fetchAgentProfile = useAgentStore((s) => s.fetchProfile);
   const createConversation = useConversationStore((s) => s.createConversation);
-  const externalAgents = useExternalAgentStore((s) => s.agents);
-  const loadExternalAgents = useExternalAgentStore((s) => s.loadAgents);
-  const dispatchExternalTask = useExternalAgentStore((s) => s.dispatchTask);
-  const syncExternalTask = useExternalAgentStore((s) => s.syncTask);
   const messages = useConversationStore((s) => s.messages);
   const totalActiveCount = useConversationStore((s) => s.totalActiveCount);
   const hasOlderMessages = useConversationStore((s) => s.hasOlderMessages);
@@ -189,7 +176,7 @@ export function InputArea() {
   const currentAgentProfile = activeConversationId ? agentProfiles[activeConversationId] : undefined;
   const resolvedAgentCwd = currentAgentProfile?.workspaceRoot ?? agentCwd ?? pendingAgentCwd;
   const resolvedAgentPermissionMode = currentAgentProfile?.permissionMode ?? agentPermissionMode;
-  const activeAgentExecutor = getAgentExecutorMeta(activeAgentExecutorId, externalAgents);
+  const activeAgentExecutor = getAgentExecutorMeta(activeAgentExecutorId);
   const workspaceTooltipText = resolvedAgentCwd
     ? `当前工作空间：${resolvedAgentCwd}\n点击可切换目录`
     : '选择 Agent 工作空间。未设置时会自动创建默认工作空间。';
@@ -289,11 +276,6 @@ export function InputArea() {
   }, [mcpServers.length, loadMcpServers]);
 
   useEffect(() => {
-    if (externalAgents.length === 0) void loadExternalAgents();
-  }, [externalAgents.length, loadExternalAgents]);
-
-  // Load knowledge bases on mount
-  useEffect(() => {
     if (knowledgeBases.length === 0) loadKnowledgeBases();
   }, [knowledgeBases.length, loadKnowledgeBases]);
 
@@ -327,51 +309,6 @@ export function InputArea() {
     if (!activeConversation) return;
     setPendingMode(activeConversation.mode === 'agent' ? 'agent' : 'chat');
   }, [activeConversation]);
-
-  const handleAgentExecutorChange = useCallback((executorId: AgentExecutorId) => {
-    setAgentExecutorId(executorId);
-    setActiveAgentExecutorModel(null);
-    if (activeConversationId) {
-      localStorage.setItem(getAgentExecutorStorageKey(activeConversationId), executorId);
-    }
-  }, [activeConversationId, setActiveAgentExecutorModel, setAgentExecutorId]);
-
-  const waitForExternalTaskCompletion = useCallback(async (
-    taskId: string,
-    conversationId: string,
-  ) => {
-    const startedAt = Date.now();
-
-    while (Date.now() - startedAt < EXTERNAL_AGENT_SYNC_TIMEOUT_MS) {
-      await new Promise((resolve) => window.setTimeout(resolve, EXTERNAL_AGENT_SYNC_INTERVAL_MS));
-      const result = await syncExternalTask(taskId);
-      if (result.assistantMessage) {
-        await fetchMessages(conversationId);
-        return result;
-      }
-      if (result.task.status === 'completed' || result.task.status === 'failed' || result.task.status === 'cancelled') {
-        await fetchMessages(conversationId);
-        return result;
-      }
-    }
-
-    throw new Error(t('chat.externalAgentSyncTimeout', 'External agent sync timed out'));
-  }, [fetchMessages, syncExternalTask, t]);
-
-  const agentExecutorItems = useMemo<MenuProps['items']>(() => (
-    [
-      ...AGENT_EXECUTORS.map((executor) => ({
-        key: executor.id,
-        label: executor.name,
-      })),
-      ...externalAgents
-        .filter((agent) => agent.enabled)
-        .map((agent) => ({
-          key: getExternalAgentExecutorId(agent.id),
-          label: agent.name,
-        })),
-    ]
-  ), [externalAgents]);
 
   // Draft persistence: save old draft & restore new when conversation changes
   useEffect(() => {
@@ -935,7 +872,7 @@ export function InputArea() {
   const handleModeSwitch = useCallback(async (mode: 'chat' | 'agent') => {
     setPendingMode(mode);
 
-    const nextExecutor = getAgentExecutorMeta(activeAgentExecutorId, externalAgents);
+    const nextExecutor = getAgentExecutorMeta(activeAgentExecutorId);
     if (mode === 'agent' && (companionModels.length > 0 || nextExecutor.kind === 'external')) {
       setCompanionModels([]);
       if (companionStorageKey) localStorage.removeItem(companionStorageKey);
@@ -961,7 +898,7 @@ export function InputArea() {
         console.warn('Failed to init agent session:', e);
       }
     }
-  }, [activeConversation, activeAgentExecutorId, companionModels, companionStorageKey, externalAgents, fetchAgentProfile, updateAgentCwd, updateConversation]);
+  }, [activeConversation, activeAgentExecutorId, companionModels, companionStorageKey, fetchAgentProfile, updateAgentCwd, updateConversation]);
 
   const handleSend = useCallback(async () => {
     const trimmed = value.trim();
@@ -969,8 +906,7 @@ export function InputArea() {
 
     const submittedFiles = attachedFiles;
     const modeToSend = activeConversation?.mode ?? pendingMode;
-    const selectedExecutor = getAgentExecutorMeta(activeAgentExecutorId, externalAgents);
-    const externalAgentId = getExternalAgentIdFromExecutorId(selectedExecutor.id);
+    const selectedExecutor = getAgentExecutorMeta(activeAgentExecutorId);
     let conversationIdForSend = activeConversationId;
 
     try {
@@ -1012,106 +948,8 @@ export function InputArea() {
           textareaRef.current.style.height = 'auto';
         }
       });
-      if (modeToSend === 'agent' && externalAgentId) {
-        // Optimistic UI: show user message + placeholder immediately
-        const optUser: Message = {
-          id: `temp-ext-user-${Date.now()}`,
-          conversation_id: conversationIdForSend,
-          role: 'user',
-          content: trimmed,
-          provider_id: null,
-          model_id: null,
-          token_count: null,
-          attachments: (attachments || []).map((a) => ({
-            id: `temp-ext-att-${Date.now()}`,
-            file_name: a.file_name,
-            file_type: a.file_type,
-            file_path: '',
-            file_size: a.file_size,
-            data: a.data,
-          })),
-          thinking: null,
-          tool_calls_json: null,
-          tool_call_id: null,
-          created_at: Date.now(),
-          parent_message_id: null,
-          version_index: 0,
-          is_active: true,
-          status: 'complete',
-          prompt_tokens: undefined,
-          completion_tokens: undefined,
-          tokens_per_second: undefined,
-          first_token_latency_ms: undefined,
-        };
-        const optAssistant: Message = {
-          id: `temp-ext-assistant-${Date.now()}`,
-          conversation_id: conversationIdForSend,
-          role: 'assistant',
-          content: '',
-          provider_id: null,
-          model_id: null,
-          token_count: null,
-          attachments: [],
-          thinking: null,
-          tool_calls_json: null,
-          tool_call_id: null,
-          created_at: Date.now(),
-          parent_message_id: optUser.id,
-          version_index: 0,
-          is_active: true,
-          status: 'partial',
-          prompt_tokens: undefined,
-          completion_tokens: undefined,
-          tokens_per_second: undefined,
-          first_token_latency_ms: undefined,
-        };
-        useConversationStore.setState((s) => ({
-          messages: [...s.messages, optUser, optAssistant],
-          streaming: true,
-          streamingConversationId: conversationIdForSend,
-          streamingMessageId: optAssistant.id,
-        }));
 
-        try {
-          const dispatched = await dispatchExternalTask({
-            conversationId: conversationIdForSend,
-            externalAgentId,
-            kind: 'code',
-            title: trimmed.slice(0, 60) || 'Pi Agent Task',
-            inputText: trimmed,
-            contextJson: JSON.stringify({
-              workspaceRoot: resolvedAgentCwd,
-              permissionMode: resolvedAgentPermissionMode,
-            }),
-          });
-          if (conversationIdForSend) {
-            await fetchMessages(conversationIdForSend);
-            useConversationStore.setState({
-              streaming: false,
-              streamingMessageId: null,
-              streamingConversationId: null,
-            });
-            if (dispatched.task.status !== 'completed' && dispatched.task.status !== 'failed' && dispatched.task.status !== 'cancelled') {
-              void waitForExternalTaskCompletion(dispatched.task.id, conversationIdForSend).catch((error) => {
-                console.warn('Failed to sync external task completion:', error);
-                messageApi.error(String(error));
-              });
-            }
-          }
-        } catch (dispatchError) {
-          useConversationStore.setState((s) => ({
-            streaming: false,
-            streamingMessageId: null,
-            streamingConversationId: null,
-            messages: s.messages.map((m) =>
-              m.id === optAssistant.id
-                ? { ...m, content: String(dispatchError), status: 'error' }
-                : m
-            ),
-          }));
-          throw dispatchError;
-        }
-      } else if (modeToSend === 'agent') {
+      if (modeToSend === 'agent') {
         await sendAgentMessage(trimmed, attachments, {
           executorId: selectedExecutor.id,
           cwd: resolvedAgentCwd,
@@ -1140,7 +978,7 @@ export function InputArea() {
         }
       });
     }
-  }, [value, attachedFiles, activeConversation, activeAgentExecutorId, activeConversationId, companionModels, createConversation, dispatchExternalTask, externalAgents, fetchMessages, messageApi, pendingAgentCwd, pendingMode, providers, resolvedAgentCwd, resolvedAgentPermissionMode, searchEnabled, searchProviderId, sendAgentMessage, sendMessage, sendMultiModelMessage, settings, t, updateAgentCwd, waitForExternalTaskCompletion]);
+  }, [value, attachedFiles, activeConversation, activeAgentExecutorId, activeConversationId, companionModels, createConversation, fetchMessages, messageApi, pendingAgentCwd, pendingMode, providers, resolvedAgentCwd, resolvedAgentPermissionMode, searchEnabled, searchProviderId, sendAgentMessage, sendMessage, sendMultiModelMessage, settings, t, updateAgentCwd]);
 
   const handleFillLastMessage = useCallback(() => {
     if (streaming) return;
@@ -1877,18 +1715,9 @@ export function InputArea() {
             </Tag>
           </Tooltip>
           {currentMode === 'agent' && (
-            <Dropdown
-              menu={{
-                items: agentExecutorItems,
-                selectedKeys: [activeAgentExecutor.id],
-                onClick: ({ key }) => handleAgentExecutorChange(key as AgentExecutorId),
-              }}
-              trigger={['click']}
-            >
-              <Tag bordered={false} style={{ ...primaryTagStyle, cursor: 'pointer', maxWidth: '100%' }}>
-                {activeAgentExecutor.name}
-              </Tag>
-            </Dropdown>
+            <Tag bordered={false} style={{ ...primaryTagStyle }}>
+              wiseSpace
+            </Tag>
           )}
           {currentMode === 'agent' && (
             <Tooltip

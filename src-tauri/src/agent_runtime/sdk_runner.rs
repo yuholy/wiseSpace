@@ -1204,9 +1204,9 @@ pub async fn start_sdk_run(
             raw_prompt,
             truncate_preview(&final_content, 1600),
         );
-        if let Err(error) = crate::commands::external_agents::maybe_auto_delegate_subtask(
+        if let Err(error) = crate::commands::subagents::maybe_auto_delegate_subtask(
             &app_state,
-            crate::commands::external_agents::AutoDelegatedSubtaskInput {
+            crate::commands::subagents::AutoDelegatedSubtaskInput {
                 conversation_id: conv_id.clone(),
                 parent_run_id: run.id.clone(),
                 source_message_id: Some(user_msg_id.clone()),
@@ -1227,9 +1227,9 @@ pub async fn start_sdk_run(
                 error
             );
         }
-        if let Err(error) = crate::commands::external_agents::maybe_auto_delegate_subtask(
+        if let Err(error) = crate::commands::subagents::maybe_auto_delegate_subtask(
             &app_state,
-            crate::commands::external_agents::AutoDelegatedSubtaskInput {
+            crate::commands::subagents::AutoDelegatedSubtaskInput {
                 conversation_id: conv_id.clone(),
                 parent_run_id: run.id.clone(),
                 source_message_id: Some(user_msg_id.clone()),

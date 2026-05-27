@@ -1,18 +1,24 @@
-use serde_json::json;
+//! Built-in subagent system.
+//!
+//! Subagents are local, same-LLM task delegates that the primary agent
+//! spawns for focused work (code review, research, …).  Each subagent has
+//! its own system prompt but shares the conversation's LLM provider and
+//! model configuration — no external connectors involved.
+
+use base64::Engine;
+use sea_orm::DatabaseConnection;
+use serde_json::{json, Value};
 use tauri::State;
+use wisespace_core::error::Result as CoreResult;
+use wisespace_core::file_store::FileStore;
 use wisespace_core::types::*;
 use wisespace_providers::{
     registry::ProviderRegistry, resolve_base_url_for_type, ProviderRequestContext,
 };
 
-use crate::external_agents::context::collect_context as collect_external_context;
-use crate::external_agents::custom_http::parse_json_object;
-use crate::external_agents::registry::{
-    dispatch_task as dispatch_connector_task, fetch_task as fetch_connector_task,
-    test_connection as test_connector_connection,
-};
-use crate::external_agents::result_ingest::ingest_assistant_message;
 use crate::AppState;
+
+// ── System prompts ────────────────────────────────────────────────────
 
 const BUILTIN_CODE_REVIEWER_PROMPT: &str = r#"You are the internal wiseSpace Code Reviewer subagent.
 
@@ -45,6 +51,8 @@ Rules:
   4. ## Suggested Next Steps
 "#;
 
+// ── Public input struct ──────────────────────────────────────────────
+
 #[derive(Debug, Clone)]
 pub struct AutoDelegatedSubtaskInput {
     pub conversation_id: String,
@@ -56,6 +64,19 @@ pub struct AutoDelegatedSubtaskInput {
     pub input_text: String,
     pub title: String,
 }
+
+// ── JSON helper ──────────────────────────────────────────────────────
+
+fn parse_json_object(raw: Option<&str>, fallback: Value) -> Result<Value, String> {
+    match raw {
+        Some(value) if !value.trim().is_empty() => {
+            serde_json::from_str(value).map_err(|e| format!("Invalid JSON: {e}"))
+        }
+        _ => Ok(fallback),
+    }
+}
+
+// ── Provider helpers ─────────────────────────────────────────────────
 
 fn provider_type_to_registry_key(pt: &ProviderType) -> &'static str {
     match pt {
@@ -73,6 +94,8 @@ fn provider_type_to_registry_key(pt: &ProviderType) -> &'static str {
         ProviderType::Custom => "custom",
     }
 }
+
+// ── Message formatting ───────────────────────────────────────────────
 
 fn format_recent_messages_for_subagent(
     messages: &[Message],
@@ -122,11 +145,13 @@ fn format_recent_messages_for_subagent(
         .join("\n")
 }
 
+// ── Prompt builders ──────────────────────────────────────────────────
+
 fn build_builtin_review_prompt(
     conversation: &Conversation,
     task: &AgentTask,
     input_text: &str,
-    context: &serde_json::Value,
+    context: &Value,
     recent_messages: &str,
 ) -> String {
     let context_block = if context.is_null() || context == &json!({}) {
@@ -141,20 +166,8 @@ fn build_builtin_review_prompt(
     };
 
     format!(
-        concat!(
-            "Conversation title: {conversation_title}\n",
-            "Task title: {task_title}\n",
-            "Task type: {task_kind}\n\n",
-            "Delegation request:\n{input_text}\n\n",
-            "Extra context (JSON):\n{context_block}\n\n",
-            "Recent conversation messages:\n{recent_messages_block}",
-        ),
-        conversation_title = conversation.title,
-        task_title = task.title,
-        task_kind = task.kind,
-        input_text = input_text.trim(),
-        context_block = context_block,
-        recent_messages_block = recent_messages_block,
+        "Conversation title: {}\nTask title: {}\nTask type: {}\n\nDelegation request:\n{}\n\nExtra context (JSON):\n{}\n\nRecent conversation messages:\n{}",
+        conversation.title, task.title, task.kind, input_text, context_block, recent_messages_block,
     )
 }
 
@@ -162,7 +175,7 @@ fn build_builtin_research_prompt(
     conversation: &Conversation,
     task: &AgentTask,
     input_text: &str,
-    context: &serde_json::Value,
+    context: &Value,
     recent_messages: &str,
 ) -> String {
     let context_block = if context.is_null() || context == &json!({}) {
@@ -177,33 +190,12 @@ fn build_builtin_research_prompt(
     };
 
     format!(
-        concat!(
-            "Conversation title: {conversation_title}\n",
-            "Task title: {task_title}\n",
-            "Task type: {task_kind}\n\n",
-            "Research request:\n{input_text}\n\n",
-            "Extra context (JSON):\n{context_block}\n\n",
-            "Recent conversation messages:\n{recent_messages_block}",
-        ),
-        conversation_title = conversation.title,
-        task_title = task.title,
-        task_kind = task.kind,
-        input_text = input_text.trim(),
-        context_block = context_block,
-        recent_messages_block = recent_messages_block,
+        "Conversation title: {}\nTask title: {}\nTask type: {}\n\nResearch request:\n{}\n\nExtra context (JSON):\n{}\n\nRecent conversation messages:\n{}",
+        conversation.title, task.title, task.kind, input_text, context_block, recent_messages_block,
     )
 }
 
-fn parse_task_context_json(task: &AgentTask) -> Result<serde_json::Value, String> {
-    let request_payload = parse_json_object(Some(&task.request_payload_json), json!({}))?;
-    Ok(request_payload
-        .get("contextJson")
-        .and_then(|value| value.as_str())
-        .filter(|value| !value.trim().is_empty())
-        .map(|value| parse_json_object(Some(value), json!(value)))
-        .transpose()?
-        .unwrap_or_else(|| json!({})))
-}
+// ── Auto-delegation hints ────────────────────────────────────────────
 
 fn should_auto_delegate_review(prompt: &str) -> bool {
     let normalized = prompt.to_lowercase();
@@ -239,6 +231,116 @@ fn should_auto_delegate_research(prompt: &str) -> bool {
     ];
     hints.iter().any(|hint| normalized.contains(hint))
 }
+
+// ── Context helper ──────────────────────────────────────────────────
+
+fn parse_task_context_json(task: &AgentTask) -> Result<Value, String> {
+    let request_payload = parse_json_object(Some(&task.request_payload_json), json!({}))?;
+    Ok(request_payload
+        .get("contextJson")
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| parse_json_object(Some(value), json!(value)))
+        .transpose()?
+        .unwrap_or_else(|| json!({})))
+}
+
+// ── Artifact ingestion ──────────────────────────────────────────────
+
+fn artifact_field<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
+    value
+        .get(key)
+        .or_else(|| value.get("result").and_then(|result| result.get(key)))
+}
+
+async fn save_inline_artifacts(
+    db: &DatabaseConnection,
+    conversation_id: &str,
+    payload: &Value,
+) -> Result<Vec<Attachment>, String> {
+    let Some(artifacts) = artifact_field(payload, "artifacts").and_then(Value::as_array) else {
+        return Ok(Vec::new());
+    };
+
+    let file_store = FileStore::new();
+    let mut attachments = Vec::new();
+
+    for artifact in artifacts {
+        let Some(name) = artifact.get("name").and_then(Value::as_str) else {
+            continue;
+        };
+        let mime_type = artifact
+            .get("mimeType")
+            .or_else(|| artifact.get("mime_type"))
+            .and_then(Value::as_str)
+            .unwrap_or("application/octet-stream");
+        let data_base64 = artifact
+            .get("dataBase64")
+            .or_else(|| artifact.get("data_base64"))
+            .or_else(|| artifact.get("data"))
+            .and_then(Value::as_str);
+        let Some(data_base64) = data_base64 else {
+            continue;
+        };
+
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(data_base64)
+        .or_else(|_| {
+            base64::engine::general_purpose::STANDARD.decode(data_base64.trim())
+        })
+        .map_err(|e| format!("Invalid artifact base64: {e}"))?;
+        let saved = file_store
+            .save_file(&bytes, name, mime_type)
+            .map_err(|e| e.to_string())?;
+        let stored_file_id = wisespace_core::utils::gen_id();
+        wisespace_core::repo::stored_file::create_stored_file(
+            db,
+            &stored_file_id,
+            &saved.hash,
+            name,
+            mime_type,
+            saved.size_bytes,
+            &saved.storage_path,
+            Some(conversation_id),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+        attachments.push(Attachment {
+            id: stored_file_id,
+            file_type: mime_type.to_string(),
+            file_name: name.to_string(),
+            file_path: saved.storage_path,
+            file_size: saved.size_bytes as u64,
+            data: None,
+        });
+    }
+
+    Ok(attachments)
+}
+
+async fn ingest_assistant_message(
+    db: &DatabaseConnection,
+    conversation_id: &str,
+    source_message_id: Option<&str>,
+    content: &str,
+    payload: &Value,
+) -> Result<Message, String> {
+    let attachments = save_inline_artifacts(db, conversation_id, payload).await?;
+    wisespace_core::repo::message::create_message(
+        db,
+        conversation_id,
+        MessageRole::Assistant,
+        content,
+        &attachments,
+        source_message_id,
+        0,
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
+// ── Core execution ──────────────────────────────────────────────────
 
 async fn run_builtin_prompt_task(
     state: &AppState,
@@ -399,8 +501,7 @@ async fn run_builtin_prompt_task(
         &content,
         &result_payload,
     )
-    .await
-    .map_err(|e| e.to_string())?;
+    .await?;
     let _ = wisespace_core::repo::external_agent::create_agent_task_event(
         &state.sea_db,
         &task.id,
@@ -419,7 +520,7 @@ async fn run_builtin_code_reviewer(
     state: &AppState,
     task: &AgentTask,
     input_text: &str,
-    context: &serde_json::Value,
+    context: &Value,
 ) -> Result<DispatchExternalAgentTaskResult, String> {
     let conversation_id = task
         .conversation_id
@@ -456,7 +557,7 @@ async fn run_builtin_researcher(
     state: &AppState,
     task: &AgentTask,
     input_text: &str,
-    context: &serde_json::Value,
+    context: &Value,
 ) -> Result<DispatchExternalAgentTaskResult, String> {
     let conversation_id = task
         .conversation_id
@@ -487,442 +588,6 @@ async fn run_builtin_researcher(
         "Built-in researcher execution failed",
     )
     .await
-}
-
-async fn dispatch_task_from_parts(
-    state: &AppState,
-    agent: &ExternalAgent,
-    conversation_id: Option<&str>,
-    parent_run_id: Option<&str>,
-    parent_task_id: Option<&str>,
-    source_message_id: Option<&str>,
-    kind: &str,
-    title: &str,
-    input_text: &str,
-    assignee_label: Option<&str>,
-    context: serde_json::Value,
-) -> Result<DispatchExternalAgentTaskResult, String> {
-    let capabilities = parse_json_object(Some(&agent.capabilities_json), json!({}))?;
-    let request_payload = json!({
-        "kind": kind,
-        "title": title,
-        "inputText": input_text,
-        "context": context,
-        "capabilities": capabilities,
-    });
-    let request_payload_json =
-        serde_json::to_string(&request_payload).map_err(|e| e.to_string())?;
-    let effective_source_message_id = match (conversation_id, source_message_id) {
-        (Some(conversation_id), None) => Some(
-            wisespace_core::repo::message::create_message(
-                &state.sea_db,
-                conversation_id,
-                MessageRole::User,
-                input_text,
-                &[],
-                None,
-                0,
-            )
-            .await
-            .map_err(|e| e.to_string())?
-            .id,
-        ),
-        (_, Some(existing)) => Some(existing.to_string()),
-        _ => None,
-    };
-    let task = wisespace_core::repo::external_agent::create_agent_task(
-        &state.sea_db,
-        conversation_id,
-        parent_run_id,
-        parent_task_id,
-        effective_source_message_id.as_deref(),
-        &agent.id,
-        "external_agent",
-        assignee_label,
-        kind,
-        "dispatching",
-        title,
-        &request_payload_json,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-    let task_payload = json!({
-        "id": task.id,
-        "conversationId": conversation_id,
-        "parentRunId": parent_run_id,
-        "parentTaskId": parent_task_id,
-        "sourceMessageId": effective_source_message_id.clone(),
-        "kind": kind,
-        "title": title,
-        "assigneeLabel": assignee_label,
-        "input": { "text": input_text },
-        "context": request_payload["context"].clone(),
-        "createdAt": task.created_at,
-    });
-
-    let _ = wisespace_core::repo::external_agent::create_agent_task_event(
-        &state.sea_db,
-        &task.id,
-        "created",
-        &request_payload_json,
-    )
-    .await;
-
-    match dispatch_connector_task(agent, &task, task_payload).await {
-        Ok(response) => {
-            let result_payload_json =
-                serde_json::to_string(&response.result_payload).map_err(|e| e.to_string())?;
-            let updated_task = wisespace_core::repo::external_agent::update_agent_task_result(
-                &state.sea_db,
-                &task.id,
-                &response.status,
-                response.external_task_id,
-                Some(result_payload_json.clone()),
-                None,
-            )
-            .await
-            .map_err(|e| e.to_string())?;
-            let _ = wisespace_core::repo::external_agent::create_agent_task_event(
-                &state.sea_db,
-                &task.id,
-                &response.status,
-                &result_payload_json,
-            )
-            .await;
-
-            let assistant_message = match (conversation_id, response.assistant_content.as_deref()) {
-                (Some(conversation_id), Some(content)) if !content.trim().is_empty() => Some(
-                    ingest_assistant_message(
-                        &state.sea_db,
-                        conversation_id,
-                        effective_source_message_id.as_deref(),
-                        content,
-                        &response.result_payload,
-                    )
-                    .await
-                    .map_err(|e| e.to_string())?,
-                ),
-                _ => None,
-            };
-
-            Ok(DispatchExternalAgentTaskResult {
-                task: updated_task,
-                assistant_message,
-            })
-        }
-        Err(error) => {
-            let updated_task = wisespace_core::repo::external_agent::update_agent_task_result(
-                &state.sea_db,
-                &task.id,
-                "failed",
-                None,
-                None,
-                Some(error.clone()),
-            )
-            .await
-            .map_err(|e| e.to_string())?;
-            let _ = wisespace_core::repo::external_agent::create_agent_task_event(
-                &state.sea_db,
-                &task.id,
-                "failed",
-                &json!({ "error": error }).to_string(),
-            )
-            .await;
-            Ok(DispatchExternalAgentTaskResult {
-                task: updated_task,
-                assistant_message: None,
-            })
-        }
-    }
-}
-
-pub async fn maybe_auto_delegate_subtask(
-    state: &AppState,
-    input: AutoDelegatedSubtaskInput,
-) -> Result<Option<DispatchExternalAgentTaskResult>, String> {
-    let should_delegate = match input.task_type.as_str() {
-        "review" => should_auto_delegate_review(&input.input_text),
-        "research" => should_auto_delegate_research(&input.input_text),
-        _ => false,
-    };
-    if !should_delegate {
-        return Ok(None);
-    }
-
-    let existing_tasks = wisespace_core::repo::external_agent::list_agent_tasks(
-        &state.sea_db,
-        Some(input.conversation_id.as_str()),
-        Some(&input.parent_run_id),
-        None,
-        None,
-        Some(50),
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-    if existing_tasks
-        .iter()
-        .any(|task| task.task_type == "review" && task.assignee_kind == "internal_subagent")
-    {
-        return Ok(None);
-    }
-
-    let task = wisespace_core::repo::external_agent::create_delegated_subagent_stub_task(
-        &state.sea_db,
-        Some(&input.conversation_id),
-        &input.parent_run_id,
-        None,
-        input.source_message_id.as_deref(),
-        &input.task_type,
-        input.preset_key.as_deref(),
-        Some(&input.delegation_reason),
-        &input.title,
-        &input.input_text,
-        None,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-
-    let event_payload = json!({
-        "parentRunId": input.parent_run_id,
-        "taskType": input.task_type,
-        "presetKey": input.preset_key,
-        "delegationReason": input.delegation_reason,
-        "title": input.title,
-    })
-    .to_string();
-    let _ = wisespace_core::repo::external_agent::create_agent_task_event(
-        &state.sea_db,
-        &task.id,
-        "delegation_planned",
-        &event_payload,
-    )
-    .await;
-
-    let result = run_delegated_subagent_task_inner(state, task).await?;
-    Ok(Some(result))
-}
-
-#[tauri::command]
-pub async fn list_external_agents(
-    state: State<'_, AppState>,
-) -> Result<Vec<ExternalAgent>, String> {
-    wisespace_core::repo::external_agent::list_external_agents(&state.sea_db)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn list_builtin_subagent_assignees() -> Result<Vec<BuiltinSubagentAssignee>, String> {
-    Ok(wisespace_core::repo::external_agent::list_builtin_subagent_assignees())
-}
-
-#[tauri::command]
-pub async fn create_external_agent(
-    state: State<'_, AppState>,
-    input: CreateExternalAgentInput,
-) -> Result<ExternalAgent, String> {
-    parse_json_object(input.capabilities_json.as_deref(), json!({}))?;
-    if input
-        .auth_config_json
-        .as_deref()
-        .is_some_and(|value| !value.trim().is_empty())
-    {
-        parse_json_object(input.auth_config_json.as_deref(), json!({}))?;
-    }
-    wisespace_core::repo::external_agent::create_external_agent(&state.sea_db, input)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn update_external_agent(
-    state: State<'_, AppState>,
-    id: String,
-    input: UpdateExternalAgentInput,
-) -> Result<ExternalAgent, String> {
-    if let Some(raw) = input.capabilities_json.as_deref() {
-        parse_json_object(Some(raw), json!({}))?;
-    }
-    if let Some(Some(raw)) = input.auth_config_json.as_ref() {
-        if !raw.trim().is_empty() {
-            parse_json_object(Some(raw), json!({}))?;
-        }
-    }
-    wisespace_core::repo::external_agent::update_external_agent(&state.sea_db, &id, input)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn delete_external_agent(state: State<'_, AppState>, id: String) -> Result<(), String> {
-    wisespace_core::repo::external_agent::delete_external_agent(&state.sea_db, &id)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn list_agent_tasks(
-    state: State<'_, AppState>,
-    conversation_id: Option<String>,
-    parent_run_id: Option<String>,
-    parent_task_id: Option<String>,
-    external_agent_id: Option<String>,
-    limit: Option<u64>,
-) -> Result<Vec<AgentTask>, String> {
-    wisespace_core::repo::external_agent::list_agent_tasks(
-        &state.sea_db,
-        conversation_id.as_deref(),
-        parent_run_id.as_deref(),
-        parent_task_id.as_deref(),
-        external_agent_id.as_deref(),
-        limit,
-    )
-    .await
-    .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn list_agent_task_events(
-    state: State<'_, AppState>,
-    task_id: String,
-) -> Result<Vec<AgentTaskEvent>, String> {
-    wisespace_core::repo::external_agent::list_agent_task_events(&state.sea_db, &task_id)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn test_external_agent_connection(
-    state: State<'_, AppState>,
-    id: String,
-) -> Result<ExternalAgentConnectionTestResult, String> {
-    let agent = wisespace_core::repo::external_agent::get_external_agent(&state.sea_db, &id)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    // Auto-launch pi adapter for connection test.
-    if agent.kind == "pi_adapter" {
-        state
-            .pi_adapter
-            .lock()
-            .await
-            .ensure_running()
-            .await
-            .map_err(|e| format!("Failed to start pi adapter: {}", e))?;
-    }
-
-    test_connector_connection(&agent).await
-}
-
-#[tauri::command]
-pub async fn dispatch_external_agent_task(
-    state: State<'_, AppState>,
-    input: DispatchExternalAgentTaskInput,
-) -> Result<DispatchExternalAgentTaskResult, String> {
-    if input.external_agent_id.trim().is_empty() {
-        return Err("externalAgentId is required".to_string());
-    }
-    if input.title.trim().is_empty() {
-        return Err("title is required".to_string());
-    }
-
-    let agent = wisespace_core::repo::external_agent::get_external_agent(
-        &state.sea_db,
-        &input.external_agent_id,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-    let parsed_context = parse_json_object(input.context_json.as_deref(), json!({}))?;
-    let mut context = if parsed_context.is_object() {
-        parsed_context
-    } else {
-        json!({ "inputContext": parsed_context })
-    };
-    let auto_context = collect_external_context(&state, &input.input_text).await;
-    if !auto_context
-        .as_object()
-        .map(|value| value.is_empty())
-        .unwrap_or(true)
-    {
-        context["wisespaceContext"] = auto_context;
-    }
-
-    // Auto-launch pi adapter sidecar if not already running.
-    if agent.kind == "pi_adapter" {
-        state
-            .pi_adapter
-            .lock()
-            .await
-            .ensure_running()
-            .await
-            .map_err(|e| format!("Failed to start pi adapter: {}", e))?;
-    }
-
-    dispatch_task_from_parts(
-        &state,
-        &agent,
-        input.conversation_id.as_deref(),
-        input.parent_run_id.as_deref(),
-        input.parent_task_id.as_deref(),
-        input.source_message_id.as_deref(),
-        input.kind.as_deref().unwrap_or("general"),
-        &input.title,
-        &input.input_text,
-        input.assignee_label.as_deref(),
-        context,
-    )
-    .await
-}
-
-#[tauri::command]
-pub async fn create_delegated_subagent_task(
-    state: State<'_, AppState>,
-    input: CreateDelegatedSubagentTaskInput,
-) -> Result<AgentTask, String> {
-    if input.parent_run_id.trim().is_empty() {
-        return Err("parentRunId is required".to_string());
-    }
-    if input.task_type.trim().is_empty() {
-        return Err("taskType is required".to_string());
-    }
-    if input.title.trim().is_empty() {
-        return Err("title is required".to_string());
-    }
-
-    let task = wisespace_core::repo::external_agent::create_delegated_subagent_stub_task(
-        &state.sea_db,
-        input.conversation_id.as_deref(),
-        &input.parent_run_id,
-        input.parent_task_id.as_deref(),
-        input.source_message_id.as_deref(),
-        &input.task_type,
-        input.preset_key.as_deref(),
-        input.delegation_reason.as_deref(),
-        &input.title,
-        &input.input_text,
-        input.context_json.as_deref(),
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-
-    let event_payload = json!({
-        "parentRunId": input.parent_run_id,
-        "parentTaskId": input.parent_task_id,
-        "taskType": input.task_type,
-        "presetKey": input.preset_key,
-        "delegationReason": input.delegation_reason,
-        "title": input.title,
-    })
-    .to_string();
-    let _ = wisespace_core::repo::external_agent::create_agent_task_event(
-        &state.sea_db,
-        &task.id,
-        "delegation_planned",
-        &event_payload,
-    )
-    .await;
-
-    Ok(task)
 }
 
 async fn run_delegated_subagent_task_inner(
@@ -998,6 +663,132 @@ async fn run_delegated_subagent_task_inner(
     }
 }
 
+// ── Public API ──────────────────────────────────────────────────────
+
+pub async fn maybe_auto_delegate_subtask(
+    state: &AppState,
+    input: AutoDelegatedSubtaskInput,
+) -> Result<Option<DispatchExternalAgentTaskResult>, String> {
+    let should_delegate = match input.task_type.as_str() {
+        "review" => should_auto_delegate_review(&input.input_text),
+        "research" => should_auto_delegate_research(&input.input_text),
+        _ => false,
+    };
+    if !should_delegate {
+        return Ok(None);
+    }
+
+    let existing_tasks = wisespace_core::repo::external_agent::list_agent_tasks(
+        &state.sea_db,
+        Some(input.conversation_id.as_str()),
+        Some(&input.parent_run_id),
+        None,
+        None,
+        Some(50),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    if existing_tasks
+        .iter()
+        .any(|task| task.task_type == "review" && task.assignee_kind == "internal_subagent")
+    {
+        return Ok(None);
+    }
+
+    let task = wisespace_core::repo::external_agent::create_delegated_subagent_stub_task(
+        &state.sea_db,
+        Some(&input.conversation_id),
+        &input.parent_run_id,
+        None,
+        input.source_message_id.as_deref(),
+        &input.task_type,
+        input.preset_key.as_deref(),
+        Some(&input.delegation_reason),
+        &input.title,
+        &input.input_text,
+        None,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let event_payload = json!({
+        "parentRunId": input.parent_run_id,
+        "taskType": input.task_type,
+        "presetKey": input.preset_key,
+        "delegationReason": input.delegation_reason,
+        "title": input.title,
+    })
+    .to_string();
+    let _ = wisespace_core::repo::external_agent::create_agent_task_event(
+        &state.sea_db,
+        &task.id,
+        "delegation_planned",
+        &event_payload,
+    )
+    .await;
+
+    let result = run_delegated_subagent_task_inner(state, task).await?;
+    Ok(Some(result))
+}
+
+// ── Tauri commands ──────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn list_builtin_subagent_assignees() -> Result<Vec<BuiltinSubagentAssignee>, String> {
+    Ok(wisespace_core::repo::external_agent::list_builtin_subagent_assignees())
+}
+
+#[tauri::command]
+pub async fn create_delegated_subagent_task(
+    state: State<'_, AppState>,
+    input: CreateDelegatedSubagentTaskInput,
+) -> Result<AgentTask, String> {
+    if input.parent_run_id.trim().is_empty() {
+        return Err("parentRunId is required".to_string());
+    }
+    if input.task_type.trim().is_empty() {
+        return Err("taskType is required".to_string());
+    }
+    if input.title.trim().is_empty() {
+        return Err("title is required".to_string());
+    }
+
+    let task = wisespace_core::repo::external_agent::create_delegated_subagent_stub_task(
+        &state.sea_db,
+        input.conversation_id.as_deref(),
+        &input.parent_run_id,
+        input.parent_task_id.as_deref(),
+        input.source_message_id.as_deref(),
+        &input.task_type,
+        input.preset_key.as_deref(),
+        input.delegation_reason.as_deref(),
+        &input.title,
+        &input.input_text,
+        input.context_json.as_deref(),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let event_payload = json!({
+        "parentRunId": input.parent_run_id,
+        "parentTaskId": input.parent_task_id,
+        "taskType": input.task_type,
+        "presetKey": input.preset_key,
+        "delegationReason": input.delegation_reason,
+        "title": input.title,
+    })
+    .to_string();
+    let _ = wisespace_core::repo::external_agent::create_agent_task_event(
+        &state.sea_db,
+        &task.id,
+        "delegation_planned",
+        &event_payload,
+    )
+    .await;
+
+    Ok(task)
+}
+
 #[tauri::command]
 pub async fn run_delegated_subagent_task(
     state: State<'_, AppState>,
@@ -1010,199 +801,37 @@ pub async fn run_delegated_subagent_task(
 }
 
 #[tauri::command]
-pub async fn retry_external_agent_task(
+pub async fn list_agent_tasks(
     state: State<'_, AppState>,
-    task_id: String,
-) -> Result<DispatchExternalAgentTaskResult, String> {
-    let task = wisespace_core::repo::external_agent::get_agent_task(&state.sea_db, &task_id)
-        .await
-        .map_err(|e| e.to_string())?;
-    let agent = wisespace_core::repo::external_agent::get_external_agent(
+    conversation_id: Option<String>,
+    parent_run_id: Option<String>,
+    parent_task_id: Option<String>,
+    external_agent_id: Option<String>,
+    limit: Option<u64>,
+) -> Result<Vec<AgentTask>, String> {
+    wisespace_core::repo::external_agent::list_agent_tasks(
         &state.sea_db,
-        &task.external_agent_id,
+        conversation_id.as_deref(),
+        parent_run_id.as_deref(),
+        parent_task_id.as_deref(),
+        external_agent_id.as_deref(),
+        limit,
     )
     .await
-    .map_err(|e| e.to_string())?;
-    let request_payload = parse_json_object(Some(&task.request_payload_json), json!({}))?;
-    let kind = request_payload
-        .get("kind")
-        .and_then(|value| value.as_str())
-        .unwrap_or(task.kind.as_str())
-        .to_string();
-    let title = request_payload
-        .get("title")
-        .and_then(|value| value.as_str())
-        .unwrap_or(task.title.as_str())
-        .to_string();
-    let input_text = request_payload
-        .get("inputText")
-        .and_then(|value| value.as_str())
-        .ok_or_else(|| "request payload is missing inputText".to_string())?
-        .to_string();
-    let context = request_payload
-        .get("context")
-        .cloned()
-        .unwrap_or_else(|| json!({}));
-
-    let _ = wisespace_core::repo::external_agent::create_agent_task_event(
-        &state.sea_db,
-        &task.id,
-        "retry_requested",
-        &json!({
-            "sourceTaskId": task.id,
-            "status": task.status,
-        })
-        .to_string(),
-    )
-    .await;
-
-    // Auto-launch pi adapter before retry.
-    if agent.kind == "pi_adapter" {
-        state
-            .pi_adapter
-            .lock()
-            .await
-            .ensure_running()
-            .await
-            .map_err(|e| format!("Failed to start pi adapter: {}", e))?;
-    }
-
-    let result = dispatch_task_from_parts(
-        &state,
-        &agent,
-        task.conversation_id.as_deref(),
-        task.parent_run_id.as_deref(),
-        task.parent_task_id.as_deref(),
-        task.source_message_id.as_deref(),
-        &kind,
-        &title,
-        &input_text,
-        task.assignee_label.as_deref(),
-        context,
-    )
-    .await?;
-
-    let _ = wisespace_core::repo::external_agent::create_agent_task_event(
-        &state.sea_db,
-        &task.id,
-        "retried",
-        &json!({
-            "newTaskId": result.task.id,
-            "newStatus": result.task.status,
-        })
-        .to_string(),
-    )
-    .await;
-
-    Ok(result)
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn sync_external_agent_task(
+pub async fn list_agent_task_events(
     state: State<'_, AppState>,
     task_id: String,
-) -> Result<DispatchExternalAgentTaskResult, String> {
-    let task = wisespace_core::repo::external_agent::get_agent_task(&state.sea_db, &task_id)
+) -> Result<Vec<AgentTaskEvent>, String> {
+    wisespace_core::repo::external_agent::list_agent_task_events(&state.sea_db, &task_id)
         .await
-        .map_err(|e| e.to_string())?;
-    let agent = wisespace_core::repo::external_agent::get_external_agent(
-        &state.sea_db,
-        &task.external_agent_id,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-    let external_task_id = task
-        .external_task_id
-        .clone()
-        .unwrap_or_else(|| task.id.clone());
-
-    let _ = wisespace_core::repo::external_agent::create_agent_task_event(
-        &state.sea_db,
-        &task.id,
-        "sync_requested",
-        &json!({ "externalTaskId": external_task_id }).to_string(),
-    )
-    .await;
-
-    // Auto-launch pi adapter before sync.
-    if agent.kind == "pi_adapter" {
-        state
-            .pi_adapter
-            .lock()
-            .await
-            .ensure_running()
-            .await
-            .map_err(|e| format!("Failed to start pi adapter: {}", e))?;
-    }
-
-    let response = fetch_connector_task(&agent, &external_task_id)
-        .await
-        .map_err(|e| e.to_string())?;
-    let result_payload_json =
-        serde_json::to_string(&response.result_payload).map_err(|e| e.to_string())?;
-    let updated_task = wisespace_core::repo::external_agent::update_agent_task_result(
-        &state.sea_db,
-        &task.id,
-        &response.status,
-        response.external_task_id.clone(),
-        Some(result_payload_json.clone()),
-        None,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-
-    let _ = wisespace_core::repo::external_agent::create_agent_task_event(
-        &state.sea_db,
-        &task.id,
-        &response.status,
-        &result_payload_json,
-    )
-    .await;
-
-    let task_events =
-        wisespace_core::repo::external_agent::list_agent_task_events(&state.sea_db, &task.id)
-            .await
-            .map_err(|e| e.to_string())?;
-    let already_ingested = task_events
-        .iter()
-        .any(|event| event.event_type == "ingested");
-
-    let assistant_message = match (
-        updated_task.conversation_id.as_deref(),
-        updated_task.source_message_id.as_deref(),
-        response.assistant_content.as_deref(),
-        updated_task.status.as_str(),
-        already_ingested,
-    ) {
-        (Some(conversation_id), source_message_id, Some(content), "completed", false)
-            if !content.trim().is_empty() =>
-        {
-            let message = ingest_assistant_message(
-                &state.sea_db,
-                conversation_id,
-                source_message_id,
-                content,
-                &response.result_payload,
-            )
-            .await
-            .map_err(|e| e.to_string())?;
-            let _ = wisespace_core::repo::external_agent::create_agent_task_event(
-                &state.sea_db,
-                &task.id,
-                "ingested",
-                &json!({ "messageId": message.id }).to_string(),
-            )
-            .await;
-            Some(message)
-        }
-        _ => None,
-    };
-
-    Ok(DispatchExternalAgentTaskResult {
-        task: updated_task,
-        assistant_message,
-    })
+        .map_err(|e| e.to_string())
 }
+
+// ── Tests ───────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {

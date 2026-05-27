@@ -1730,14 +1730,9 @@ export async function handleCommand<T>(cmd: string, args?: Record<string, unknow
 
     case 'get_extension_detail': {
       const id = (args as any)?.id as string;
-      const isExternalAgent = id?.startsWith('external_agent::');
       return {
         id,
-        kind: id?.startsWith('mcp_server::')
-          ? 'mcp_server'
-          : isExternalAgent
-            ? 'external_agent'
-            : 'skill',
+        kind: id?.startsWith('mcp_server::') ? 'mcp_server' : 'skill',
         name: id?.split('::')[1] ?? 'Mock extension',
         enabled: true,
         source: { kind: 'builtin', path: 'browser-mock' },
@@ -1745,38 +1740,20 @@ export async function handleCommand<T>(cmd: string, args?: Record<string, unknow
         scope: { availability: 'workspace_attachable' },
         permissions: { trustLevel: 'safe', approvalMode: 'inherit' },
         runtime: {
-          hostKind: isExternalAgent ? 'external_agent_connector' : 'native_skill_loader',
-          isolation: isExternalAgent ? 'remote' : 'in_process',
-          supportsConnectionTest: id?.startsWith('mcp_server::') || isExternalAgent,
+          hostKind: id?.startsWith('mcp_server::') ? 'mcp_host' : 'native_skill_loader',
+          isolation: id?.startsWith('mcp_server::') ? 'subprocess' : 'in_process',
+          supportsConnectionTest: id?.startsWith('mcp_server::'),
           supportsEnableToggle: true,
         },
         contributions: [],
         tags: [],
         diagnostics: {
-          canTestConnection: id?.startsWith('mcp_server::') || isExternalAgent,
+          canTestConnection: id?.startsWith('mcp_server::'),
           compatibilityNotes: ['Browser mode uses mock extension runtime diagnostics.'],
         },
-        kindDetail: isExternalAgent
-          ? {
-              agentKind: 'custom_http',
-              baseUrl: 'https://bridge.example.com',
-              authConfigured: false,
-              networkScope: 'public_remote',
-              bridgeProfile: {
-                family: 'http_bridge',
-                networkScope: 'public_remote',
-                authConfigured: false,
-                authType: 'none',
-                riskLevel: 'elevated',
-                permissionSummary: 'Remote bridge is exposed without authentication.',
-              },
-            }
-          : {},
+        kindDetail: {},
       } as T;
     }
-
-    case 'test_external_agent_connection':
-      return { ok: true, status: 200, message: 'Browser mock connector is reachable.' } as T;
 
     case 'list_agent_tasks': {
       const tasks = getStore<BrowserAgentTask[]>('agent_tasks', []);

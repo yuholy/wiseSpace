@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@/lib/invoke';
-import { useConversationStore, useArtifactStore, useAgentStore, useExternalAgentStore } from '@/stores';
+import { useConversationStore, useArtifactStore, useAgentStore, useSubagentStore } from '@/stores';
 import { buildProactiveTaskSuggestions } from '@/lib/proactiveTaskSuggestions';
 import {
   deleteWorkspaceContextPack,
@@ -29,7 +29,7 @@ import {
   deriveWorkspaceContextState,
   resolveEffectiveToolApprovalMode,
 } from '@/lib/workspaceContextState';
-import { getAgentTaskTypeLabel, getExternalTaskSummary } from '@/lib/externalTaskSummary';
+import { getAgentTaskTypeLabel, getSubagentTaskSummary } from '@/lib/subagentTaskSummary';
 import type { AgentTask, AgentTaskEvent } from '@/types';
 
 const EMPTY_AGENT_RUNS: readonly [] = [];
@@ -94,9 +94,9 @@ export function ChatInspector({
     const latestRunId = s.runsByConversation[conversationId]?.[0]?.id;
     return latestRunId ? s.runEventsByRunId[latestRunId] ?? EMPTY_AGENT_RUN_EVENTS : EMPTY_AGENT_RUN_EVENTS;
   });
-  const createDelegatedSubagentTask = useExternalAgentStore((s) => s.createDelegatedSubagentTask);
-  const runDelegatedSubagentTask = useExternalAgentStore((s) => s.runDelegatedSubagentTask);
-  const listTaskEvents = useExternalAgentStore((s) => s.listTaskEvents);
+  const createDelegatedSubagentTask = useSubagentStore((s) => s.createDelegatedSubagentTask);
+  const runDelegatedSubagentTask = useSubagentStore((s) => s.runDelegatedSubagentTask);
+  const listTaskEvents = useSubagentStore((s) => s.listTaskEvents);
   const latestRun = agentRuns[0];
   const currentMode = conversation?.mode ?? 'chat';
   const [delegatedTasks, setDelegatedTasks] = useState<AgentTask[]>([]);
@@ -939,7 +939,7 @@ export function ChatInspector({
                                 </Typography.Text>
                               ) : null}
                               <Typography.Text type="secondary">
-                                {getExternalTaskSummary(task)}
+                                {getSubagentTaskSummary(task)}
                               </Typography.Text>
                               {task.errorMessage ? (
                                 <Typography.Text type="danger">{task.errorMessage}</Typography.Text>

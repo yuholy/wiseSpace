@@ -1,37 +1,7 @@
-import type { Message } from './index';
-
-export interface ExternalAgent {
-  id: string;
-  name: string;
-  kind: string;
-  baseUrl?: string | null;
-  authType: string;
-  authConfigJson?: string | null;
-  capabilitiesJson: string;
-  enabled: boolean;
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface CreateExternalAgentInput {
-  name: string;
-  kind: string;
-  baseUrl?: string | null;
-  authType?: string;
-  authConfigJson?: string | null;
-  capabilitiesJson?: string | null;
-  enabled?: boolean;
-}
-
-export interface UpdateExternalAgentInput {
-  name?: string;
-  kind?: string;
-  baseUrl?: string | null;
-  authType?: string;
-  authConfigJson?: string | null;
-  capabilitiesJson?: string;
-  enabled?: boolean;
-}
+// ── Subagent / AgentTask types ─────────────────────────────────────
+// These types describe the subagent delegation task model.
+// They were previously part of the external agent system but now
+// serve only the internal subagent delegation flow.
 
 export interface AgentTask {
   id: string;
@@ -75,19 +45,6 @@ export interface BuiltinSubagentAssignee {
   defaultTaskKind: string;
 }
 
-export interface DispatchExternalAgentTaskInput {
-  conversationId?: string | null;
-  parentRunId?: string | null;
-  parentTaskId?: string | null;
-  sourceMessageId?: string | null;
-  externalAgentId: string;
-  assigneeLabel?: string | null;
-  kind?: string;
-  title: string;
-  inputText: string;
-  contextJson?: string | null;
-}
-
 export interface CreateDelegatedSubagentTaskInput {
   conversationId?: string | null;
   parentRunId: string;
@@ -103,11 +60,5 @@ export interface CreateDelegatedSubagentTaskInput {
 
 export interface DispatchExternalAgentTaskResult {
   task: AgentTask;
-  assistantMessage?: Message | null;
-}
-
-export interface ExternalAgentConnectionTestResult {
-  ok: boolean;
-  status?: number | null;
-  message?: string | null;
+  assistantMessage?: import('./index').Message | null;
 }
